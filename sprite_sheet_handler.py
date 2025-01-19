@@ -1,6 +1,5 @@
-import os
 from PIL import Image
-import matplotlib.pyplot as plt
+import os
 
 class SpriteSheetHandler:
     def __init__(self, image_path, remove_first_row_and_col=False):
@@ -18,7 +17,7 @@ class SpriteSheetHandler:
         Split the sprite sheet into individual sprites.
         :param sprites_ancho: Number of sprites horizontally.
         :param sprites_alto: Number of sprites vertically.
-        :return: List of cropped sprites.
+        :return: List of cropped sprites, width of each sprite, height of each sprite.
         """
         ancho_imagen, alto_imagen = self.image.size
         ancho_sprite = ancho_imagen // sprites_ancho
@@ -39,8 +38,30 @@ class SpriteSheetHandler:
 
         return sprites, ancho_sprite, alto_sprite
 
-    @staticmethod
-    def save_sprites(sprites, output_folder, base_name):
+    def split_animation_frames(self, frame_width, frame_height):
+        """
+        Split an animation image into frames.
+        :param frame_width: Width of each frame.
+        :param frame_height: Height of each frame.
+        :return: List of cropped frames.
+        """
+        frames = []
+        width, height = self.image.size
+
+        # If frame_width or frame_height is None, use the full image size
+        if frame_width is None:
+            frame_width = width
+        if frame_height is None:
+            frame_height = height
+
+        for y in range(0, height, frame_height):
+            for x in range(0, width, frame_width):
+                frame = self.image.crop((x, y, x + frame_width, y + frame_height))
+                frames.append(frame)
+
+        return frames
+
+    def save_sprites(self, sprites, output_folder, base_name):
         """
         Save the sprites to the specified output folder.
         :param sprites: List of sprites to save.
@@ -51,8 +72,7 @@ class SpriteSheetHandler:
         for idx, sprite in enumerate(sprites):
             sprite.save(os.path.join(output_folder, f"{base_name}{idx + 1}.png"))
 
-    @staticmethod
-    def display_sprites(sprites, sprites_ancho, sprites_alto, ancho_sprite, alto_sprite):
+    def display_sprites(self, sprites, sprites_ancho, sprites_alto, ancho_sprite, alto_sprite):
         """
         Display the sprites in a grid using matplotlib.
         :param sprites: List of sprites to display.
@@ -61,6 +81,9 @@ class SpriteSheetHandler:
         :param ancho_sprite: Width of each sprite.
         :param alto_sprite: Height of each sprite.
         """
+        import matplotlib.pyplot as plt
+        import matplotlib.patches as patches
+
         fig, axes = plt.subplots(sprites_alto, sprites_ancho, figsize=(10, 10))
         fig.suptitle("Sprites con fondo gris claro", fontsize=16)
 
