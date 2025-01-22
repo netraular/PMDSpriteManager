@@ -18,12 +18,14 @@ class AnimationViewer:
         self.frame_label = Label(root)
         self.frame_label.pack()
 
-        self.next_button = Button(root, text="Siguiente Animación", command=self.next_animation)
-        self.next_button.pack()
+        self.prev_button = Button(root, text="Animación Anterior", command=self.prev_animation)
+        self.prev_button.pack(side="left")
 
-        # Start displaying animations
+        self.next_button = Button(root, text="Siguiente Animación", command=self.next_animation)
+        self.next_button.pack(side="right")
+
+        # Start displaying the first animation
         self.show_animation()
-        self.after_id = None  # Añadir esta línea para rastrear la llamada after()
 
     def load_anim_data(self):
         """
@@ -79,7 +81,6 @@ class AnimationViewer:
 
         if not os.path.exists(image_path):
             print(f"No se encontró la imagen de animación: {image_path}")
-            self.next_animation()
             return
 
         # Load the animation image using SpriteSheetHandler
@@ -98,8 +99,7 @@ class AnimationViewer:
         Display the current frame.
         """
         if self.current_frame_index >= len(self.frames):
-            self.next_animation()
-            return
+            self.current_frame_index = 0  # Reset to the first frame
 
         frame = self.frames[self.current_frame_index]
         frame_image = ImageTk.PhotoImage(frame)
@@ -111,28 +111,23 @@ class AnimationViewer:
         self.frame_label.config(image=frame_image)
         self.frame_label.image = frame_image  # Mantener una referencia para evitar garbage collection
 
-        # Schedule the next frame
-        self.current_frame_index += 1
-        self.root.after(100, self.show_frame)  # Cambiar de frame cada 100 ms
-        self.after_id = self.root.after(100, self.show_frame)  # Guardar el ID de la llamada
-
     def next_animation(self):
         """
         Move to the next animation.
         """
-        """
-        Move to the next animation.
-        """
-        # Cancelar cualquier llamada after() pendiente
-        if self.after_id is not None:
-            self.root.after_cancel(self.after_id)
-            self.after_id = None
-
         self.current_anim_index += 1
-        if self.current_anim_index < len(self.anim_data):
-            self.show_animation()
-        else:
-            print("Todas las animaciones han sido mostradas.")
+        if self.current_anim_index >= len(self.anim_data):
+            self.current_anim_index = 0  # Loop back to the first animation
+        self.show_animation()
+
+    def prev_animation(self):
+        """
+        Move to the previous animation.
+        """
+        self.current_anim_index -= 1
+        if self.current_anim_index < 0:
+            self.current_anim_index = len(self.anim_data) - 1  # Loop to the last animation
+        self.show_animation()
 
 def seleccionar_carpeta():
     """
