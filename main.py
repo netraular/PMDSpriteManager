@@ -11,15 +11,24 @@ class AnimationViewer:
         self.sprite_folder = os.path.join(anim_folder, "sprite")
         self.anim_data = self.load_anim_data()
         self.current_anim_index = 0
+        self.current_frame_index = 0
+        self.animation_playing = False
+        self.after_id = None
         
-        # Configurar ventana
+        # Configurar ventana principal
         self.root.title("Visor de Animaciones")
-        
-        # Configurar el protocolo de cierre para terminar el programa
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         
+        # Crear ventana de animación en tiempo real
+        self.anim_window = Toplevel(self.root)
+        self.anim_window.title("Animación en Tiempo Real")
+        self.anim_window.protocol("WM_DELETE_WINDOW", self.on_close)
+        
+        self.anim_label = Label(self.anim_window)
+        self.anim_label.pack()
+        
         # Panel de control
-        control_frame = Frame(root)
+        control_frame = Frame(self.root)
         control_frame.pack(pady=10)
         
         self.prev_button = Button(control_frame, text="Animación Anterior", command=self.prev_animation)
@@ -29,14 +38,14 @@ class AnimationViewer:
         self.next_button.pack(side="left", padx=5)
         
         # Etiqueta para el nombre de la animación
-        self.anim_name_label = Label(root, text="", font=('Arial', 12, 'bold'))
+        self.anim_name_label = Label(self.root, text="", font=('Arial', 12, 'bold'))
         self.anim_name_label.pack(pady=5)
         
         # Contenedor para los frames
-        self.frames_container = Frame(root)
+        self.frames_container = Frame(self.root)
         self.frames_container.pack(pady=10)
         
-        # Mostrar primera animación
+        # Iniciar la primera animación
         self.show_animation()
 
     def load_anim_data(self):
@@ -55,10 +64,18 @@ class AnimationViewer:
             frame_width = int(anim.find("FrameWidth").text) if anim.find("FrameWidth") is not None else None
             frame_height = int(anim.find("FrameHeight").text) if anim.find("FrameHeight") is not None else None
 
+            # Leer las duraciones de los frames
+            durations = []
+            durations_node = anim.find("Durations")
+            if durations_node is not None:
+                for duration in durations_node.findall("Duration"):
+                    durations.append(int(duration.text))
+
             anims.append({
                 "name": name,
                 "frame_width": frame_width,
                 "frame_height": frame_height,
+                "durations": durations,
                 "image_path": os.path.join(self.sprite_folder, f"{name}-Anim.png")
             })
 
@@ -76,8 +93,14 @@ class AnimationViewer:
         if self.current_anim_index >= len(self.anim_data):
             return
 
+        # Detener cualquier animación en curso
+        if self.after_id:
+            self.root.after_cancel(self.after_id)
+            self.after_id = None
+
         anim = self.anim_data[self.current_anim_index]
         self.anim_name_label.config(text=f"Animación: {anim['name']}")
+        self.anim_window.title(f"Animación en Tiempo Real - {anim['name']}")
 
         if not os.path.exists(anim["image_path"]):
             print(f"Archivo no encontrado: {anim['image_path']}")
@@ -85,50 +108,81 @@ class AnimationViewer:
 
         # Cargar y dividir la animación
         handler = SpriteSheetHandler(anim["image_path"])
-        frames = handler.split_animation_frames(anim["frame_width"], anim["frame_height"])
+        self.frames = handler.split_animation_frames(anim["frame_width"], anim["frame_height"])
 
+        # Verificar y ajustar las duraciones
+        if anim["durations"]:
+            self.durations = anim["durations"]
+            # Si hay más frames que duraciones, se repite la última duración
+            if len(self.durations) < len(self.frames):
+                last_duration = self.durations[-1]
+                self.durations.extend([last_duration] * (len(self.frames) - len(self.durations)))
+        else:
+            # Si no hay duraciones, se usa 1 frame por defecto
+            self.durations = [1] * len(self.frames)
+        
         # Mostrar los frames en una rejilla
         row = 0
         col = 0
-        max_cols = 4  # Máximo de columnas antes de nueva fila
+        max_cols = 4
         
-        for idx, frame in enumerate(frames):
+        for idx, frame in enumerate(self.frames):
             if col >= max_cols:
                 row += 1
                 col = 0
             
-            frame.thumbnail((100, 100))  # Redimensionar para previsualización
+            frame.thumbnail((100, 100))
             img = ImageTk.PhotoImage(frame)
             
             frame_frame = Frame(self.frames_container, bd=2, relief="groove")
             frame_frame.grid(row=row, column=col, padx=5, pady=5)
             
             label = Label(frame_frame, image=img)
-            label.image = img  # Mantener referencia
+            label.image = img
             label.pack(padx=2, pady=2)
             
-            Label(frame_frame, text=f"Frame {idx + 1}", font=('Arial', 8)).pack()
-            
+            Label(frame_frame, text=f"Frame {idx + 1}\n({self.durations[idx]} frames)", font=('Arial', 8)).pack()
             col += 1
+
+        # Iniciar animación en tiempo real
+        self.current_frame_index = 0
+        self.update_animation()
+
+    def update_animation(self):
+        """Actualizar el frame de la animación en tiempo real"""
+        if self.current_frame_index >= len(self.frames):
+            self.current_frame_index = 0
+
+        frame = self.frames[self.current_frame_index]
+        frame.thumbnail((300, 300))  # Tamaño para la ventana de animación
+        
+        img = ImageTk.PhotoImage(frame)
+        self.anim_label.config(image=img)
+        self.anim_label.image = img
+        
+        # Calcular tiempo de espera en ms (30 fps = 33.33 ms por frame)
+        frame_duration = self.durations[self.current_frame_index]
+        delay = int(frame_duration * (1000 / 30))
+        
+        self.current_frame_index += 1
+        self.after_id = self.root.after(delay, self.update_animation)
 
     def next_animation(self):
         """Siguiente animación"""
-        self.current_anim_index += 1
-        if self.current_anim_index >= len(self.anim_data):
-            self.current_anim_index = 0
+        self.current_anim_index = (self.current_anim_index + 1) % len(self.anim_data)
         self.show_animation()
 
     def prev_animation(self):
         """Animación anterior"""
-        self.current_anim_index -= 1
-        if self.current_anim_index < 0:
-            self.current_anim_index = len(self.anim_data) - 1
+        self.current_anim_index = (self.current_anim_index - 1) % len(self.anim_data)
         self.show_animation()
 
     def on_close(self):
         """Manejar el cierre de la ventana"""
-        self.root.destroy()  # Cerrar la ventana
-        self.root.quit()     # Salir del bucle principal
+        if self.after_id:
+            self.root.after_cancel(self.after_id)
+        self.root.destroy()
+        self.anim_window.destroy()
 
 def seleccionar_carpeta():
     """
