@@ -1,5 +1,5 @@
 import os
-from tkinter import Tk, filedialog, Button, Label, Toplevel
+from tkinter import Tk, filedialog, Button, Label, Toplevel, Frame
 from PIL import Image, ImageTk
 import xml.etree.ElementTree as ET
 from sprite_sheet_handler import SpriteSheetHandler
@@ -8,38 +8,43 @@ class AnimationViewer:
     def __init__(self, root, anim_folder):
         self.root = root
         self.anim_folder = anim_folder
+        self.sprite_folder = os.path.join(anim_folder, "sprite")
         self.anim_data = self.load_anim_data()
         self.current_anim_index = 0
-        self.current_frame_index = 0
-        self.frames = []
-        self.frame_images = []  # Almacenar referencias a las imágenes
-
-        # Create UI elements
-        self.frame_label = Label(root)
-        self.frame_label.pack()
-
-        self.prev_button = Button(root, text="Animación Anterior", command=self.prev_animation)
-        self.prev_button.pack(side="left")
-
-        self.next_button = Button(root, text="Siguiente Animación", command=self.next_animation)
-        self.next_button.pack(side="right")
-
-        # Start displaying the first animation
+        
+        # Configurar ventana
+        self.root.title("Visor de Animaciones")
+        
+        # Configurar el protocolo de cierre para terminar el programa
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+        
+        # Panel de control
+        control_frame = Frame(root)
+        control_frame.pack(pady=10)
+        
+        self.prev_button = Button(control_frame, text="Animación Anterior", command=self.prev_animation)
+        self.prev_button.pack(side="left", padx=5)
+        
+        self.next_button = Button(control_frame, text="Siguiente Animación", command=self.next_animation)
+        self.next_button.pack(side="left", padx=5)
+        
+        # Etiqueta para el nombre de la animación
+        self.anim_name_label = Label(root, text="", font=('Arial', 12, 'bold'))
+        self.anim_name_label.pack(pady=5)
+        
+        # Contenedor para los frames
+        self.frames_container = Frame(root)
+        self.frames_container.pack(pady=10)
+        
+        # Mostrar primera animación
         self.show_animation()
 
     def load_anim_data(self):
-        """
-        Load and parse the AnimData.xml file from the 'sprite' subfolder.
-        """
-        sprite_folder = os.path.join(self.anim_folder, "sprite")
-        if not os.path.exists(sprite_folder):
-            raise FileNotFoundError(f"No se encontró la subcarpeta 'sprite' en {self.anim_folder}")
-
-        anim_data_path = os.path.join(sprite_folder, "AnimData.xml")
-        print(f"Intentando abrir el archivo: {anim_data_path}")  # Debug: Mostrar la ruta del archivo
-
+        """Cargar y parsear el archivo AnimData.xml"""
+        anim_data_path = os.path.join(self.sprite_folder, "AnimData.xml")
+        
         if not os.path.exists(anim_data_path):
-            raise FileNotFoundError(f"No se encontró el archivo AnimData.xml en {sprite_folder}")
+            raise FileNotFoundError(f"No se encontró AnimData.xml en {self.sprite_folder}")
 
         tree = ET.parse(anim_data_path)
         root = tree.getroot()
@@ -47,137 +52,131 @@ class AnimationViewer:
         anims = []
         for anim in root.find("Anims"):
             name = anim.find("Name").text
-            frame_width = anim.find("FrameWidth")
-            frame_height = anim.find("FrameHeight")
-
-            # Handle missing FrameWidth or FrameHeight
-            frame_width_value = int(frame_width.text) if frame_width is not None else None
-            frame_height_value = int(frame_height.text) if frame_height is not None else None
+            frame_width = int(anim.find("FrameWidth").text) if anim.find("FrameWidth") is not None else None
+            frame_height = int(anim.find("FrameHeight").text) if anim.find("FrameHeight") is not None else None
 
             anims.append({
                 "name": name,
-                "frame_width": frame_width_value,
-                "frame_height": frame_height_value,
-                "image_path": os.path.join(sprite_folder, f"{name}-Anim.png")
+                "frame_width": frame_width,
+                "frame_height": frame_height,
+                "image_path": os.path.join(self.sprite_folder, f"{name}-Anim.png")
             })
-
-        # Mostrar los datos de las animaciones por terminal
-        print("Datos de las animaciones cargados:")
-        for anim in anims:
-            print(f"Nombre: {anim['name']}, FrameWidth: {anim['frame_width']}, FrameHeight: {anim['frame_height']}")
 
         return anims
 
+    def clear_frames(self):
+        """Limpiar los frames anteriores"""
+        for widget in self.frames_container.winfo_children():
+            widget.destroy()
+
     def show_animation(self):
-        """
-        Show the current animation frames.
-        """
+        """Mostrar la animación actual"""
+        self.clear_frames()
+        
         if self.current_anim_index >= len(self.anim_data):
-            print("No hay más animaciones para mostrar.")
             return
 
         anim = self.anim_data[self.current_anim_index]
-        image_path = anim["image_path"]
+        self.anim_name_label.config(text=f"Animación: {anim['name']}")
 
-        if not os.path.exists(image_path):
-            print(f"No se encontró la imagen de animación: {image_path}")
+        if not os.path.exists(anim["image_path"]):
+            print(f"Archivo no encontrado: {anim['image_path']}")
             return
 
-        # Load the animation image using SpriteSheetHandler
-        sprite_handler = SpriteSheetHandler(image_path)
-        self.frames = sprite_handler.split_animation_frames(anim["frame_width"], anim["frame_height"])
+        # Cargar y dividir la animación
+        handler = SpriteSheetHandler(anim["image_path"])
+        frames = handler.split_animation_frames(anim["frame_width"], anim["frame_height"])
 
-        # Clear previous frame images
-        self.frame_images.clear()
-
-        # Display the first frame
-        self.current_frame_index = 0
-        self.show_frame()
-
-    def show_frame(self):
-        """
-        Display the current frame.
-        """
-        if self.current_frame_index >= len(self.frames):
-            self.current_frame_index = 0  # Reset to the first frame
-
-        frame = self.frames[self.current_frame_index]
-        frame_image = ImageTk.PhotoImage(frame)
-
-        # Almacenar la referencia a la imagen actual
-        self.frame_images.append(frame_image)
-
-        # Mostrar la imagen en el Label
-        self.frame_label.config(image=frame_image)
-        self.frame_label.image = frame_image  # Mantener una referencia para evitar garbage collection
+        # Mostrar los frames en una rejilla
+        row = 0
+        col = 0
+        max_cols = 4  # Máximo de columnas antes de nueva fila
+        
+        for idx, frame in enumerate(frames):
+            if col >= max_cols:
+                row += 1
+                col = 0
+            
+            frame.thumbnail((100, 100))  # Redimensionar para previsualización
+            img = ImageTk.PhotoImage(frame)
+            
+            frame_frame = Frame(self.frames_container, bd=2, relief="groove")
+            frame_frame.grid(row=row, column=col, padx=5, pady=5)
+            
+            label = Label(frame_frame, image=img)
+            label.image = img  # Mantener referencia
+            label.pack(padx=2, pady=2)
+            
+            Label(frame_frame, text=f"Frame {idx + 1}", font=('Arial', 8)).pack()
+            
+            col += 1
 
     def next_animation(self):
-        """
-        Move to the next animation.
-        """
+        """Siguiente animación"""
         self.current_anim_index += 1
         if self.current_anim_index >= len(self.anim_data):
-            self.current_anim_index = 0  # Loop back to the first animation
+            self.current_anim_index = 0
         self.show_animation()
 
     def prev_animation(self):
-        """
-        Move to the previous animation.
-        """
+        """Animación anterior"""
         self.current_anim_index -= 1
         if self.current_anim_index < 0:
-            self.current_anim_index = len(self.anim_data) - 1  # Loop to the last animation
+            self.current_anim_index = len(self.anim_data) - 1
         self.show_animation()
+
+    def on_close(self):
+        """Manejar el cierre de la ventana"""
+        self.root.destroy()  # Cerrar la ventana
+        self.root.quit()     # Salir del bucle principal
 
 def seleccionar_carpeta():
     """
-    Open a dialog to select a folder and process the sprite sheet.
+    Abre un diálogo para seleccionar una carpeta y procesar el sprite sheet.
     """
     root = Tk()
     root.withdraw()
 
-    # Open a dialog to select a folder
+    # Abrir un diálogo para seleccionar una carpeta
     carpeta_seleccionada = filedialog.askdirectory(title="Selecciona una carpeta")
 
     if carpeta_seleccionada:
-        # Find all PNG files in the selected folder
+        # Buscar todos los archivos PNG en la carpeta seleccionada
         archivos_png = [archivo for archivo in os.listdir(carpeta_seleccionada) if archivo.lower().endswith('.png')]
 
         if archivos_png:
-            # Get the path of the first PNG file
+            # Obtener la ruta del primer archivo PNG
             ruta_imagen = os.path.join(carpeta_seleccionada, archivos_png[0])
 
-            # Open and display the original image
-            from PIL import Image
+            # Abrir y mostrar la imagen original
             imagen_original = Image.open(ruta_imagen)
-            imagen_original.show()  # Show the original image
+            imagen_original.show()  # Mostrar la imagen original
 
-            # Ask the user for the number of sprites horizontally and vertically
+            # Preguntar al usuario por el número de sprites horizontal y vertical
             try:
                 sprites_ancho = int(input("Introduce el número de sprites de ancho: "))
                 sprites_alto = int(input("Introduce el número de sprites de alto: "))
 
-                # Initialize the SpriteSheetHandler with the image path and remove_first_row_and_col=True
+                # Inicializar el SpriteSheetHandler con la ruta de la imagen y remove_first_row_and_col=True
                 sprite_handler = SpriteSheetHandler(ruta_imagen, remove_first_row_and_col=True)
 
-                # Split the sprite sheet into individual sprites
+                # Dividir el sprite sheet en sprites individuales
                 sprites, ancho_sprite, alto_sprite = sprite_handler.split_sprites(sprites_ancho, sprites_alto)
 
-                # Create a new folder to save the sprites
+                # Crear una nueva carpeta para guardar los sprites
                 nombre_carpeta_original = os.path.basename(carpeta_seleccionada)
                 carpeta_edited = os.path.join(carpeta_seleccionada, nombre_carpeta_original + "Edited")
                 os.makedirs(carpeta_edited, exist_ok=True)
 
-                # Save the sprites to the output folder
+                # Guardar los sprites en la carpeta de salida
                 sprite_handler.save_sprites(sprites, carpeta_edited, nombre_carpeta_original)
 
-                # Display the sprites in a grid
+                # Mostrar los sprites en una cuadrícula
                 sprite_handler.display_sprites(sprites, sprites_ancho, sprites_alto, ancho_sprite, alto_sprite)
 
-                # Open the AnimData.xml file and display animations
-                anim_folder = carpeta_seleccionada  # Use the selected folder
-                anim_viewer_root = Toplevel(root)  # Usar Toplevel en lugar de Tk()
-                anim_viewer = AnimationViewer(anim_viewer_root, anim_folder)
+                # Abrir el archivo AnimData.xml y mostrar las animaciones
+                anim_viewer_root = Toplevel()
+                anim_viewer = AnimationViewer(anim_viewer_root, carpeta_seleccionada)
                 anim_viewer_root.mainloop()
 
             except ValueError:
