@@ -1,5 +1,5 @@
 import os
-from tkinter import Tk, filedialog, Button, Label
+from tkinter import Tk, filedialog, Button, Label, Toplevel
 from PIL import Image, ImageTk
 import xml.etree.ElementTree as ET
 from sprite_sheet_handler import SpriteSheetHandler
@@ -23,6 +23,7 @@ class AnimationViewer:
 
         # Start displaying animations
         self.show_animation()
+        self.after_id = None  # Añadir esta línea para rastrear la llamada after()
 
     def load_anim_data(self):
         """
@@ -113,11 +114,20 @@ class AnimationViewer:
         # Schedule the next frame
         self.current_frame_index += 1
         self.root.after(100, self.show_frame)  # Cambiar de frame cada 100 ms
+        self.after_id = self.root.after(100, self.show_frame)  # Guardar el ID de la llamada
 
     def next_animation(self):
         """
         Move to the next animation.
         """
+        """
+        Move to the next animation.
+        """
+        # Cancelar cualquier llamada after() pendiente
+        if self.after_id is not None:
+            self.root.after_cancel(self.after_id)
+            self.after_id = None
+
         self.current_anim_index += 1
         if self.current_anim_index < len(self.anim_data):
             self.show_animation()
@@ -171,7 +181,7 @@ def seleccionar_carpeta():
 
                 # Open the AnimData.xml file and display animations
                 anim_folder = carpeta_seleccionada  # Use the selected folder
-                anim_viewer_root = Tk()
+                anim_viewer_root = Toplevel(root)  # Usar Toplevel en lugar de Tk()
                 anim_viewer = AnimationViewer(anim_viewer_root, anim_folder)
                 anim_viewer_root.mainloop()
 
