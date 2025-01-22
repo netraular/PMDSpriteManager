@@ -9,266 +9,264 @@ class AnimationViewer:
         self.root = root
         self.anim_folder = anim_folder
         self.sprite_folder = os.path.join(anim_folder, "sprite")
-        print(f"Carpeta de sprites: {self.sprite_folder}")  # Debug
         self.anim_data = self.load_anim_data()
         self.current_anim_index = 0
-        self.current_frame_index = 0
-        self.animation_playing = False
-        self.after_id = None
+        self.after_ids = []
         
         # Configurar ventana principal
         self.root.title("Visor de Animaciones")
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         
-        # Crear ventana de animación en tiempo real
+        # Ventana de animación en tiempo real
         self.anim_window = Toplevel(self.root)
         self.anim_window.title("Animación en Tiempo Real")
-        self.anim_window.protocol("WM_DELETE_WINDOW", self.on_close)  # Vincular cierre de ventana
-        
-        self.anim_label = Label(self.anim_window)
-        self.anim_label.pack()
+        self.anim_window.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.anim_container = Frame(self.anim_window)
+        self.anim_container.pack(padx=10, pady=10)
         
         # Panel de control
         control_frame = Frame(self.root)
         control_frame.pack(pady=10)
+        Button(control_frame, text="Anterior", command=self.prev_animation).pack(side="left", padx=5)
+        Button(control_frame, text="Siguiente", command=self.next_animation).pack(side="left", padx=5)
         
-        self.prev_button = Button(control_frame, text="Animación Anterior", command=self.prev_animation)
-        self.prev_button.pack(side="left", padx=5)
-        
-        self.next_button = Button(control_frame, text="Siguiente Animación", command=self.next_animation)
-        self.next_button.pack(side="left", padx=5)
-        
-        # Etiqueta para el nombre de la animación
-        self.anim_name_label = Label(self.root, text="", font=('Arial', 12, 'bold'))
-        self.anim_name_label.pack(pady=5)
-        
-        # Contenedor para los frames
+        # Contenedores
         self.frames_container = Frame(self.root)
         self.frames_container.pack(pady=10)
         
-        # Iniciar la primera animación
         self.show_animation()
 
     def load_anim_data(self):
-        """Cargar y parsear el archivo AnimData.xml"""
+        """Cargar animaciones agrupando por nombre base"""
         anim_data_path = os.path.join(self.sprite_folder, "AnimData.xml")
-        print(f"Intentando cargar AnimData.xml desde: {anim_data_path}")  # Debug
-        
         if not os.path.exists(anim_data_path):
-            raise FileNotFoundError(f"No se encontró AnimData.xml en {self.sprite_folder}")
+            raise FileNotFoundError(f"Archivo XML no encontrado en: {self.sprite_folder}")
 
         tree = ET.parse(anim_data_path)
         root = tree.getroot()
+        animaciones = []
 
-        anims = []
         for anim in root.find("Anims"):
-            name = anim.find("Name").text
-            frame_width = int(anim.find("FrameWidth").text) if anim.find("FrameWidth") is not None else None
-            frame_height = int(anim.find("FrameHeight").text) if anim.find("FrameHeight") is not None else None
+            base_name = anim.find("Name").text
+            frame_width = int(anim.find("FrameWidth").text)
+            frame_height = int(anim.find("FrameHeight").text)
+            durations = [int(d.text) for d in anim.findall("Durations/Duration")]
+            
+            image_path = os.path.join(self.sprite_folder, f"{base_name}-Anim.png")
+            if not os.path.exists(image_path):
+                continue
 
-            # Leer las duraciones de los frames
-            durations = []
-            durations_node = anim.find("Durations")
-            if durations_node is not None:
-                for duration in durations_node.findall("Duration"):
-                    durations.append(int(duration.text))
-            print(f"Animación '{name}' cargada con {len(durations)} duraciones.")  # Debug
+            with Image.open(image_path) as img:
+                img_width, img_height = img.size
+                total_groups = img_height // frame_height
+                frames_per_group = img_width // frame_width
 
-            anims.append({
-                "name": name,
-                "frame_width": frame_width,
-                "frame_height": frame_height,
-                "durations": durations,
-                "image_path": os.path.join(self.sprite_folder, f"{name}-Anim.png")
+            grupos = []
+            for group_num in range(total_groups):
+                grupos.append({
+                    "group_num": group_num + 1,
+                    "frame_height": frame_height,
+                    "frame_width": frame_width,
+                    "durations": durations.copy(),
+                    "frames_per_group": frames_per_group,
+                    "image_path": image_path
+                })
+
+            animaciones.append({
+                "base_name": base_name,
+                "grupos": grupos,
+                "total_groups": total_groups
             })
 
-        print(f"Total de animaciones cargadas: {len(anims)}")  # Debug
-        return anims
+        return animaciones
 
-    def clear_frames(self):
-        """Limpiar los frames anteriores"""
-        print("Limpiando frames anteriores...")  # Debug
+    def mostrar_todos_grupos(self):
+        """Mostrar todos los grupos y frames de la animación actual"""
         for widget in self.frames_container.winfo_children():
             widget.destroy()
 
-    def show_animation(self):
-        """Mostrar la animación actual"""
-        print(f"Mostrando animación {self.current_anim_index}...")  # Debug
-        self.clear_frames()
+        anim_actual = self.anim_data[self.current_anim_index]
         
-        if self.current_anim_index >= len(self.anim_data):
-            print("No hay más animaciones para mostrar.")  # Debug
-            return
-
-        # Detener cualquier animación en curso
-        if self.after_id:
-            print("Deteniendo animación en curso...")  # Debug
-            self.root.after_cancel(self.after_id)
-            self.after_id = None
-
-        anim = self.anim_data[self.current_anim_index]
-        print(f"Animación actual: {anim['name']}")  # Debug
-        self.anim_name_label.config(text=f"Animación: {anim['name']}")
-        self.anim_window.title(f"Animación en Tiempo Real - {anim['name']}")
-
-        if not os.path.exists(anim["image_path"]):
-            print(f"Archivo no encontrado: {anim['image_path']}")  # Debug
-            return
-
-        # Cargar y dividir la animación
-        print(f"Cargando imagen de animación: {anim['image_path']}")  # Debug
-        handler = SpriteSheetHandler(anim["image_path"])
-        self.frames = handler.split_animation_frames(anim["frame_width"], anim["frame_height"])
-        print(f"Total de frames: {len(self.frames)}")  # Debug
-
-        # Verificar y ajustar las duraciones
-        if anim["durations"]:
-            self.durations = anim["durations"]
-            print(f"Duración de frames: {self.durations}")  # Debug
-            # Si hay más frames que duraciones, se repite la última duración
-            if len(self.durations) < len(self.frames):
-                last_duration = self.durations[-1]
-                self.durations.extend([last_duration] * (len(self.frames) - len(self.durations)))
-                print(f"Duración ajustada: {self.durations}")  # Debug
-        else:
-            # Si no hay duraciones, se usa 1 frame por defecto
-            self.durations = [1] * len(self.frames)
-            print(f"No se encontraron duraciones. Usando valor predeterminado: {self.durations}")  # Debug
+        main_frame = Frame(self.frames_container)
+        main_frame.pack()
         
-        # Mostrar los frames en una rejilla
-        print("Mostrando frames en la cuadrícula...")  # Debug
-        row = 0
-        col = 0
-        max_cols = 4
-        
-        for idx, frame in enumerate(self.frames):
-            if col >= max_cols:
-                row += 1
-                col = 0
+        Label(main_frame, text=f"Animación: {anim_actual['base_name']}", 
+             font=('Arial', 14, 'bold')).grid(row=0, column=0, columnspan=4, pady=10)
+
+        row_offset = 1
+        for grupo_idx, grupo in enumerate(anim_actual['grupos']):
+            handler = SpriteSheetHandler(grupo["image_path"])
+            all_frames = handler.split_animation_frames(grupo["frame_width"], grupo["frame_height"])
             
-            frame.thumbnail((100, 100))
+            # Calcular el rango de frames para este grupo
+            start = grupo["group_num"] - 1  # Ajustar índice a base 0
+            start *= grupo["frames_per_group"]
+            end = start + grupo["frames_per_group"]
+            
+            # Asegurarse de no exceder el número de frames
+            if end > len(all_frames):
+                end = len(all_frames)
+            
+            frames_grupo = all_frames[start:end]
+            
+            # Ajustar duraciones
+            duraciones = grupo["durations"]
+            if len(duraciones) < len(frames_grupo):
+                duraciones += [duraciones[-1]] * (len(frames_grupo) - len(duraciones))
+
+            # Marco para el grupo
+            group_frame = Frame(main_frame, bd=2, relief="groove")
+            group_frame.grid(row=row_offset + grupo_idx, column=0, columnspan=4, pady=5, sticky="w")
+            
+            Label(group_frame, text=f"Grupo {grupo['group_num']}", 
+                 font=('Arial', 10, 'bold')).pack(anchor="w")
+            
+            # Frames del grupo
+            frame_subframe = Frame(group_frame)
+            frame_subframe.pack()
+            
+            for idx, frame in enumerate(frames_grupo):
+                frame.thumbnail((80, 80))
+                img = ImageTk.PhotoImage(frame)
+                
+                lbl = Label(frame_subframe, image=img)
+                lbl.image = img
+                lbl.grid(row=0, column=idx, padx=2)
+                Label(frame_subframe, text=f"Frame {idx+1}\n({duraciones[idx]} frames)", 
+                     font=('Arial', 7)).grid(row=1, column=idx, padx=2)
+
+    def animar_grupos(self):
+        """Mostrar todas las animaciones de grupos en tiempo real"""
+        for widget in self.anim_container.winfo_children():
+            widget.destroy()
+
+        anim_actual = self.anim_data[self.current_anim_index]
+        
+        for grupo_idx, grupo in enumerate(anim_actual['grupos']):
+            handler = SpriteSheetHandler(grupo["image_path"])
+            all_frames = handler.split_animation_frames(grupo["frame_width"], grupo["frame_height"])
+            
+            # Calcular el rango de frames para este grupo
+            start = grupo["group_num"] - 1  # Ajustar índice a base 0
+            start *= grupo["frames_per_group"]
+            end = start + grupo["frames_per_group"]
+            
+            # Asegurarse de no exceder el número de frames
+            if end > len(all_frames):
+                end = len(all_frames)
+            
+            frames_grupo = all_frames[start:end]
+            
+            # Configurar animación por grupo
+            group_frame = Frame(self.anim_container)
+            group_frame.grid(row=grupo_idx, column=0, pady=5, sticky="w")
+            
+            Label(group_frame, text=f"Grupo {grupo['group_num']}:", 
+                 font=('Arial', 10)).pack(side="left")
+            
+            lbl = Label(group_frame)
+            lbl.pack(side="left")
+            
+            # Iniciar animación
+            self.iniciar_animacion_grupo(lbl, frames_grupo, grupo["durations"])
+
+    def iniciar_animacion_grupo(self, label, frames, durations):
+        """Manejar la animación de un grupo individual"""
+        current_frame = [0]
+        
+        def update():
+            if current_frame[0] >= len(frames):
+                current_frame[0] = 0
+                
+            frame = frames[current_frame[0]]
+            frame.thumbnail((150, 150))
             img = ImageTk.PhotoImage(frame)
-            
-            frame_frame = Frame(self.frames_container, bd=2, relief="groove")
-            frame_frame.grid(row=row, column=col, padx=5, pady=5)
-            
-            label = Label(frame_frame, image=img)
+            label.config(image=img)
             label.image = img
-            label.pack(padx=2, pady=2)
             
-            Label(frame_frame, text=f"Frame {idx + 1}\n({self.durations[idx]} frames)", font=('Arial', 8)).pack()
-            col += 1
-
-        # Iniciar animación en tiempo real
-        print("Iniciando animación en tiempo real...")  # Debug
-        self.current_frame_index = 0
-        self.update_animation()
-
-    def update_animation(self):
-        """Actualizar el frame de la animación en tiempo real"""
-        if self.current_frame_index >= len(self.frames):
-            print("Reiniciando animación...")  # Debug
-            self.current_frame_index = 0
-
-        frame = self.frames[self.current_frame_index]
-        frame.thumbnail((300, 300))  # Tamaño para la ventana de animación
+            delay = int(durations[current_frame[0]] * (1000 / 30))
+            current_frame[0] += 1
+            self.after_ids.append(self.root.after(delay, update))
         
-        img = ImageTk.PhotoImage(frame)
-        self.anim_label.config(image=img)
-        self.anim_label.image = img
-        
-        # Calcular tiempo de espera en ms (30 fps = 33.33 ms por frame)
-        frame_duration = self.durations[self.current_frame_index]
-        delay = int(frame_duration * (1000 / 30))
-        
-        self.current_frame_index += 1
-        self.after_id = self.root.after(delay, self.update_animation)
+        update()
+
+    def show_animation(self):
+        if self.current_anim_index >= len(self.anim_data):
+            return
+
+        # Detener animaciones previas
+        for aid in self.after_ids:
+            self.root.after_cancel(aid)
+        self.after_ids.clear()
+
+        self.mostrar_todos_grupos()
+        self.animar_grupos()
 
     def next_animation(self):
-        """Siguiente animación"""
-        print("Cambiando a la siguiente animación...")  # Debug
         self.current_anim_index = (self.current_anim_index + 1) % len(self.anim_data)
         self.show_animation()
 
     def prev_animation(self):
-        """Animación anterior"""
-        print("Cambiando a la animación anterior...")  # Debug
         self.current_anim_index = (self.current_anim_index - 1) % len(self.anim_data)
         self.show_animation()
 
     def on_close(self):
-        """Manejar el cierre de la ventana"""
-        print("Cerrando ventana...")  # Debug
-        if self.after_id:
-            self.root.after_cancel(self.after_id)
-        self.root.destroy()  # Cerrar la ventana principal
-        self.anim_window.destroy()  # Cerrar la ventana de animación
-        os._exit(0)  # Forzar la terminación del programa
+        for aid in self.after_ids:
+            self.root.after_cancel(aid)
+        self.root.destroy()
+        self.anim_window.destroy()
+        os._exit(0)
 
 def seleccionar_carpeta():
-    """
-    Abre un diálogo para seleccionar una carpeta y procesar el sprite sheet.
-    """
     root = Tk()
     root.withdraw()
+    carpeta = filedialog.askdirectory(title="Selecciona una carpeta")
 
-    # Abrir un diálogo para seleccionar una carpeta
-    carpeta_seleccionada = filedialog.askdirectory(title="Selecciona una carpeta")
-    print(f"Carpeta seleccionada: {carpeta_seleccionada}")  # Debug
+    if carpeta:
+        try:
+            # Buscar todos los archivos PNG en la carpeta seleccionada
+            archivos_png = [archivo for archivo in os.listdir(carpeta) if archivo.lower().endswith('.png')]
 
-    if carpeta_seleccionada:
-        # Buscar todos los archivos PNG en la carpeta seleccionada
-        archivos_png = [archivo for archivo in os.listdir(carpeta_seleccionada) if archivo.lower().endswith('.png')]
-        print(f"Archivos PNG encontrados: {archivos_png}")  # Debug
+            if archivos_png:
+                # Obtener la ruta del primer archivo PNG
+                ruta_imagen = os.path.join(carpeta, archivos_png[0])
 
-        if archivos_png:
-            # Obtener la ruta del primer archivo PNG
-            ruta_imagen = os.path.join(carpeta_seleccionada, archivos_png[0])
-            print(f"Ruta de la imagen seleccionada: {ruta_imagen}")  # Debug
+                # Abrir y mostrar la imagen original
+                imagen_original = Image.open(ruta_imagen)
+                imagen_original.show()  # Mostrar la imagen original
 
-            # Abrir y mostrar la imagen original
-            imagen_original = Image.open(ruta_imagen)
-            imagen_original.show()  # Mostrar la imagen original
-
-            # Preguntar al usuario por el número de sprites horizontal y vertical
-            try:
+                # Preguntar al usuario por el número de sprites horizontal y vertical
                 sprites_ancho = int(input("Introduce el número de sprites de ancho: "))
                 sprites_alto = int(input("Introduce el número de sprites de alto: "))
-                print(f"Sprites de ancho: {sprites_ancho}, Sprites de alto: {sprites_alto}")  # Debug
 
                 # Inicializar el SpriteSheetHandler con la ruta de la imagen y remove_first_row_and_col=True
                 sprite_handler = SpriteSheetHandler(ruta_imagen, remove_first_row_and_col=True)
 
                 # Dividir el sprite sheet en sprites individuales
                 sprites, ancho_sprite, alto_sprite = sprite_handler.split_sprites(sprites_ancho, sprites_alto)
-                print(f"Sprites divididos: {len(sprites)}")  # Debug
 
                 # Crear una nueva carpeta para guardar los sprites
-                nombre_carpeta_original = os.path.basename(carpeta_seleccionada)
-                carpeta_edited = os.path.join(carpeta_seleccionada, nombre_carpeta_original + "Edited")
+                nombre_carpeta_original = os.path.basename(carpeta)
+                carpeta_edited = os.path.join(carpeta, nombre_carpeta_original + "Edited")
                 os.makedirs(carpeta_edited, exist_ok=True)
-                print(f"Carpeta de salida creada: {carpeta_edited}")  # Debug
 
                 # Guardar los sprites en la carpeta de salida
                 sprite_handler.save_sprites(sprites, carpeta_edited, nombre_carpeta_original)
-                print("Sprites guardados correctamente.")  # Debug
 
                 # Mostrar los sprites en una cuadrícula
                 sprite_handler.display_sprites(sprites, sprites_ancho, sprites_alto, ancho_sprite, alto_sprite)
 
                 # Abrir el archivo AnimData.xml y mostrar las animaciones
                 anim_viewer_root = Toplevel()
-                anim_viewer = AnimationViewer(anim_viewer_root, carpeta_seleccionada)
+                anim_viewer = AnimationViewer(anim_viewer_root, carpeta)
                 anim_viewer_root.mainloop()
 
-            except ValueError:
-                print("Error: Debes introducir números enteros para los sprites de ancho y alto.")
-            except FileNotFoundError as e:
-                print(e)
-            except Exception as e:
-                print(f"Error inesperado: {e}")
-        else:
-            print(f"No se encontraron archivos PNG en la carpeta seleccionada.")
+        except ValueError:
+            print("Error: Debes introducir números enteros para los sprites de ancho y alto.")
+        except FileNotFoundError as e:
+            print(e)
+        except Exception as e:
+            print(f"Error inesperado: {e}")
     else:
         print("No se seleccionó ninguna carpeta.")
 
