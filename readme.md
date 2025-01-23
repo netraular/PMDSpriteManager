@@ -1,6 +1,3 @@
-Here's the updated `README.md` reflecting the current functionalities and workflow:
-
-```markdown
 # PMD Sprite Tool
 
 ## Overview
