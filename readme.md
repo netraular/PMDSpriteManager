@@ -1,103 +1,123 @@
-# Sprite Sheet Handler
+Here's the updated `README.md` reflecting the current functionalities and workflow:
+
+```markdown
+# PMD Sprite Tool
 
 ## Overview
 
-This project is designed to simplify the handling of sprite sheets downloaded from [https://sprites.pmdcollab.org/](https://sprites.pmdcollab.org/). The website allows users to download a sprite sheet (a single image containing multiple sprites) and a `.zip` file containing metadata about the positions of sprites for animations. This tool aims to:
+This tool is designed to simplify working with Pokémon Mystery Dungeon (PMD) sprites from [PMD Collab](https://sprites.pmdcollab.org/). It provides two main functionalities:
+1. **Sprite Sheet Splitting**: Divide a sprite sheet into individual sprites
+2. **Animation Viewer**: Visualize animations with frame timing and groupings
 
-1. **Separate sprites from the sprite sheet**: Automatically split the sprite sheet into individual sprites.
-2. **Generate an animation document**: Create a text-based document that describes how to animate the sprites, eliminating the need to manually inspect the `.zip` files provided by the website.
+The tool automatically processes sprite sheets and animation data from PMD Collab, eliminating manual inspection of XML files while preserving transparency and animation timing information.
 
-The goal is to make it easier to work with sprite sheets and animations by providing a streamlined workflow.
+## Features
 
----
+- 🖼️ **Sprite Sheet Division**:
+  - Split sprite sheets into individual sprites with transparency
+  - Custom grid division (specify columns/rows)
+  - Preview sprites with light gray background
+  - Save sprites to organized folder structure
 
-## Current Script: Visualize and Separate Sprites
+- 🎬 **Animation Viewer**:
+  - Load animations from PMD Collab's `AnimData.xml`
+  - Real-time animation preview with accurate frame timing
+  - Display frame groupings and durations
+  - Navigate between different animations
 
-The current script (`sprite_sheet_handler.py`) is a Python tool that allows users to:
+## Getting Started
 
-1. **Select a folder**: The user selects a folder containing the sprite sheet (a `.png` file).
-2. **Visualize the sprite sheet**: The script displays the sprite sheet for reference.
-3. **Specify sprite dimensions**: The user inputs the number of sprites horizontally (`sprites_ancho`) and vertically (`sprites_alto`) in the sprite sheet.
-4. **Separate sprites**: The script automatically crops and saves each individual sprite into a new folder named `[OriginalFolderName]Edited`.
-5. **Preview sprites**: The script displays the separated sprites in a grid with a light gray background, ensuring transparency is preserved.
+### 1. Obtain Required Files
+1. Visit [PMD Collab](https://sprites.pmdcollab.org/)
+2. Select a Pokémon and download:
+   - **"Recolor sprites"** (sprite sheet PNG)
+   - **"all sprites"** (ZIP file with animation data)
 
-### How It Works
-- The script uses `PIL` (Pillow) to handle image processing.
-- It uses `matplotlib` to display the sprite sheet and separated sprites.
-- The user is prompted to input the number of sprites in the sheet, and the script calculates the dimensions of each sprite.
-- Each sprite is saved as a separate `.png` file in the output folder.
-
----
-
-## Future Features
-1. **Animation Document Generation**: The next version of the tool will generate a text-based document that describes how to animate the sprites using the separated sprite files. This will eliminate the need to manually inspect the `.zip` files provided by [https://sprites.pmdcollab.org/](https://sprites.pmdcollab.org/).
-2. **Improved User Interface**: A graphical user interface (GUI) will be added to make the tool more user-friendly.
-3. **Batch Processing**: Support for processing multiple sprite sheets at once.
-
----
-
-## Requirements
-To run the script, you need the following Python libraries:
-- `Pillow` (for image processing)
-- `matplotlib` (for visualization)
-- `tkinter` (for file dialog)
-
-You can install the required libraries using `pip`:
+### 2. Create Folder Structure
 ```bash
-pip install pillow matplotlib
+YourFolder/
+├── RecolorSprites.png    # Renamed "Recolor sprites" file
+└── sprite/
+    ├── AnimData.xml      # From unzipped "all sprites"
+    ├── [AnimationName]-Anim.png
+    └── ...               # Other files from the ZIP
 ```
 
----
+### Example Structure
+```bash
+PMD_Sprites/
+├── RecolorSprites.png
+└── sprite/
+    ├── AnimData.xml
+    ├── Walk-Anim.png
+    ├── Idle-Anim.png
+    └── Attack-Anim.png
+```
 
 ## Usage
-1. Download a sprite sheet and its corresponding `.zip` file from [https://sprites.pmdcollab.org/](https://sprites.pmdcollab.org/).
-2. Place the sprite sheet (`.png` file) in a folder.
-3. Run the script:
+
+1. **Run the Program**:
    ```bash
-   python sprite_sheet_handler.py
+   python main.py
    ```
-4. Select the folder containing the sprite sheet.
-5. Input the number of sprites horizontally and vertically when prompted.
-6. The script will:
-   - Display the sprite sheet.
-   - Separate the sprites and save them in a new folder.
-   - Display the separated sprites in a grid for preview.
 
----
+2. **Select Your Folder**:
+   - Choose the folder containing your `RecolorSprites.png` and `sprite` subfolder
 
-## Example
-### Input
-- A sprite sheet (`spritesheet.png`) with 4 sprites horizontally and 2 sprites vertically.
-- Folder structure:
-  ```
-  /sprites
-    spritesheet.png
-  ```
+3. **Main Menu Options**:
+   - **Split Sprite Sheet**:
+     1. Enter number of horizontal and vertical sprites
+     2. Preview divided sprites
+     3. Save to automatically created `[FolderName]Edited` subfolder
+     4. Use "Repeat" to try different grid sizes
 
-### Output
-- A new folder (`spritesEdited`) containing:
-  ```
-  /spritesEdited
-    sprite1.png
-    sprite2.png
-    sprite3.png
-    ...
-    sprite8.png
-  ```
-- A preview of the separated sprites displayed in a grid.
+   - **View Animations**:
+     1. Browse animations using Previous/Next buttons
+     2. View real-time animation previews
+     3. See frame durations and groupings
+     4. Scroll through all animation frames
 
----
+## How It Works
+
+- **Sprite Processing**:
+  - Uses Pillow (PIL) for image manipulation
+  - Handles transparency through alpha channels
+  - Automatic background addition for previews
+
+- **Animation System**:
+  - Parses PMD Collab's XML animation data
+  - Calculates frame timing from game ticks (30 ticks/second)
+  - Dynamically loads animation strips
+  - Uses Tkinter for real-time animation rendering
+
+## Requirements
+
+- Python 3.7+
+- Libraries:
+  ```bash
+  pip install pillow
+  ```
+- Included in Python Standard Library:
+  - `tkinter` (for GUI)
+  - `xml.etree.ElementTree` (for parsing animation data)
 
 ## Contributing
-Contributions are welcome! If you'd like to improve the tool or add new features, feel free to open an issue or submit a pull request.
 
----
+Contributions are welcome! Please open an issue for:
+- Bug reports
+- Feature requests
+- Compatibility issues with new PMD Collab formats
 
 ## License
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+MIT License. See [LICENSE](LICENSE) for details.
+
+## Acknowledgments
+
+- Sprites and animation data provided by [PMD Collab](https://sprites.pmdcollab.org/)
+- Pokémon Mystery Dungeon © Nintendo/Creatures Inc./GAME FREAK inc.
+- Developed for fans by PMD enthusiasts
 
 ---
 
-## Acknowledgments
-- Thanks to [PMD Collab](https://sprites.pmdcollab.org/) for providing the sprite sheets and metadata.
-- Built with Python and love for pixel art! 🎨
+**Happy spriting!** 🐾⚡️
