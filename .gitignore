@@ -3,3 +3,4 @@ sprites
 build
 main.spec
 dist
+__pycache__
