@@ -1,2 +1,5 @@
 # Ignore all files and subdirectories inside GetSpriteAnimation/sprites
 sprites
+build
+main.spec
+dist
