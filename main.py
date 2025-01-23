@@ -68,7 +68,6 @@ class MainApplication:
             command=lambda: self.animation_viewer.next_animation()).pack(side='left', padx=5)
         Button(control_frame, text="Generate JSON", 
             command=lambda: self.animation_viewer.generate_json()).pack(side='left', padx=5)
-        # Añadir nuevo botón
         Button(control_frame, text="View Sprites", 
             command=lambda: self.animation_viewer.view_sprites()).pack(side='left', padx=5)
 
