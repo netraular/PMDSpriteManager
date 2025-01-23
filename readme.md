@@ -1,12 +1,12 @@
-# PMD Sprite Tool
+# PMD Sprite Manager
 
 ## Overview
 
-This tool is designed to simplify working with Pokémon Mystery Dungeon (PMD) sprites from [PMD Collab](https://sprites.pmdcollab.org/). It provides two main functionalities:
+This manager is designed to simplify working with Pokémon Mystery Dungeon (PMD) sprites from [PMD Collab](https://sprites.pmdcollab.org/). It provides two main functionalities:
 1. **Sprite Sheet Splitting**: Divide a sprite sheet into individual sprites
 2. **Animation Viewer**: Visualize animations with frame timing and groupings
 
-The tool automatically processes sprite sheets and animation data from PMD Collab, eliminating manual inspection of XML files while preserving transparency and animation timing information.
+The manager automatically processes sprite sheets and animation data from PMD Collab, eliminating manual inspection of XML files while preserving transparency and animation timing information.
 
 ---
 
@@ -89,7 +89,7 @@ If you're on Windows, you can use the pre-built executable available in the [Rel
 ## User Interface Walkthrough
 
 ### 1. Folder Selection Screen
-The tool starts by prompting the user to select a folder containing the sprite sheet and animation data. This is the initial screen where users begin their workflow.
+The manager starts by prompting the user to select a folder containing the sprite sheet and animation data. This is the initial screen where users begin their workflow.
 
 ![Folder Selection Screen](readme/images/folder_select.png)  
 *Caption: The initial screen where users select the folder containing the sprite sheet and animation data.*
@@ -105,7 +105,7 @@ After selecting the folder, the main menu is displayed. From here, users can cho
 ---
 
 ### 3. Sprite Sheet Splitting
-In the sprite sheet splitting mode, users can input the number of sprites horizontally and vertically. The tool then processes the sprite sheet and displays the individual sprites in a grid.
+In the sprite sheet splitting mode, users can input the number of sprites horizontally and vertically. The manager then processes the sprite sheet and displays the individual sprites in a grid.
 
 #### Example of a Divided Sprite Sheet
 ![Divided Sprite Sheet](readme/images/divide_screen.png)  
