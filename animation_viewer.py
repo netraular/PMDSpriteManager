@@ -64,6 +64,7 @@ class AnimationViewer:
         return animations
 
 
+
     def show_animation(self):
         self.clear_animations()
         self.current_sprites_entries = []  # Resetear inputs
@@ -113,9 +114,9 @@ class AnimationViewer:
             self.group_names.append(group_name_entry)  # Guardar referencia
             
             # Botón para identificar sprites automáticamente
-            Button(header_frame, text="AI Identify Sprites", 
-                 command=lambda idx=group_idx: self.identify_group_sprites(idx)
-              ).pack(side='left', padx=10)
+            ai_button = Button(header_frame, text="AI Identify Sprites", 
+                             command=lambda idx=group_idx: self.identify_group_sprites(idx))
+            ai_button.pack(side='left', padx=10)
             
             # Frame para controles de "mirror & copy"
             control_frame = Frame(group_frame)
@@ -144,18 +145,32 @@ class AnimationViewer:
                     "mirror_var": mirror_var,
                     "dropdown": dropdown,
                     "dropdown_var": dropdown_var,
+                    "ai_button": ai_button,  # Guardar referencia al botón
                     "entries": [],
                     "frame": None
                 }
                 
                 # Añadir seguimiento a cambios en el dropdown
                 dropdown_var.trace_add("write", lambda *args, idx=group_idx: self.update_linked_group(idx))
+                
+                # Si hay datos del JSON, configurar el checkbox y el desplegable
+                if json_data:
+                    group_id = str(group_idx + 1)
+                    if group_id in json_data["sprites"]:
+                        group_info = json_data["sprites"][group_id]
+                        if group_info.get("mirrored", False) and "copy" in group_info:
+                            # Marcar el checkbox y seleccionar el grupo en el desplegable
+                            mirror_var.set(True)
+                            dropdown_var.set(f"Group {group_info['copy']}")
+                            dropdown.pack()
+                            self.update_linked_group(group_idx)
             else:
                 # Si solo hay 1 grupo, no mostrar controles de "mirror & copy"
                 self.group_widgets[group_idx] = {
                     "mirror_var": None,
                     "dropdown": None,
                     "dropdown_var": None,
+                    "ai_button": ai_button,  # Guardar referencia al botón
                     "entries": [],
                     "frame": None
                 }
@@ -210,9 +225,9 @@ class AnimationViewer:
             self.current_sprites_entries.extend(group_entries)
             self.group_widgets[group_idx]["entries"] = group_entries
 
-    
+
     def identify_group_sprites(self, group_idx):
-        """Identificar sprites automáticamente para un grupo"""
+        """Identificar sprites automáticamente para un grupo y actualizar los inputs."""
         try:
             anim = self.anim_data[self.current_anim_index]
             frames_per_group = anim["frames_per_group"]
@@ -232,12 +247,22 @@ class AnimationViewer:
             matcher = SpriteMatcher(edited_folder)
             matches = matcher.match_group(group_frames)
             
-            # Formatear resultado
-            formatted_matches = [os.path.basename(m) for m in matches]
-            print(f"Grupo {group_idx + 1}: Sprites {formatted_matches}")
-            
+            # Obtener los números de los sprites y actualizar los inputs
+            for idx, match in enumerate(matches):
+                if match:  # Si se encontró una coincidencia
+                    # Extraer el número del nombre del sprite (sprite_1.png -> 1)
+                    sprite_number = int(match.split('_')[-1].split('.')[0])
+                    
+                    # Obtener el campo de entrada correspondiente
+                    entry = self.group_widgets[group_idx]["entries"][idx]
+                    
+                    # Limpiar el campo y insertar el número del sprite
+                    entry.delete(0, "end")
+                    entry.insert(0, str(sprite_number))
+                    
         except Exception as e:
             messagebox.showerror("Error", f"Error en identificación: {str(e)}")
+
 
     def update_linked_group(self, group_idx):
         """Actualiza el grupo vinculado cuando cambia la selección del dropdown."""
@@ -249,18 +274,20 @@ class AnimationViewer:
     def toggle_mirror_copy(self, group_idx):
         widgets = self.group_widgets[group_idx]
         if widgets["mirror_var"].get():
-            # Mostrar dropdown y ocultar inputs
+            # Mostrar dropdown y ocultar inputs y el botón "AI Identify Sprites"
             widgets["dropdown"].pack()
             for entry in widgets["entries"]:
                 entry.grid_remove()
+            widgets["ai_button"].pack_forget()  # Ocultar el botón
             
             # Actualizar grupo vinculado con la selección actual
             self.update_linked_group(group_idx)
         else:
-            # Ocultar dropdown y mostrar inputs
+            # Ocultar dropdown y mostrar inputs y el botón "AI Identify Sprites"
             widgets["dropdown"].pack_forget()
             for entry in widgets["entries"]:
                 entry.grid()
+            widgets["ai_button"].pack(side='left', padx=10)  # Mostrar el botón
             self.linked_groups.pop(group_idx, None)
 
     def clear_animations(self):
@@ -294,77 +321,6 @@ class AnimationViewer:
     def next_animation(self):
         self.current_anim_index = (self.current_anim_index + 1) % len(self.anim_data)
         self.show_animation()
-
-    def generate_json(self):
-        try:
-            group_names = [entry.get().strip() for entry in self.group_names]
-            
-            if len(group_names) != len(set(group_names)):
-                messagebox.showerror("Error", "Nombres de grupo duplicados.")
-                return
-            
-            # Obtener valores actuales de TODOS los sprites (incluyendo grupos vinculados)
-            sprites = []
-            for entry in self.current_sprites_entries:
-                sprites.append(int(entry.get()))
-            
-            anim = self.anim_data[self.current_anim_index]
-            frames_per_group = anim["frames_per_group"]
-            
-            # Aplicar relaciones de grupos vinculados
-            for target_group, source_group in self.linked_groups.items():
-                start_source = source_group * frames_per_group
-                end_source = start_source + frames_per_group
-                source_values = sprites[start_source:end_source]
-                
-                start_target = target_group * frames_per_group
-                end_target = start_target + frames_per_group
-                sprites[start_target:end_target] = source_values  # Sobrescribir con valores del grupo fuente
-            
-            # Crear la estructura de sprites con el nuevo formato
-            grouped_sprites = []
-            for group_idx, group_name in enumerate(group_names):
-                start = group_idx * frames_per_group
-                end = start + frames_per_group
-                group_values = sprites[start:end]
-                
-                # Determinar si el grupo está "mirrored"
-                mirrored = group_idx in self.linked_groups
-                
-                # Añadir el grupo al array de sprites
-                grouped_sprites.append({
-                    "name": group_name,
-                    "mirrored": mirrored,
-                    "values": group_values
-                })
-            
-            # Crear estructura JSON
-            json_data = {
-                "index": self.current_anim_index,
-                "name": anim["name"],
-                "framewidth": anim["frame_width"],
-                "frameheight": anim["frame_height"],
-                "sprites": grouped_sprites,  # Nuevo formato de sprites
-                "durations": anim["durations"]
-            }
-            
-            # Guardar archivo
-            folder_name = os.path.basename(self.anim_folder) + "AnimationData"
-            output_folder = os.path.join(self.anim_folder, folder_name)
-            os.makedirs(output_folder, exist_ok=True)
-            
-            filename = f"{anim['name']}-AnimData.json"
-            output_path = os.path.join(output_folder, filename)
-            
-            with open(output_path, 'w') as f:
-                json.dump(json_data, f, indent=4)
-            
-            messagebox.showinfo("Éxito", f"JSON guardado en:\n{output_path}")
-        
-        except ValueError as e:
-            messagebox.showerror("Error", f"Valores inválidos: {str(e)}")
-        except Exception as e:
-            messagebox.showerror("Error", f"Error al guardar: {str(e)}")
 
     def view_sprites(self):
         """Abrir ventana con sprites editados"""
@@ -436,6 +392,79 @@ class AnimationViewer:
             except Exception as e:
                 print(f"Error loading {file}: {str(e)}")
 
+
+    def generate_json(self):
+        try:
+            group_names = [entry.get().strip() for entry in self.group_names]
+            
+            if len(group_names) != len(set(group_names)):
+                messagebox.showerror("Error", "Nombres de grupo duplicados.")
+                return
+            
+            # Obtener valores actuales de TODOS los sprites (incluyendo grupos vinculados)
+            sprites = []
+            for entry in self.current_sprites_entries:
+                sprites.append(int(entry.get()))
+            
+            anim = self.anim_data[self.current_anim_index]
+            frames_per_group = anim["frames_per_group"]
+            
+            # Crear la estructura de sprites con el nuevo formato
+            grouped_sprites = {}
+            for group_idx, group_name in enumerate(group_names):
+                start = group_idx * frames_per_group
+                end = start + frames_per_group
+                group_values = sprites[start:end]
+                
+                # Determinar si el grupo está "mirrored"
+                mirrored = group_idx in self.linked_groups
+                
+                # Crear la entrada del grupo
+                group_entry = {
+                    "name": group_name,
+                    "mirrored": mirrored
+                }
+                
+                if mirrored:
+                    # Si el grupo está "mirrored", guardar el ID del grupo que está copiando
+                    source_group = self.linked_groups[group_idx]
+                    group_entry["copy"] = str(source_group + 1)  # +1 porque los IDs empiezan en 1
+                else:
+                    # Si no está "mirrored", guardar los valores de los sprites
+                    group_entry["values"] = group_values
+                
+                # Añadir el grupo al diccionario de sprites
+                grouped_sprites[str(group_idx + 1)] = group_entry  # Usar el índice + 1 como ID
+            
+            # Crear estructura JSON
+            json_data = {
+                "index": self.current_anim_index,
+                "name": anim["name"],
+                "framewidth": anim["frame_width"],
+                "frameheight": anim["frame_height"],
+                "sprites": grouped_sprites,  # Nuevo formato de sprites
+                "durations": anim["durations"]
+            }
+            
+            # Guardar archivo
+            folder_name = os.path.basename(self.anim_folder) + "AnimationData"
+            output_folder = os.path.join(self.anim_folder, folder_name)
+            os.makedirs(output_folder, exist_ok=True)
+            
+            filename = f"{anim['name']}-AnimData.json"
+            output_path = os.path.join(output_folder, filename)
+            
+            with open(output_path, 'w') as f:
+                json.dump(json_data, f, indent=4)
+            
+            messagebox.showinfo("Éxito", f"JSON guardado en:\n{output_path}")
+        
+        except ValueError as e:
+            messagebox.showerror("Error", f"Valores inválidos: {str(e)}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al guardar: {str(e)}")
+
+
     def load_json_data(self, anim_name):
         """Cargar datos del archivo JSON si existe."""
         folder_name = os.path.basename(self.anim_folder) + "AnimationData"
@@ -449,12 +478,20 @@ class AnimationViewer:
                 json_data = json.load(f)
             
             # Verificar si el JSON tiene el nuevo formato
-            if "sprites" in json_data and isinstance(json_data["sprites"], list):
+            if "sprites" in json_data and isinstance(json_data["sprites"], dict):
                 # Crear una estructura compatible con el código existente
                 group_data = []
-                for group in json_data["sprites"]:
-                    group_name = group.get("name", f"grupo{len(group_data) + 1}")
-                    sprite_values = group.get("values", [])
+                for group_id, group_info in json_data["sprites"].items():
+                    group_name = group_info.get("name", f"grupo{group_id}")
+                    if "copy" in group_info:
+                        # Si el grupo está copiando de otro, usar los valores del grupo copiado
+                        source_group_id = group_info["copy"]
+                        source_group_info = json_data["sprites"][source_group_id]
+                        sprite_values = source_group_info.get("values", [])
+                    else:
+                        # Si no está copiando, usar los valores propios
+                        sprite_values = group_info.get("values", [])
+                    
                     group_data.append({group_name: sprite_values})
                 
                 # Devolver los datos en el formato esperado
@@ -469,3 +506,4 @@ class AnimationViewer:
         except Exception as e:
             print(f"Error loading JSON: {str(e)}")
             return None
+
