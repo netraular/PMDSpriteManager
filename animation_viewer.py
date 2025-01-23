@@ -319,6 +319,76 @@ class AnimationViewer:
         except Exception as e:
             messagebox.showerror("Error", f"Error al guardar: {str(e)}")
 
+    def view_sprites(self):
+        """Abrir ventana con sprites editados"""
+        edited_folder = os.path.join(self.anim_folder, os.path.basename(self.anim_folder) + "Edited")
+        
+        if not os.path.exists(edited_folder):
+            messagebox.showwarning("Warning", "No edited sprites folder found")
+            return
+        
+        # Obtener lista de archivos de sprites
+        sprite_files = sorted(
+            [f for f in os.listdir(edited_folder) if f.lower().endswith('.png')],
+            key=lambda x: int(x.split('_')[-1].split('.')[0])  # Ordenar por número en el nombre
+        )
+        
+        if not sprite_files:
+            messagebox.showwarning("Warning", "No sprites found in edited folder")
+            return
+        
+        # Calcular tamaño de la cuadrícula
+        num_sprites = len(sprite_files)
+        grid_size = math.ceil(math.sqrt(num_sprites))  # Raíz cuadrada redondeada hacia arriba
+        
+        # Crear ventana emergente
+        sprite_window = Toplevel(self.parent_frame)
+        sprite_window.title(f"Sprites Gallery ({num_sprites} sprites)")
+        sprite_window.geometry(f"{100 * grid_size + 50}x{100 * grid_size + 50}")
+        
+        # Canvas con scroll (por si la cuadrícula es muy grande)
+        canvas = Canvas(sprite_window)
+        scrollbar = Scrollbar(sprite_window, orient="vertical", command=canvas.yview)
+        scroll_frame = Frame(canvas)
+        
+        scroll_frame.bind("<Configure>", lambda e: canvas.configure(
+            scrollregion=canvas.bbox("all")
+        ))
+        
+        canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Mostrar sprites en cuadrícula
+        for idx, file in enumerate(sprite_files):
+            try:
+                # Obtener número del sprite
+                sprite_number = int(file.split('_')[-1].split('.')[0])
+                
+                # Calcular posición en la cuadrícula
+                row = (sprite_number - 1) // grid_size
+                col = (sprite_number - 1) % grid_size
+                
+                # Cargar y mostrar la imagen
+                img_path = os.path.join(edited_folder, file)
+                img = Image.open(img_path)
+                img.thumbnail((100, 100))
+                
+                photo = ImageTk.PhotoImage(img)
+                frame = Frame(scroll_frame)
+                frame.grid(row=row, column=col, padx=5, pady=5)
+                
+                Label(frame, image=photo).pack()
+                Label(frame, text=file, font=('Arial', 8)).pack()
+                
+                # Guardar referencia a la imagen para evitar garbage collection
+                frame.photo = photo
+                
+            except Exception as e:
+                print(f"Error loading {file}: {str(e)}")
+
     def load_json_data(self, anim_name):
         """Cargar datos del archivo JSON si existe."""
         folder_name = os.path.basename(self.anim_folder) + "AnimationData"
