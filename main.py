@@ -18,14 +18,12 @@ class MainApplication:
         self.show_folder_selection()
 
     def clear_frame(self):
-        """Clear the current frame"""
         if self.current_frame:
             self.current_frame.destroy()
         self.current_frame = Frame(self.root)
         self.current_frame.pack(fill='both', expand=True)
 
     def show_folder_selection(self):
-        """Show the folder selection screen"""
         self.clear_frame()
         Label(self.current_frame, 
              text="Select the folder with the spritesheet image\n and the subfolder with the animations",
@@ -34,14 +32,12 @@ class MainApplication:
               command=self.select_folder, font=('Arial', 12)).pack()
 
     def select_folder(self):
-        """Allow the user to select a folder"""
         folder = filedialog.askdirectory(title="Select a folder")
         if folder:
             self.folder = folder
             self.show_main_menu()
 
     def show_main_menu(self):
-        """Show the main menu"""
         self.clear_frame()
         Label(self.current_frame, text=f"Selected folder:\n{self.folder}", 
              font=('Arial', 12)).pack(pady=20)
@@ -52,7 +48,6 @@ class MainApplication:
               command=self.show_animation_viewer, width=20).pack(pady=10)
 
     def show_sprite_splitter(self):
-        """Show the sprite splitter view"""
         self.clear_frame()
         self.spritesheet_viewer = SpritesheetViewer(
             self.current_frame, 
@@ -61,18 +56,21 @@ class MainApplication:
         )
 
     def show_animation_viewer(self):
-        """Show the animation viewer"""
         self.clear_frame()
         
-        # Top buttons
         control_frame = Frame(self.current_frame)
         control_frame.pack(fill='x', padx=10, pady=5)
         Button(control_frame, text="Main Menu", 
-              command=self.show_main_menu).pack(side='left')
+            command=self.show_main_menu).pack(side='left')
         Button(control_frame, text="Previous", 
-              command=lambda: self.animation_viewer.prev_animation()).pack(side='left', padx=5)
+            command=lambda: self.animation_viewer.prev_animation()).pack(side='left', padx=5)
         Button(control_frame, text="Next", 
-              command=lambda: self.animation_viewer.next_animation()).pack(side='left', padx=5)
+            command=lambda: self.animation_viewer.next_animation()).pack(side='left', padx=5)
+        Button(control_frame, text="Generate JSON", 
+            command=lambda: self.animation_viewer.generate_json()).pack(side='left', padx=5)
+        # Añadir nuevo botón
+        Button(control_frame, text="View Sprites", 
+            command=lambda: self.animation_viewer.view_sprites()).pack(side='left', padx=5)
 
         try:
             self.animation_viewer = AnimationViewer(self.current_frame, self.folder)

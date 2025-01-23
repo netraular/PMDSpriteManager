@@ -1,8 +1,10 @@
 import os
-from tkinter import Frame, Label, Canvas, Scrollbar
+import json
+from tkinter import Frame, Label, Canvas, Scrollbar, Entry, messagebox, Toplevel
 from PIL import Image, ImageTk
 import xml.etree.ElementTree as ET
 from sprite_sheet_handler import SpriteSheetHandler
+import math
 
 class AnimationViewer:
     def __init__(self, parent_frame, anim_folder):
@@ -12,12 +14,12 @@ class AnimationViewer:
         self.anim_data = self.load_anim_data()
         self.current_anim_index = 0
         self.after_ids = []
+        self.current_sprites_entries = []  # Almacenar inputs de sprites
         
         self.setup_interface()
         self.show_animation()
 
     def setup_interface(self):
-        # Main container with scroll
         self.main_canvas = Canvas(self.parent_frame)
         self.scrollbar = Scrollbar(self.parent_frame, orient="vertical", command=self.main_canvas.yview)
         self.scroll_frame = Frame(self.main_canvas)
@@ -59,10 +61,10 @@ class AnimationViewer:
         return animations
 
     def show_animation(self):
-        # Clear previous callbacks
         self.clear_animations()
+        self.current_sprites_entries = []  # Resetear inputs
+        self.group_names = []  # Almacenar nombres de los grupos
         
-        # Clear previous frame
         for widget in self.scroll_frame.winfo_children():
             widget.destroy()
         
@@ -70,65 +72,76 @@ class AnimationViewer:
         handler = SpriteSheetHandler(anim["image_path"])
         all_frames = handler.split_animation_frames(anim["frame_width"], anim["frame_height"])
         
-        # Create a group for each row of frames
         total_groups = anim["total_groups"]
         frames_per_group = anim["frames_per_group"]
         
         main_title = Label(self.scroll_frame, 
-                          text=f"Animation: {anim['name']}",
-                          font=('Arial', 14, 'bold'))
+                        text=f"Animation: {anim['name']}",
+                        font=('Arial', 14, 'bold'))
         main_title.pack(pady=10)
         
         for group_idx in range(total_groups):
             group_frame = Frame(self.scroll_frame, bd=2, relief="groove")
             group_frame.pack(fill="x", padx=5, pady=5)
             
-            # Group header
-            Label(group_frame, 
-                 text=f"Group {group_idx + 1}", 
-                 font=('Arial', 12, 'bold')).pack(anchor="w")
+            # Grupo header con campo de entrada para el nombre
+            header_frame = Frame(group_frame)
+            header_frame.pack(fill="x", pady=5)
             
-            # Animation and frames container
+            Label(header_frame, 
+                text=f"Group {group_idx + 1}", 
+                font=('Arial', 12, 'bold')).pack(side='left')
+            
+            # Campo de entrada para el nombre del grupo
+            group_name_entry = Entry(header_frame, width=20)
+            group_name_entry.insert(0, f"grupo{group_idx + 1}")  # Nombre por defecto
+            group_name_entry.pack(side='left', padx=10)
+            self.group_names.append(group_name_entry)  # Guardar referencia
+            
             content_frame = Frame(group_frame)
             content_frame.pack(fill="x")
             
-            # Animation panel
             anim_panel = Frame(content_frame)
             anim_panel.pack(side="left", padx=10)
             
-            # Frames panel
             frames_panel = Frame(content_frame)
             frames_panel.pack(side="right", fill="x", expand=True)
             
-            # Get frames for the current group
             start = group_idx * frames_per_group
             end = start + frames_per_group
             group_frames = all_frames[start:end]
             
-            # Adjust durations
             durations = anim["durations"]
             if len(durations) < len(group_frames):
                 durations = durations * (len(group_frames) // len(durations) + 1)
             durations = durations[:len(group_frames)]
             
-            # Show animation
             anim_label = Label(anim_panel)
             anim_label.pack()
             self.start_group_animation(anim_label, group_frames, durations)
             
-            # Show frames
+            group_entries = []
             for idx, frame in enumerate(group_frames):
                 frame.thumbnail((80, 80))
                 img = ImageTk.PhotoImage(frame)
                 lbl = Label(frames_panel, image=img)
                 lbl.image = img
                 lbl.grid(row=0, column=idx, padx=2)
+                
+                # Campo de entrada para el valor del sprite
+                entry = Entry(frames_panel, width=5)
+                entry.insert(0, "0")  # Valor por defecto
+                entry.grid(row=1, column=idx, padx=2)
+                group_entries.append(entry)
+                
+                # Mostrar duración del XML
                 Label(frames_panel, 
-                     text=f"Frame {idx+1}\n({durations[idx]} frames)", 
-                     font=('Arial', 7)).grid(row=1, column=idx)
+                    text=f"Dur: {durations[idx]}",
+                    font=('Arial', 7)).grid(row=2, column=idx)
+            
+            self.current_sprites_entries.extend(group_entries)
 
     def clear_animations(self):
-        """Cancel all pending animations"""
         for aid in self.after_ids:
             self.parent_frame.after_cancel(aid)
         self.after_ids.clear()
@@ -146,7 +159,7 @@ class AnimationViewer:
             label.config(image=img)
             label.image = img
             
-            delay = durations[current_frame[0]] * 33  # 33ms per frame (≈30fps)
+            delay = durations[current_frame[0]] * 33
             current_frame[0] += 1
             self.after_ids.append(self.parent_frame.after(delay, update))
         
@@ -159,3 +172,134 @@ class AnimationViewer:
     def next_animation(self):
         self.current_anim_index = (self.current_anim_index + 1) % len(self.anim_data)
         self.show_animation()
+
+    def generate_json(self):
+        try:
+            # Obtener los nombres de los grupos
+            group_names = [entry.get().strip() for entry in self.group_names]
+            
+            # Validar que no haya nombres duplicados
+            if len(group_names) != len(set(group_names)):
+                messagebox.showerror("Error", "Hay grupos con nombres duplicados. Por favor, corrige los nombres.")
+                return
+            
+            # Obtener los valores de los inputs de sprites
+            sprites = []
+            for entry in self.current_sprites_entries:
+                value = entry.get()
+                if not value.strip():
+                    raise ValueError("Empty value found")
+                sprites.append(int(value))
+            
+            # Obtener la animación actual
+            anim = self.anim_data[self.current_anim_index]
+            
+            # Calcular el número de frames por grupo
+            frames_per_group = anim["frames_per_group"]
+            
+            # Agrupar los valores de sprites según el grupo y asignar nombres
+            grouped_sprites = []
+            for group_idx, group_name in enumerate(group_names):
+                start = group_idx * frames_per_group
+                end = start + frames_per_group
+                group = sprites[start:end]
+                grouped_sprites.append({group_name: group})  # Guardar como diccionario
+            
+            # Crear estructura JSON
+            json_data = {
+                "index": self.current_anim_index,
+                "name": anim["name"],
+                "framewidth": anim["frame_width"],
+                "frameheight": anim["frame_height"],
+                "sprites": grouped_sprites,  # Sprites agrupados por nombre de grupo
+                "durations": anim["durations"]
+            }
+            
+            # Crear carpeta de salida si no existe
+            folder_name = os.path.basename(self.anim_folder) + "AnimationData"
+            output_folder = os.path.join(self.anim_folder, folder_name)
+            os.makedirs(output_folder, exist_ok=True)
+            
+            # Guardar archivo JSON
+            filename = f"{anim['name']}-AnimData.json"
+            output_path = os.path.join(output_folder, filename)
+            
+            with open(output_path, 'w') as f:
+                json.dump(json_data, f, indent=4)
+            
+            messagebox.showinfo("Success", f"JSON saved at:\n{output_path}")
+        
+        except ValueError as e:
+            messagebox.showerror("Error", f"Invalid input: {str(e)}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to generate JSON: {str(e)}")
+    
+    def view_sprites(self):
+        """Abrir ventana con sprites editados"""
+        edited_folder = os.path.join(self.anim_folder, os.path.basename(self.anim_folder) + "Edited")
+        
+        if not os.path.exists(edited_folder):
+            messagebox.showwarning("Warning", "No edited sprites folder found")
+            return
+        
+        # Obtener lista de archivos de sprites
+        sprite_files = sorted(
+            [f for f in os.listdir(edited_folder) if f.lower().endswith('.png')],
+            key=lambda x: int(x.split('_')[-1].split('.')[0])  # Ordenar por número en el nombre
+        )
+        
+        if not sprite_files:
+            messagebox.showwarning("Warning", "No sprites found in edited folder")
+            return
+        
+        # Calcular tamaño de la cuadrícula
+        num_sprites = len(sprite_files)
+        grid_size = math.ceil(math.sqrt(num_sprites))  # Raíz cuadrada redondeada hacia arriba
+        
+        # Crear ventana emergente
+        sprite_window = Toplevel(self.parent_frame)
+        sprite_window.title(f"Sprites Gallery ({num_sprites} sprites)")
+        sprite_window.geometry(f"{100 * grid_size + 50}x{100 * grid_size + 50}")
+        
+        # Canvas con scroll (por si la cuadrícula es muy grande)
+        canvas = Canvas(sprite_window)
+        scrollbar = Scrollbar(sprite_window, orient="vertical", command=canvas.yview)
+        scroll_frame = Frame(canvas)
+        
+        scroll_frame.bind("<Configure>", lambda e: canvas.configure(
+            scrollregion=canvas.bbox("all")
+        ))
+        
+        canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Mostrar sprites en cuadrícula
+        for idx, file in enumerate(sprite_files):
+            try:
+                # Obtener número del sprite
+                sprite_number = int(file.split('_')[-1].split('.')[0])
+                
+                # Calcular posición en la cuadrícula
+                row = (sprite_number - 1) // grid_size
+                col = (sprite_number - 1) % grid_size
+                
+                # Cargar y mostrar la imagen
+                img_path = os.path.join(edited_folder, file)
+                img = Image.open(img_path)
+                img.thumbnail((100, 100))
+                
+                photo = ImageTk.PhotoImage(img)
+                frame = Frame(scroll_frame)
+                frame.grid(row=row, column=col, padx=5, pady=5)
+                
+                Label(frame, image=photo).pack()
+                Label(frame, text=file, font=('Arial', 8)).pack()
+                
+                # Guardar referencia a la imagen para evitar garbage collection
+                frame.photo = photo
+                
+            except Exception as e:
+                print(f"Error loading {file}: {str(e)}")
