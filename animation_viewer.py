@@ -1,10 +1,11 @@
 import os
 import json
-from tkinter import Frame, Label, Canvas, Scrollbar, Entry, messagebox, Toplevel, BooleanVar, Checkbutton, OptionMenu, StringVar
+from tkinter import Frame, Label, Canvas, Scrollbar, Entry, messagebox, Toplevel, BooleanVar, Checkbutton, OptionMenu, StringVar, Button
 from PIL import Image, ImageTk
 import xml.etree.ElementTree as ET
 from sprite_sheet_handler import SpriteSheetHandler
 import math
+from sprite_matcher import SpriteMatcher  # Importar la nueva clase
 
 class AnimationViewer:
     def __init__(self, parent_frame, anim_folder):
@@ -62,6 +63,7 @@ class AnimationViewer:
             animations.append(anim_data)
         return animations
 
+
     def show_animation(self):
         self.clear_animations()
         self.current_sprites_entries = []  # Resetear inputs
@@ -110,37 +112,53 @@ class AnimationViewer:
             group_name_entry.pack(side='left', padx=10)
             self.group_names.append(group_name_entry)  # Guardar referencia
             
+            # Botón para identificar sprites automáticamente
+            Button(header_frame, text="AI Identify Sprites", 
+                 command=lambda idx=group_idx: self.identify_group_sprites(idx)
+              ).pack(side='left', padx=10)
+            
             # Frame para controles de "mirror & copy"
             control_frame = Frame(group_frame)
             control_frame.pack(side='right', padx=10)
             
-            # Checkbox "mirror & copy"
-            mirror_var = BooleanVar()
-            Checkbutton(
-                control_frame, 
-                text="mirror & copy", 
-                variable=mirror_var,
-                command=lambda idx=group_idx: self.toggle_mirror_copy(idx)
-            ).pack()
-            
-            # Dropdown de grupos (inicialmente oculto)
-            group_names = [f"Group {i+1}" for i in range(total_groups) if i != group_idx]
-            dropdown_var = StringVar()
-            dropdown_var.set("Group 1")  # Establecer un valor predeterminado
-            dropdown = OptionMenu(control_frame, dropdown_var, *group_names)
-            dropdown.pack_forget()
-            
-            # Guardar referencias
-            self.group_widgets[group_idx] = {
-                "mirror_var": mirror_var,
-                "dropdown": dropdown,
-                "dropdown_var": dropdown_var,
-                "entries": [],
-                "frame": None
-            }
-            
-            # Añadir seguimiento a cambios en el dropdown
-            dropdown_var.trace_add("write", lambda *args, idx=group_idx: self.update_linked_group(idx))
+            # Solo mostrar el checkbox y el desplegable si hay más de 1 grupo
+            if total_groups > 1:
+                # Checkbox "mirror & copy"
+                mirror_var = BooleanVar()
+                Checkbutton(
+                    control_frame, 
+                    text="mirror & copy", 
+                    variable=mirror_var,
+                    command=lambda idx=group_idx: self.toggle_mirror_copy(idx)
+                ).pack()
+                
+                # Dropdown de grupos (inicialmente oculto)
+                group_names = [f"Group {i+1}" for i in range(total_groups) if i != group_idx]
+                dropdown_var = StringVar()
+                dropdown_var.set(group_names[0])  # Establecer el primer grupo como valor predeterminado
+                dropdown = OptionMenu(control_frame, dropdown_var, *group_names)
+                dropdown.pack_forget()
+                
+                # Guardar referencias
+                self.group_widgets[group_idx] = {
+                    "mirror_var": mirror_var,
+                    "dropdown": dropdown,
+                    "dropdown_var": dropdown_var,
+                    "entries": [],
+                    "frame": None
+                }
+                
+                # Añadir seguimiento a cambios en el dropdown
+                dropdown_var.trace_add("write", lambda *args, idx=group_idx: self.update_linked_group(idx))
+            else:
+                # Si solo hay 1 grupo, no mostrar controles de "mirror & copy"
+                self.group_widgets[group_idx] = {
+                    "mirror_var": None,
+                    "dropdown": None,
+                    "dropdown_var": None,
+                    "entries": [],
+                    "frame": None
+                }
             
             content_frame = Frame(group_frame)
             content_frame.pack(fill="x")
@@ -191,6 +209,35 @@ class AnimationViewer:
             
             self.current_sprites_entries.extend(group_entries)
             self.group_widgets[group_idx]["entries"] = group_entries
+
+    
+    def identify_group_sprites(self, group_idx):
+        """Identificar sprites automáticamente para un grupo"""
+        try:
+            anim = self.anim_data[self.current_anim_index]
+            frames_per_group = anim["frames_per_group"]
+            
+            # Obtener frames del grupo
+            start = group_idx * frames_per_group
+            end = start + frames_per_group
+            handler = SpriteSheetHandler(anim["image_path"])
+            group_frames = handler.split_animation_frames(anim["frame_width"], anim["frame_height"])[start:end]
+            
+            # Obtener path de sprites editados
+            edited_folder = os.path.join(self.anim_folder, os.path.basename(self.anim_folder) + "Edited")
+            if not os.path.exists(edited_folder):
+                raise FileNotFoundError("Edited sprites folder not found")
+            
+            # Realizar matching
+            matcher = SpriteMatcher(edited_folder)
+            matches = matcher.match_group(group_frames)
+            
+            # Formatear resultado
+            formatted_matches = [os.path.basename(m) for m in matches]
+            print(f"Grupo {group_idx + 1}: Sprites {formatted_matches}")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Error en identificación: {str(e)}")
 
     def update_linked_group(self, group_idx):
         """Actualiza el grupo vinculado cuando cambia la selección del dropdown."""
