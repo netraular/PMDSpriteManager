@@ -13,11 +13,11 @@ class AnimationViewer:
         self.current_anim_index = 0
         self.after_ids = []
         
-        self.configurar_interfaz()
+        self.setup_interface()
         self.show_animation()
 
-    def configurar_interfaz(self):
-        # Contenedor principal con scroll
+    def setup_interface(self):
+        # Main container with scroll
         self.main_canvas = Canvas(self.parent_frame)
         self.scrollbar = Scrollbar(self.parent_frame, orient="vertical", command=self.main_canvas.yview)
         self.scroll_frame = Frame(self.main_canvas)
@@ -35,13 +35,13 @@ class AnimationViewer:
     def load_anim_data(self):
         anim_data_path = os.path.join(self.sprite_folder, "AnimData.xml")
         if not os.path.exists(anim_data_path):
-            raise FileNotFoundError(f"Archivo XML no encontrado en: {self.sprite_folder}")
+            raise FileNotFoundError(f"XML file not found in: {self.sprite_folder}")
 
         tree = ET.parse(anim_data_path)
-        return self.procesar_xml(tree)
+        return self.process_xml(tree)
 
-    def procesar_xml(self, tree):
-        animaciones = []
+    def process_xml(self, tree):
+        animations = []
         for anim in tree.getroot().find("Anims"):
             anim_data = {
                 "name": anim.find("Name").text,
@@ -55,14 +55,14 @@ class AnimationViewer:
                 anim_data["total_groups"] = img.height // anim_data["frame_height"]
                 anim_data["frames_per_group"] = img.width // anim_data["frame_width"]
             
-            animaciones.append(anim_data)
-        return animaciones
+            animations.append(anim_data)
+        return animations
 
     def show_animation(self):
-        # Limpiar callbacks anteriores
+        # Clear previous callbacks
         self.clear_animations()
         
-        # Limpiar frame anterior
+        # Clear previous frame
         for widget in self.scroll_frame.winfo_children():
             widget.destroy()
         
@@ -70,12 +70,12 @@ class AnimationViewer:
         handler = SpriteSheetHandler(anim["image_path"])
         all_frames = handler.split_animation_frames(anim["frame_width"], anim["frame_height"])
         
-        # Crear un grupo por cada fila de frames
+        # Create a group for each row of frames
         total_groups = anim["total_groups"]
         frames_per_group = anim["frames_per_group"]
         
         main_title = Label(self.scroll_frame, 
-                          text=f"Animación: {anim['name']}",
+                          text=f"Animation: {anim['name']}",
                           font=('Arial', 14, 'bold'))
         main_title.pack(pady=10)
         
@@ -83,40 +83,40 @@ class AnimationViewer:
             group_frame = Frame(self.scroll_frame, bd=2, relief="groove")
             group_frame.pack(fill="x", padx=5, pady=5)
             
-            # Cabecera del grupo
+            # Group header
             Label(group_frame, 
-                 text=f"Grupo {group_idx + 1}", 
+                 text=f"Group {group_idx + 1}", 
                  font=('Arial', 12, 'bold')).pack(anchor="w")
             
-            # Contenedor de animación y frames
+            # Animation and frames container
             content_frame = Frame(group_frame)
             content_frame.pack(fill="x")
             
-            # Panel de animación
+            # Animation panel
             anim_panel = Frame(content_frame)
             anim_panel.pack(side="left", padx=10)
             
-            # Panel de frames
+            # Frames panel
             frames_panel = Frame(content_frame)
             frames_panel.pack(side="right", fill="x", expand=True)
             
-            # Obtener frames del grupo actual
+            # Get frames for the current group
             start = group_idx * frames_per_group
             end = start + frames_per_group
             group_frames = all_frames[start:end]
             
-            # Ajustar duraciones
+            # Adjust durations
             durations = anim["durations"]
             if len(durations) < len(group_frames):
                 durations = durations * (len(group_frames) // len(durations) + 1)
             durations = durations[:len(group_frames)]
             
-            # Mostrar animación
+            # Show animation
             anim_label = Label(anim_panel)
             anim_label.pack()
-            self.iniciar_animacion_grupo(anim_label, group_frames, durations)
+            self.start_group_animation(anim_label, group_frames, durations)
             
-            # Mostrar frames
+            # Show frames
             for idx, frame in enumerate(group_frames):
                 frame.thumbnail((80, 80))
                 img = ImageTk.PhotoImage(frame)
@@ -128,12 +128,12 @@ class AnimationViewer:
                      font=('Arial', 7)).grid(row=1, column=idx)
 
     def clear_animations(self):
-        """Cancela todas las animaciones pendientes"""
+        """Cancel all pending animations"""
         for aid in self.after_ids:
             self.parent_frame.after_cancel(aid)
         self.after_ids.clear()
 
-    def iniciar_animacion_grupo(self, label, frames, durations):
+    def start_group_animation(self, label, frames, durations):
         current_frame = [0]
         
         def update():
@@ -146,7 +146,7 @@ class AnimationViewer:
             label.config(image=img)
             label.image = img
             
-            delay = durations[current_frame[0]] * 33  # 33ms por frame (≈30fps)
+            delay = durations[current_frame[0]] * 33  # 33ms per frame (≈30fps)
             current_frame[0] += 1
             self.after_ids.append(self.parent_frame.after(delay, update))
         

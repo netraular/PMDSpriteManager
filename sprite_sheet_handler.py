@@ -12,31 +12,31 @@ class SpriteSheetHandler:
         self.image = Image.open(image_path)
         self.remove_first_row_and_col = remove_first_row_and_col
 
-    def split_sprites(self, sprites_ancho, sprites_alto):
+    def split_sprites(self, sprites_width, sprites_height):
         """
         Split the sprite sheet into individual sprites.
-        :param sprites_ancho: Number of sprites horizontally.
-        :param sprites_alto: Number of sprites vertically.
+        :param sprites_width: Number of sprites horizontally.
+        :param sprites_height: Number of sprites vertically.
         :return: List of cropped sprites, width of each sprite, height of each sprite.
         """
-        ancho_imagen, alto_imagen = self.image.size
-        ancho_sprite = ancho_imagen // sprites_ancho
-        alto_sprite = alto_imagen // sprites_alto
+        image_width, image_height = self.image.size
+        sprite_width = image_width // sprites_width
+        sprite_height = image_height // sprites_height
 
         sprites = []
-        for i in range(sprites_alto):
-            for j in range(sprites_ancho):
+        for i in range(sprites_height):
+            for j in range(sprites_width):
                 # Calculate cropping coordinates
-                left = j * ancho_sprite + (1 if self.remove_first_row_and_col else 0)
-                top = i * alto_sprite + (1 if self.remove_first_row_and_col else 0)
-                right = left + ancho_sprite - (1 if self.remove_first_row_and_col else 0)
-                bottom = top + alto_sprite - (1 if self.remove_first_row_and_col else 0)
+                left = j * sprite_width + (1 if self.remove_first_row_and_col else 0)
+                top = i * sprite_height + (1 if self.remove_first_row_and_col else 0)
+                right = left + sprite_width - (1 if self.remove_first_row_and_col else 0)
+                bottom = top + sprite_height - (1 if self.remove_first_row_and_col else 0)
 
                 # Crop the sprite
                 sprite = self.image.crop((left, top, right, bottom))
                 sprites.append(sprite)
 
-        return sprites, ancho_sprite, alto_sprite
+        return sprites, sprite_width, sprite_height
 
     def split_animation_frames(self, frame_width, frame_height):
         """
@@ -72,37 +72,37 @@ class SpriteSheetHandler:
         for idx, sprite in enumerate(sprites):
             sprite.save(os.path.join(output_folder, f"{base_name}{idx + 1}.png"))
 
-    def display_sprites(self, sprites, sprites_ancho, sprites_alto, ancho_sprite, alto_sprite):
+    def display_sprites(self, sprites, sprites_width, sprites_height, sprite_width, sprite_height):
         """
         Display the sprites in a grid using matplotlib.
         :param sprites: List of sprites to display.
-        :param sprites_ancho: Number of sprites horizontally.
-        :param sprites_alto: Number of sprites vertically.
-        :param ancho_sprite: Width of each sprite.
-        :param alto_sprite: Height of each sprite.
+        :param sprites_width: Number of sprites horizontally.
+        :param sprites_height: Number of sprites vertically.
+        :param sprite_width: Width of each sprite.
+        :param sprite_height: Height of each sprite.
         """
         import matplotlib.pyplot as plt
         import matplotlib.patches as patches
 
-        fig, axes = plt.subplots(sprites_alto, sprites_ancho, figsize=(10, 10))
-        fig.suptitle("Sprites con fondo gris claro", fontsize=16)
+        fig, axes = plt.subplots(sprites_height, sprites_width, figsize=(10, 10))
+        fig.suptitle("Sprites with Light Gray Background", fontsize=16)
 
-        for i in range(sprites_alto):
-            for j in range(sprites_ancho):
-                ax = axes[i, j] if sprites_alto > 1 else axes[j]
-                sprite = sprites[i * sprites_ancho + j]
+        for i in range(sprites_height):
+            for j in range(sprites_width):
+                ax = axes[i, j] if sprites_height > 1 else axes[j]
+                sprite = sprites[i * sprites_width + j]
 
                 # Draw a light gray background
-                fondo_gris = Image.new('RGBA', sprite.size, 'lightgray')
-                ax.imshow(fondo_gris, extent=[0, ancho_sprite, 0, alto_sprite], aspect='auto')
+                gray_background = Image.new('RGBA', sprite.size, 'lightgray')
+                ax.imshow(gray_background, extent=[0, sprite_width, 0, sprite_height], aspect='auto')
 
                 # Draw the sprite on top of the background
-                ax.imshow(sprite, extent=[0, ancho_sprite, 0, alto_sprite], aspect='auto')
+                ax.imshow(sprite, extent=[0, sprite_width, 0, sprite_height], aspect='auto')
 
                 # Ensure the sprite maintains its original dimensions
                 ax.set_aspect('equal')
                 ax.axis('off')
-                ax.set_title(f"Sprite {i * sprites_ancho + j}")
+                ax.set_title(f"Sprite {i * sprites_width + j}")
 
         plt.tight_layout()
         plt.show()
