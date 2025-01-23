@@ -75,6 +75,10 @@ class AnimationViewer:
         total_groups = anim["total_groups"]
         frames_per_group = anim["frames_per_group"]
         
+        # Cargar datos del JSON si existe
+        json_data = self.load_json_data(anim["name"])
+        group_data = json_data["sprites"] if json_data else None
+        
         main_title = Label(self.scroll_frame, 
                         text=f"Animation: {anim['name']}",
                         font=('Arial', 14, 'bold'))
@@ -94,7 +98,11 @@ class AnimationViewer:
             
             # Campo de entrada para el nombre del grupo
             group_name_entry = Entry(header_frame, width=20)
-            group_name_entry.insert(0, f"grupo{group_idx + 1}")  # Nombre por defecto
+            if group_data and group_idx < len(group_data):
+                group_name = list(group_data[group_idx].keys())[0]  # Obtener nombre del grupo desde JSON
+                group_name_entry.insert(0, group_name)
+            else:
+                group_name_entry.insert(0, f"grupo{group_idx + 1}")  # Nombre por defecto
             group_name_entry.pack(side='left', padx=10)
             self.group_names.append(group_name_entry)  # Guardar referencia
             
@@ -130,7 +138,12 @@ class AnimationViewer:
                 
                 # Campo de entrada para el valor del sprite
                 entry = Entry(frames_panel, width=5)
-                entry.insert(0, "0")  # Valor por defecto
+                if group_data and group_idx < len(group_data):
+                    sprite_values = list(group_data[group_idx].values())[0]  # Obtener valores del grupo desde JSON
+                    if idx < len(sprite_values):
+                        entry.insert(0, str(sprite_values[idx]))  # Rellenar con valor del JSON
+                else:
+                    entry.insert(0, "0")  # Valor por defecto
                 entry.grid(row=1, column=idx, padx=2)
                 group_entries.append(entry)
                 
@@ -303,3 +316,18 @@ class AnimationViewer:
                 
             except Exception as e:
                 print(f"Error loading {file}: {str(e)}")
+
+    def load_json_data(self, anim_name):
+        """Cargar datos del archivo JSON si existe."""
+        folder_name = os.path.basename(self.anim_folder) + "AnimationData"
+        json_path = os.path.join(self.anim_folder, folder_name, f"{anim_name}-AnimData.json")
+        
+        if not os.path.exists(json_path):
+            return None  # No existe el archivo JSON
+        
+        try:
+            with open(json_path, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error loading JSON: {str(e)}")
+            return None
