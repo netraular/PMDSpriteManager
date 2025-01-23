@@ -63,8 +63,6 @@ class AnimationViewer:
             animations.append(anim_data)
         return animations
 
-
-
     def show_animation(self):
         self.clear_animations()
         self.current_sprites_entries = []  # Resetear inputs
@@ -84,7 +82,6 @@ class AnimationViewer:
         
         # Cargar datos del JSON si existe
         json_data = self.load_json_data(anim["name"])
-        group_data = json_data["sprites"] if json_data else None
         
         main_title = Label(self.scroll_frame, 
                         text=f"Animation: {anim['name']}",
@@ -105,8 +102,10 @@ class AnimationViewer:
             
             # Campo de entrada para el nombre del grupo
             group_name_entry = Entry(header_frame, width=20)
-            if group_data and group_idx < len(group_data):
-                group_name = list(group_data[group_idx].keys())[0]  # Obtener nombre del grupo desde JSON
+            if json_data and "sprites" in json_data:
+                group_id = str(group_idx + 1)
+                group_info = json_data["sprites"].get(group_id, {})
+                group_name = group_info.get("name", f"grupo{group_idx + 1}")
                 group_name_entry.insert(0, group_name)
             else:
                 group_name_entry.insert(0, f"grupo{group_idx + 1}")  # Nombre por defecto
@@ -115,7 +114,7 @@ class AnimationViewer:
             
             # Botón para identificar sprites automáticamente
             ai_button = Button(header_frame, text="AI Identify Sprites", 
-                             command=lambda idx=group_idx: self.identify_group_sprites(idx))
+                            command=lambda idx=group_idx: self.identify_group_sprites(idx))
             ai_button.pack(side='left', padx=10)
             
             # Frame para controles de "mirror & copy"
@@ -154,16 +153,23 @@ class AnimationViewer:
                 dropdown_var.trace_add("write", lambda *args, idx=group_idx: self.update_linked_group(idx))
                 
                 # Si hay datos del JSON, configurar el checkbox y el desplegable
-                if json_data:
+                if json_data and "sprites" in json_data:
                     group_id = str(group_idx + 1)
-                    if group_id in json_data["sprites"]:
-                        group_info = json_data["sprites"][group_id]
-                        if group_info.get("mirrored", False) and "copy" in group_info:
-                            # Marcar el checkbox y seleccionar el grupo en el desplegable
-                            mirror_var.set(True)
-                            dropdown_var.set(f"Group {group_info['copy']}")
-                            dropdown.pack()
-                            self.update_linked_group(group_idx)
+                    group_info = json_data["sprites"].get(group_id, {})
+                    if group_info.get("mirrored", False):
+                        # Marcar el checkbox y seleccionar el grupo en el desplegable
+                        mirror_var.set(True)
+                        source_group = group_info.get("copy", "1")
+                        dropdown_var.set(f"Group {source_group}")
+                        dropdown.pack()
+                        
+                        # Ocultar inputs y botón AI
+                        for entry in self.group_widgets[group_idx]["entries"]:
+                            entry.grid_remove()
+                        ai_button.pack_forget()
+                        
+                        # Registrar relación de grupos
+                        self.linked_groups[group_idx] = int(source_group) - 1
             else:
                 # Si solo hay 1 grupo, no mostrar controles de "mirror & copy"
                 self.group_widgets[group_idx] = {
@@ -208,10 +214,13 @@ class AnimationViewer:
                 
                 # Campo de entrada para el valor del sprite
                 entry = Entry(frames_panel, width=5)
-                if group_data and group_idx < len(group_data):
-                    sprite_values = list(group_data[group_idx].values())[0]  # Obtener valores del grupo desde JSON
-                    if idx < len(sprite_values):
-                        entry.insert(0, str(sprite_values[idx]))  # Rellenar con valor del JSON
+                if json_data and "sprites" in json_data:
+                    group_id = str(group_idx + 1)
+                    group_info = json_data["sprites"].get(group_id, {})
+                    if not group_info.get("mirrored", False):
+                        sprite_values = group_info.get("values", [])
+                        if idx < len(sprite_values):
+                            entry.insert(0, str(sprite_values[idx]))  # Rellenar con valor del JSON
                 else:
                     entry.insert(0, "0")  # Valor por defecto
                 entry.grid(row=1, column=idx, padx=2)
@@ -224,7 +233,14 @@ class AnimationViewer:
             
             self.current_sprites_entries.extend(group_entries)
             self.group_widgets[group_idx]["entries"] = group_entries
-
+            
+            # Ocultar inputs si el grupo está marcado como "mirrored" en el JSON
+            if json_data and "sprites" in json_data:
+                group_id = str(group_idx + 1)
+                group_info = json_data["sprites"].get(group_id, {})
+                if group_info.get("mirrored", False):
+                    for entry in group_entries:
+                        entry.grid_remove()
 
     def identify_group_sprites(self, group_idx):
         """Identificar sprites automáticamente para un grupo y actualizar los inputs."""
@@ -262,7 +278,6 @@ class AnimationViewer:
                     
         except Exception as e:
             messagebox.showerror("Error", f"Error en identificación: {str(e)}")
-
 
     def update_linked_group(self, group_idx):
         """Actualiza el grupo vinculado cuando cambia la selección del dropdown."""
@@ -392,7 +407,6 @@ class AnimationViewer:
             except Exception as e:
                 print(f"Error loading {file}: {str(e)}")
 
-
     def generate_json(self):
         try:
             group_names = [entry.get().strip() for entry in self.group_names]
@@ -464,7 +478,6 @@ class AnimationViewer:
         except Exception as e:
             messagebox.showerror("Error", f"Error al guardar: {str(e)}")
 
-
     def load_json_data(self, anim_name):
         """Cargar datos del archivo JSON si existe."""
         folder_name = os.path.basename(self.anim_folder) + "AnimationData"
@@ -475,35 +488,8 @@ class AnimationViewer:
         
         try:
             with open(json_path, 'r') as f:
-                json_data = json.load(f)
+                return json.load(f)  # Devolver JSON directamente sin conversión
             
-            # Verificar si el JSON tiene el nuevo formato
-            if "sprites" in json_data and isinstance(json_data["sprites"], dict):
-                # Crear una estructura compatible con el código existente
-                group_data = []
-                for group_id, group_info in json_data["sprites"].items():
-                    group_name = group_info.get("name", f"grupo{group_id}")
-                    if "copy" in group_info:
-                        # Si el grupo está copiando de otro, usar los valores del grupo copiado
-                        source_group_id = group_info["copy"]
-                        source_group_info = json_data["sprites"][source_group_id]
-                        sprite_values = source_group_info.get("values", [])
-                    else:
-                        # Si no está copiando, usar los valores propios
-                        sprite_values = group_info.get("values", [])
-                    
-                    group_data.append({group_name: sprite_values})
-                
-                # Devolver los datos en el formato esperado
-                return {
-                    "sprites": group_data,
-                    "durations": json_data.get("durations", [])
-                }
-            else:
-                # Si el JSON no tiene el nuevo formato, devolver None
-                return None
-        
         except Exception as e:
             print(f"Error loading JSON: {str(e)}")
             return None
-
