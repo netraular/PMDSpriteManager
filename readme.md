@@ -8,6 +8,8 @@ This tool is designed to simplify working with Pokémon Mystery Dungeon (PMD) sp
 
 The tool automatically processes sprite sheets and animation data from PMD Collab, eliminating manual inspection of XML files while preserving transparency and animation timing information.
 
+---
+
 ## Features
 
 - 🖼️ **Sprite Sheet Division**:
@@ -21,6 +23,8 @@ The tool automatically processes sprite sheets and animation data from PMD Colla
   - Real-time animation preview with accurate frame timing
   - Display frame groupings and durations
   - Navigate between different animations
+
+---
 
 ## Getting Started
 
@@ -51,8 +55,14 @@ PMD_Sprites/
     └── Attack-Anim.png
 ```
 
+---
+
 ## Usage
 
+### For Windows Users
+If you're on Windows, you can use the pre-built executable available in the [Releases section](https://github.com/netraular/PMDSpriteManager/releases). Download `PMDSpriteManager.exe` and run it directly—no Python installation required!
+
+### For Other Platforms
 1. **Run the Program**:
    ```bash
    python main.py
@@ -74,6 +84,44 @@ PMD_Sprites/
      3. See frame durations and groupings
      4. Scroll through all animation frames
 
+---
+
+## User Interface Walkthrough
+
+### 1. Folder Selection Screen
+The tool starts by prompting the user to select a folder containing the sprite sheet and animation data. This is the initial screen where users begin their workflow.
+
+![Folder Selection Screen](readme/images/folder_select.png)  
+*Caption: The initial screen where users select the folder containing the sprite sheet and animation data.*
+
+---
+
+### 2. Main Menu
+After selecting the folder, the main menu is displayed. From here, users can choose between splitting sprite sheets or viewing animations.
+
+![Main Menu](readme/images/main_menu.png)  
+*Caption: The main menu with options to split sprite sheets or view animations.*
+
+---
+
+### 3. Sprite Sheet Splitting
+In the sprite sheet splitting mode, users can input the number of sprites horizontally and vertically. The tool then processes the sprite sheet and displays the individual sprites in a grid.
+
+#### Example of a Divided Sprite Sheet
+![Divided Sprite Sheet](readme/images/divide_screen.png)  
+*Caption: A sprite sheet divided into individual sprites, displayed in a grid with a light gray background.*
+
+---
+
+### 4. Animation Viewer
+The animation viewer allows users to load and preview animations from the `AnimData.xml` file. It displays frame groupings, durations, and a real-time animation preview.
+
+#### Animation Viewer in Action
+![Animation Viewer](readme/images/animation_screen.png)  
+*Caption: The animation viewer displaying frame groupings, durations, and a real-time animation preview.*
+
+---
+
 ## How It Works
 
 - **Sprite Processing**:
@@ -87,16 +135,22 @@ PMD_Sprites/
   - Dynamically loads animation strips
   - Uses Tkinter for real-time animation rendering
 
+---
+
 ## Requirements
 
-- Python 3.7+
-- Libraries:
-  ```bash
-  pip install pillow
-  ```
-- Included in Python Standard Library:
-  - `tkinter` (for GUI)
-  - `xml.etree.ElementTree` (for parsing animation data)
+- **For Windows**: Download the executable from the [Releases section](https://github.com/netraular/PMDSpriteManager/releases).
+- **For Other Platforms**:
+  - Python 3.7+
+  - Libraries:
+    ```bash
+    pip install pillow
+    ```
+  - Included in Python Standard Library:
+    - `tkinter` (for GUI)
+    - `xml.etree.ElementTree` (for parsing animation data)
+
+---
 
 ## Contributing
 
@@ -105,9 +159,13 @@ Contributions are welcome! Please open an issue for:
 - Feature requests
 - Compatibility issues with new PMD Collab formats
 
+---
+
 ## License
 
 MIT License. See [LICENSE](LICENSE) for details.
+
+---
 
 ## Acknowledgments
 
