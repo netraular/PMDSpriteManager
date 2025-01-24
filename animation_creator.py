@@ -68,20 +68,41 @@ class AnimationCreator:
         self.height_entry = Entry(form_frame)
         self.height_entry.grid(row=1, column=1, padx=5)
         
+        # Nuevo campo para el número de sprites a guardar
+        Label(form_frame, text="Number of Sprites to Save:").grid(row=2, column=0)
+        self.sprite_number_entry = Entry(form_frame)
+        self.sprite_number_entry.grid(row=2, column=1, padx=5)
+        
         Button(form_frame, text="Generate Sprites", 
-            command=self.process_spritesheet).grid(row=2, columnspan=2, pady=10)
+            command=self.process_spritesheet).grid(row=3, columnspan=2, pady=10)
 
     def process_spritesheet(self):
         """Procesar el spritesheet y generar sprites individuales"""
         try:
-            # Guardar los valores de ancho y alto antes de destruir el frame
-            self.saved_width = int(self.width_entry.get())
-            self.saved_height = int(self.height_entry.get())
+            # Obtener los valores del formulario
+            sprites_width = int(self.width_entry.get())
+            sprites_height = int(self.height_entry.get())
+            sprite_number = int(self.sprite_number_entry.get())
             
+            # Guardar los valores de ancho y alto
+            self.saved_width = sprites_width
+            self.saved_height = sprites_height
+            
+            # Verificar que el número de sprites sea válido
+            total_sprites = sprites_width * sprites_height
+            if sprite_number > total_sprites:
+                messagebox.showerror("Error", f"Cannot save {sprite_number} sprites. "
+                                        f"The spritesheet only contains {total_sprites} sprites.")
+                return
+            
+            # Procesar el spritesheet
             handler = SpriteSheetHandler(self.image_path, remove_first_row_and_col=True)
             self.sprites, self.sprite_width, self.sprite_height = handler.split_sprites(
-                self.saved_width, self.saved_height
+                sprites_width, sprites_height
             )
+            
+            # Limitar el número de sprites
+            self.sprites = self.sprites[:sprite_number]
             
             # Guardar sprites temporalmente
             self.sprite_folder = os.path.join(os.path.dirname(self.image_path), "TempSprites")
@@ -93,7 +114,7 @@ class AnimationCreator:
             self.show_json_upload_view()
             
         except ValueError:
-            messagebox.showerror("Error", "Invalid dimensions")
+            messagebox.showerror("Error", "Please enter valid numeric values")
         except Exception as e:
             messagebox.showerror("Error", f"Processing error: {str(e)}")
 
@@ -131,7 +152,7 @@ class AnimationCreator:
         )
         
         # Crear un frame para los sprites
-        sprite_display_frame = Frame(self.json_frame)
+        sprite_display_frame = Frame(self.main_frame)
         sprite_display_frame.pack(fill='both', expand=True, pady=10)
         
         # Obtener el número de columnas (ancho introducido en el formulario)
