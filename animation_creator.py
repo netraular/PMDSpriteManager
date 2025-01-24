@@ -95,6 +95,30 @@ class AnimationCreator:
                                         f"The spritesheet only contains {total_sprites} sprites.")
                 return
             
+            # Ruta de la carpeta TempSprites
+            self.sprite_folder = os.path.join(os.path.dirname(self.image_path), "TempSprites")
+            
+            # Verificar si la carpeta TempSprites ya existe y contiene archivos
+            if os.path.exists(self.sprite_folder) and os.listdir(self.sprite_folder):
+                # Preguntar al usuario si desea borrar los archivos existentes
+                response = messagebox.askyesno(
+                    "Confirmación",
+                    "La carpeta TempSprites ya contiene archivos. ¿Desea borrarlos y continuar?"
+                )
+                if not response:  # Si el usuario elige "No" o cierra la ventana
+                    return  # Mantener la vista del formulario en el Step 1
+            
+            # Crear la carpeta TempSprites (si no existe) y borrar archivos si el usuario lo confirmó
+            os.makedirs(self.sprite_folder, exist_ok=True)
+            if os.path.exists(self.sprite_folder):
+                for file in os.listdir(self.sprite_folder):
+                    file_path = os.path.join(self.sprite_folder, file)
+                    try:
+                        if os.path.isfile(file_path):
+                            os.unlink(file_path)  # Borrar el archivo
+                    except Exception as e:
+                        print(f"Error al borrar {file_path}: {e}")
+            
             # Procesar el spritesheet
             handler = SpriteSheetHandler(self.image_path, remove_first_row_and_col=True)
             self.sprites, self.sprite_width, self.sprite_height = handler.split_sprites(
@@ -105,8 +129,6 @@ class AnimationCreator:
             self.sprites = self.sprites[:sprite_number]
             
             # Guardar sprites temporalmente
-            self.sprite_folder = os.path.join(os.path.dirname(self.image_path), "TempSprites")
-            os.makedirs(self.sprite_folder, exist_ok=True)
             for idx, sprite in enumerate(self.sprites):
                 sprite.save(os.path.join(self.sprite_folder, f"sprite_{idx + 1}.png"))
             
