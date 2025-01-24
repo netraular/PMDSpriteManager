@@ -4,6 +4,7 @@ from PIL import Image, ImageTk
 from sprite_sheet_handler import SpriteSheetHandler
 from animation_viewer import AnimationViewer
 from spritesheet_viewer import SpritesheetViewer
+from animation_creator import AnimationCreator  # Nueva importación
 
 class MainApplication:
     def __init__(self, root):
@@ -14,6 +15,7 @@ class MainApplication:
         self.folder = None
         self.spritesheet_viewer = None
         self.animation_viewer = None
+        self.animation_creator = None  # Nueva referencia
         
         self.show_folder_selection()
 
@@ -46,6 +48,8 @@ class MainApplication:
               command=self.show_sprite_splitter, width=20).pack(pady=10)
         Button(self.current_frame, text="View Animations", 
               command=self.show_animation_viewer, width=20).pack(pady=10)
+        Button(self.current_frame, text="Create Animations", 
+              command=self.show_animation_creator, width=20).pack(pady=10)  # Nuevo botón
 
     def show_sprite_splitter(self):
         self.clear_frame()
@@ -76,6 +80,13 @@ class MainApplication:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load animations: {str(e)}")
             self.show_main_menu()
+
+    def show_animation_creator(self):
+        self.clear_frame()
+        self.animation_creator = AnimationCreator(
+            self.current_frame,
+            self.show_main_menu
+        )
 
 if __name__ == "__main__":
     root = Tk()
