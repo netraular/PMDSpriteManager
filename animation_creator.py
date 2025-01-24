@@ -15,7 +15,15 @@ class AnimationCreator:
         self.json_data = None
         self.after_ids = []
         
-        # Inicializar main_frame antes de llamar a setup_ui
+        # Frame superior para el botón "Main Menu"
+        self.top_frame = Frame(self.parent_frame)
+        self.top_frame.pack(fill='x', padx=10, pady=5)
+        
+        # Botón "Main Menu"
+        Button(self.top_frame, text="Main Menu", 
+            command=self.return_to_main).pack(side='left')
+        
+        # Frame principal para las vistas (Step 1, Step 2, Animation Preview)
         self.main_frame = Frame(self.parent_frame)
         self.main_frame.pack(fill='both', expand=True)
         
@@ -35,7 +43,10 @@ class AnimationCreator:
         self.show_upload_sheet_view()
 
     def show_upload_sheet_view(self):
-        """Primer paso: Subir spritesheet y configurar sprites"""
+        """Mostrar el Step 1: Subir spritesheet y configurar sprites"""
+        self.clear_frame()
+        
+        # Crear el frame para el Step 1
         self.upload_frame = Frame(self.main_frame)
         self.upload_frame.pack(pady=20)
         
@@ -43,7 +54,7 @@ class AnimationCreator:
             font=('Arial', 14)).pack(pady=10)
         
         Button(self.upload_frame, text="Select Image", 
-             command=self.load_spritesheet).pack(pady=10)
+            command=self.load_spritesheet).pack(pady=10)
         
         # Campos para dimensiones
         form_frame = Frame(self.upload_frame)
@@ -58,7 +69,7 @@ class AnimationCreator:
         self.height_entry.grid(row=1, column=1, padx=5)
         
         Button(form_frame, text="Generate Sprites", 
-             command=self.process_spritesheet).grid(row=2, columnspan=2, pady=10)
+            command=self.process_spritesheet).grid(row=2, columnspan=2, pady=10)
 
     def process_spritesheet(self):
         """Procesar el spritesheet y generar sprites individuales"""
@@ -87,9 +98,10 @@ class AnimationCreator:
             messagebox.showerror("Error", f"Processing error: {str(e)}")
 
     def show_json_upload_view(self):
-        """Segundo paso: Subir JSON de animaciones y mostrar sprites generados"""
-        self.upload_frame.destroy()
+        """Mostrar el Step 2: Subir JSON de animaciones y mostrar sprites generados"""
+        self.clear_frame()
         
+        # Crear el frame para el Step 2
         self.json_frame = Frame(self.main_frame)
         self.json_frame.pack(pady=20, fill='both', expand=True)
         
@@ -196,12 +208,16 @@ class AnimationCreator:
             messagebox.showinfo("Success", f"Sprites saved in:\n{output_folder}")
 
     def show_animation_preview(self):
-        """Mostrar vista previa de las animaciones"""
-        self.json_frame.destroy()
+        """Mostrar la vista de previsualización de animaciones"""
+        self.clear_frame()
+        
+        # Crear el frame para la vista de previsualización
+        self.animation_frame = Frame(self.main_frame)
+        self.animation_frame.pack(fill='both', expand=True)
         
         # Configurar canvas con scroll
-        self.canvas = Canvas(self.main_frame)
-        self.scrollbar = Scrollbar(self.main_frame, orient="vertical", command=self.canvas.yview)
+        self.canvas = Canvas(self.animation_frame)
+        self.scrollbar = Scrollbar(self.animation_frame, orient="vertical", command=self.canvas.yview)
         self.scroll_frame = Frame(self.canvas)
         
         self.scroll_frame.bind("<Configure>", lambda e: self.canvas.configure(
@@ -307,11 +323,14 @@ class AnimationCreator:
             self.after_ids.append(self.parent_frame.after(delay, update))
         
         update()
-
+            
     def clear_frame(self):
-        """Limpiar frame actual"""
-        for widget in self.main_frame.winfo_children():
-            widget.destroy()
+        """Limpiar el frame actual y detener animaciones"""
+        # Detener todas las animaciones
         for aid in self.after_ids:
             self.parent_frame.after_cancel(aid)
         self.after_ids.clear()
+        
+        # Destruir todos los widgets del frame principal (excepto el top_frame)
+        for widget in self.main_frame.winfo_children():
+            widget.destroy()
