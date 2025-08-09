@@ -4,3 +4,4 @@ build
 main.spec
 dist
 __pycache__
+.vscode
