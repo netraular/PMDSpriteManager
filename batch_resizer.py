@@ -133,31 +133,36 @@ class BatchResizer:
             if not sprites:
                 raise Exception("Splitting the spritesheet yielded no sprites.")
 
-            # Guardar solo el primer sprite
-            first_sprite = sprites[0]
-            
             # <<< INICIO DE LA MODIFICACIÓN >>>
-            # Convertir el sprite a modo 'P' (paleta) para asegurar una profundidad de 8 bits.
-            # Esto es un requisito común para ciertos motores de juego o para optimizar el tamaño.
-            # Se utiliza una paleta adaptativa para preservar la mayor cantidad de colores posible.
-            # La transparencia del RGBA original se gestiona automáticamente en la conversión para PNG.
-            sprite_8bit = first_sprite.convert('P', palette=Image.ADAPTIVE, colors=256)
-            # <<< FIN DE LA MODIFICACIÓN >>>
-
+            
             # Extraer el ID del nombre del archivo original
             # "sprite_recolor-0043-0000-0001.png" -> "0043"
             basename = os.path.basename(self.current_image_path)
             parts = basename.split('-')
+            
             if len(parts) > 1:
                 sprite_id = parts[1]
-                output_filename = f"{sprite_id}.png"
-                output_path = os.path.join(self.output_folder, output_filename)
                 
-                # Guardar el sprite convertido de 8 bits
-                sprite_8bit.save(output_path)
+                # Crear la carpeta de salida específica para este spritesheet usando su ID
+                sprite_output_folder = os.path.join(self.output_folder, sprite_id)
+                os.makedirs(sprite_output_folder, exist_ok=True)
+                
+                # Iterar sobre TODOS los sprites generados
+                for idx, sprite in enumerate(sprites):
+                    # Convertir el sprite a modo 'P' (paleta) de 8 bits
+                    sprite_8bit = sprite.convert('P', palette=Image.ADAPTIVE, colors=256)
+                    
+                    # Definir el nombre del archivo para cada sprite individual
+                    output_filename = f"sprite_{idx + 1}.png"
+                    output_path = os.path.join(sprite_output_folder, output_filename)
+                    
+                    # Guardar el sprite convertido
+                    sprite_8bit.save(output_path)
             else:
                 messagebox.showwarning("Filename Error", 
                                        f"Could not extract ID from filename: {basename}. Skipping save.")
+
+            # <<< FIN DE LA MODIFICACIÓN >>>
 
         except Exception as e:
             messagebox.showerror("Processing Error", f"An error occurred while processing the image: {e}")
