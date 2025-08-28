@@ -152,6 +152,11 @@ class AnimationViewer:
         # Load JSON data if it exists
         json_data = self.load_json_data(anim["name"])
         
+        # >>> NEW CODE BLOCK [START] <<<
+        # Set a flag to run AI automatically only if no JSON file was found
+        run_ai_automatically = json_data is None
+        # >>> NEW CODE BLOCK [END] <<<
+
         main_title = Label(self.scroll_frame, 
                         text=f"Animation: {anim['name']}",
                         font=('Arial', 14, 'bold'))
@@ -210,10 +215,11 @@ class AnimationViewer:
                 ).pack()
                 
                 # Group dropdown (initially hidden)
-                group_names = [f"Group {i+1}" for i in range(total_groups) if i != group_idx]
+                group_names_list = [f"Group {i+1}" for i in range(total_groups) if i != group_idx]
                 dropdown_var = StringVar()
-                dropdown_var.set(group_names[0])  # Set the first group as default
-                dropdown = OptionMenu(control_frame, dropdown_var, *group_names)
+                if group_names_list:
+                    dropdown_var.set(group_names_list[0])  # Set the first group as default
+                dropdown = OptionMenu(control_frame, dropdown_var, *group_names_list)
                 dropdown.pack_forget()
                 
                 # Save references
@@ -318,6 +324,14 @@ class AnimationViewer:
                 if group_info.get("mirrored", False):
                     for entry in group_entries:
                         entry.grid_remove()
+            
+            # >>> NEW CODE BLOCK [START] <<<
+            # Automatically run AI identification if no JSON data was loaded for this animation
+            if run_ai_automatically:
+                # We only run it for non-mirrored groups, which is the default when no JSON is loaded
+                self.identify_group_sprites(group_idx)
+            # >>> NEW CODE BLOCK [END] <<<
+
 
     def identify_group_sprites(self, group_idx):
         """Automatically identify sprites for a group and update the inputs."""
@@ -334,7 +348,9 @@ class AnimationViewer:
             # Get path to edited sprites
             edited_folder = os.path.join(self.anim_folder, os.path.basename(self.anim_folder) + "Edited")
             if not os.path.exists(edited_folder):
-                raise FileNotFoundError("Edited sprites folder not found")
+                # Don't show a popup, just print a warning to the console as this is an automatic action
+                print(f"Warning: 'Edited' sprites folder not found. Cannot run automatic AI identification.")
+                return
             
             # Perform matching
             matcher = SpriteMatcher(edited_folder)
@@ -354,14 +370,21 @@ class AnimationViewer:
                     entry.insert(0, str(sprite_number))
                     
         except Exception as e:
-            messagebox.showerror("Error", f"Error during identification: {str(e)}")
+            # We check if the error is a FileNotFoundError for the edited folder and handle it silently
+            if isinstance(e, FileNotFoundError) and "Edited sprites folder not found" in str(e):
+                 print(f"Warning: 'Edited' sprites folder not found. Cannot run automatic AI identification.")
+            else:
+                messagebox.showerror("Error", f"Error during identification: {str(e)}")
+
 
     def update_linked_group(self, group_idx):
         """Update the linked group when the dropdown selection changes."""
-        if self.group_widgets[group_idx]["mirror_var"].get():
-            selected_group_name = self.group_widgets[group_idx]["dropdown_var"].get()
-            selected_group = int(selected_group_name.split()[-1]) - 1
-            self.linked_groups[group_idx] = selected_group
+        widgets = self.group_widgets.get(group_idx)
+        if widgets and widgets.get("mirror_var") and widgets["mirror_var"].get():
+            selected_group_name = widgets["dropdown_var"].get()
+            if selected_group_name:
+                selected_group = int(selected_group_name.split()[-1]) - 1
+                self.linked_groups[group_idx] = selected_group
 
     def toggle_mirror_copy(self, group_idx):
         widgets = self.group_widgets[group_idx]
@@ -391,6 +414,8 @@ class AnimationViewer:
         current_frame = [0]
         
         def update():
+            if not label.winfo_exists(): # Stop if the widget was destroyed
+                return
             if current_frame[0] >= len(frames):
                 current_frame[0] = 0
                 
@@ -407,12 +432,14 @@ class AnimationViewer:
         update()
 
     def prev_animation(self):
-        self.current_anim_index = (self.current_anim_index - 1) % len(self.anim_data)
-        self.show_animation()
+        if len(self.anim_data) > 0:
+            self.current_anim_index = (self.current_anim_index - 1) % len(self.anim_data)
+            self.show_animation()
 
     def next_animation(self):
-        self.current_anim_index = (self.current_anim_index + 1) % len(self.anim_data)
-        self.show_animation()
+        if len(self.anim_data) > 0:
+            self.current_anim_index = (self.current_anim_index + 1) % len(self.anim_data)
+            self.show_animation()
 
     def view_sprites(self):
         """Open window with edited sprites"""
@@ -488,33 +515,35 @@ class AnimationViewer:
         try:
             group_names = [entry.get().strip() for entry in self.group_names]
             
+            if any(not name for name in group_names):
+                messagebox.showerror("Error", "All group names must be filled.")
+                return
+
             if len(group_names) != len(set(group_names)):
-                messagebox.showerror("Error", "Duplicate group names.")
+                messagebox.showerror("Error", "Duplicate group names are not allowed.")
                 return
             
             # Get current values of ALL sprites (only if they are not marked as "mirrored")
             sprites = []
-            for entry in self.current_sprites_entries:
-                # If the group is marked as "mirrored", we don't need the sprite values
-                # So we can assign a default value (e.g., 0) or simply skip them
+            all_entries = [entry for group in self.group_widgets.values() for entry in group["entries"]]
+            
+            for entry in all_entries:
                 if not self.is_group_mirrored(entry):
                     try:
                         sprites.append(int(entry.get()))
-                    except ValueError:
-                        # If a non-numeric value is entered, assign 0 or handle as needed
+                    except (ValueError, TclError):
                         sprites.append(0)
                 else:
-                    sprites.append(0)  # Or any default value, since it won't be used
+                    sprites.append(0)  # Default value, it won't be used
             
             anim = self.anim_data[self.current_anim_index]
             frames_per_group = anim["frames_per_group"]
             
             # Create the sprites structure with the new format
             grouped_sprites = {}
-            for group_idx, group_name in enumerate(group_names):
-                start = group_idx * frames_per_group
-                end = start + frames_per_group
-                group_values = sprites[start:end]
+            sprite_cursor = 0
+            for group_idx in range(len(self.group_names)):
+                group_name = self.group_names[group_idx].get().strip()
                 
                 # Determine if the group is "mirrored"
                 mirrored = group_idx in self.linked_groups
@@ -527,11 +556,14 @@ class AnimationViewer:
                 
                 if mirrored:
                     # If the group is "mirrored", save the ID of the group it's copying
-                    source_group = self.linked_groups[group_idx]
-                    group_entry["copy"] = str(source_group + 1)  # +1 because IDs start at 1
+                    source_group_idx = self.linked_groups[group_idx]
+                    group_entry["copy"] = str(source_group_idx + 1)
                 else:
                     # If it's not "mirrored", save the sprite values
-                    group_entry["values"] = group_values
+                    num_entries = len(self.group_widgets[group_idx]["entries"])
+                    end_cursor = sprite_cursor + num_entries
+                    group_entry["values"] = sprites[sprite_cursor:end_cursor]
+                    sprite_cursor = end_cursor
                 
                 # Add the group to the sprites dictionary
                 grouped_sprites[str(group_idx + 1)] = group_entry  # Use index + 1 as ID
@@ -568,7 +600,8 @@ class AnimationViewer:
         """
         for group_idx, widgets in self.group_widgets.items():
             if entry in widgets["entries"]:
-                return widgets["mirror_var"].get() if widgets["mirror_var"] else False
+                mirror_var = widgets.get("mirror_var")
+                return mirror_var.get() if mirror_var else False
         return False
 
     def load_json_data(self, anim_name):
