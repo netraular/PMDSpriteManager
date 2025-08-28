@@ -58,25 +58,25 @@ class AnimationCreator:
         form_frame = Frame(self.process_frame)
         form_frame.pack(pady=10)
         
-        Label(form_frame, text="Sprites Width:").grid(row=0, column=0)
-        self.width_entry = Entry(form_frame)
-        self.width_entry.grid(row=0, column=1, padx=5)
+        # Replaced separate width and height entries with a single size entry.
+        Label(form_frame, text="Size (width/height):").grid(row=0, column=0)
+        self.size_entry = Entry(form_frame)
+        self.size_entry.grid(row=0, column=1, padx=5)
         
-        Label(form_frame, text="Sprites Height:").grid(row=1, column=0)
-        self.height_entry = Entry(form_frame)
-        self.height_entry.grid(row=1, column=1, padx=5)
-        
-        Label(form_frame, text="Number of Sprites to Save:").grid(row=2, column=0)
+        Label(form_frame, text="Number of Sprites to Save:").grid(row=1, column=0)
         self.sprite_number_entry = Entry(form_frame)
-        self.sprite_number_entry.grid(row=2, column=1, padx=5)
+        self.sprite_number_entry.grid(row=1, column=1, padx=5)
         
-        Button(form_frame, text="Process and Save Sprites", command=self.process_spritesheet).grid(row=3, columnspan=2, pady=10)
+        Button(form_frame, text="Process and Save Sprites", command=self.process_spritesheet).grid(row=2, columnspan=2, pady=10)
 
     def process_spritesheet(self):
         """Process the spritesheet and save individual sprites to the 'Sprites' folder."""
         try:
-            sprites_width = int(self.width_entry.get())
-            sprites_height = int(self.height_entry.get())
+            # Read from the single size_entry and use it for both width and height.
+            size = int(self.size_entry.get())
+            sprites_width = size
+            sprites_height = size
+
             sprite_number = int(self.sprite_number_entry.get())
             
             self.saved_width = sprites_width
@@ -87,7 +87,7 @@ class AnimationCreator:
                 messagebox.showerror("Error", f"Cannot save {sprite_number} sprites. The spritesheet only contains {total_sprites} sprites.")
                 return
             
-            # >>> MODIFICATION: Save to the generic "Sprites" folder <<<
+            # Save to the generic "Sprites" folder
             folder_name = "Sprites"
             self.output_folder = os.path.join(self.folder, folder_name)
             
