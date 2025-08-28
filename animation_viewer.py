@@ -45,30 +45,28 @@ class AnimationViewer:
         tree = ET.parse(anim_data_path)
         return self.process_xml(tree)
 
-    # En animation_viewer.py
-
     def process_xml(self, tree):
         animations = []
         anims_root = tree.getroot().find("Anims")
 
-        # Paso 1: Crear un mapa de todas las animaciones por su nombre para una búsqueda rápida.
-        # Esto nos permite encontrar la animación "Attack" cuando procesamos "Strike".
+        # Step 1: Create a map of all animations by name for quick lookups.
+        # This allows us to find the "Attack" animation when processing "Strike".
         xml_anims_map = {anim.find('Name').text: anim for anim in anims_root.findall('Anim')}
 
-        # Paso 2: Iterar sobre cada animación y procesarla.
+        # Step 2: Iterate over each animation and process it.
         for anim_name, anim_xml in xml_anims_map.items():
             copy_of_tag = anim_xml.find('CopyOf')
             anim_data = {}
 
             try:
                 if copy_of_tag is not None:
-                    # Es una animación copiada.
+                    # This is a copied animation.
                     source_name = copy_of_tag.text
                     if source_name not in xml_anims_map:
-                        print(f"Advertencia: La animación de origen '{source_name}' para '{anim_name}' no se encontró. Saltando.")
+                        print(f"Warning: Source animation '{source_name}' for '{anim_name}' not found. Skipping.")
                         continue
                     
-                    # Obtenemos los datos del XML de la animación de origen.
+                    # Get the data from the source animation's XML.
                     source_anim_xml = xml_anims_map[source_name]
                     anim_data = {
                         "name": anim_name,
@@ -78,12 +76,12 @@ class AnimationViewer:
                         "image_path": os.path.join(self.sprite_folder, f"{anim_name}-Anim.png")
                     }
                 else:
-                    # Es una animación normal.
+                    # This is a normal animation.
                     fw_tag = anim_xml.find("FrameWidth")
                     fh_tag = anim_xml.find("FrameHeight")
                     
                     if fw_tag is None or fh_tag is None:
-                        print(f"Advertencia: La animación '{anim_name}' no tiene FrameWidth/FrameHeight y no es una copia. Saltando.")
+                        print(f"Warning: Animation '{anim_name}' is missing FrameWidth/FrameHeight and is not a copy. Skipping.")
                         continue
 
                     anim_data = {
@@ -94,9 +92,9 @@ class AnimationViewer:
                         "image_path": os.path.join(self.sprite_folder, f"{anim_name}-Anim.png")
                     }
 
-                # Procesamiento común para ambos tipos de animación
+                # Common processing for both animation types
                 if not os.path.exists(anim_data["image_path"]):
-                    print(f"Advertencia: No se encontró el archivo de imagen para la animación '{anim_data['name']}'. Saltando: {anim_data['image_path']}")
+                    print(f"Warning: Image file for animation '{anim_data['name']}' not found. Skipping: {anim_data['image_path']}")
                     continue
                     
                 with Image.open(anim_data["image_path"]) as img:
@@ -106,10 +104,33 @@ class AnimationViewer:
                 animations.append(anim_data)
 
             except Exception as e:
-                print(f"Error procesando la animación '{anim_name}': {e}. Saltando.")
+                print(f"Error processing animation '{anim_name}': {e}. Skipping.")
                 continue
             
         return animations
+
+    def _get_default_group_name(self, anim_name, total_groups, group_idx):
+        """
+        Determines the default group name based on the total number of groups.
+        """
+        # Names for animations with 8 directions
+        DIRECTIONAL_NAMES_8 = (
+            "down", "down-right", "right", "up-right",
+            "up", "up-left", "left", "down-left"
+        )
+        
+        # Condition 1: If there are exactly 8 groups, use directional names.
+        if total_groups == 8:
+            # Ensure the index is within the expected range
+            if 0 <= group_idx < len(DIRECTIONAL_NAMES_8):
+                return DIRECTIONAL_NAMES_8[group_idx]
+
+        # Condition 2: If there is only 1 group, use the animation name in lowercase.
+        elif total_groups == 1:
+            return anim_name.lower()
+
+        # Default case: For any other number of groups, use "groupX".
+        return f"group{group_idx + 1}"
 
     def show_animation(self):
         self.clear_animations()
@@ -150,13 +171,21 @@ class AnimationViewer:
             
             # Entry field for group name
             group_name_entry = Entry(header_frame, width=20)
+            
+            # 1. Get the default name using our new logic
+            default_name = self._get_default_group_name(anim["name"], total_groups, group_idx)
+            
+            # 2. If a JSON file exists, try to load the name from there.
+            #    If it's not in the JSON, fall back to our default name.
             if json_data and "sprites" in json_data:
                 group_id = str(group_idx + 1)
                 group_info = json_data["sprites"].get(group_id, {})
-                group_name = group_info.get("name", f"group{group_idx + 1}")
+                group_name = group_info.get("name", default_name)
                 group_name_entry.insert(0, group_name)
             else:
-                group_name_entry.insert(0, f"group{group_idx + 1}")  # Default name
+                # 3. If no JSON file exists, use our default name directly.
+                group_name_entry.insert(0, default_name)
+
             group_name_entry.pack(side='left', padx=10)
             self.group_names.append(group_name_entry)  # Save reference
             
@@ -463,61 +492,61 @@ class AnimationViewer:
                 messagebox.showerror("Error", "Duplicate group names.")
                 return
             
-            # Obtener valores actuales de TODOS los sprites (solo si no están marcados como "mirrored")
+            # Get current values of ALL sprites (only if they are not marked as "mirrored")
             sprites = []
             for entry in self.current_sprites_entries:
-                # Si el grupo está marcado como "mirrored", no necesitamos los valores de los sprites
-                # Por lo tanto, podemos asignar un valor predeterminado (por ejemplo, 0) o simplemente omitirlos
+                # If the group is marked as "mirrored", we don't need the sprite values
+                # So we can assign a default value (e.g., 0) or simply skip them
                 if not self.is_group_mirrored(entry):
                     try:
                         sprites.append(int(entry.get()))
                     except ValueError:
-                        # Si no se introduce un valor numérico, asignar 0 o manejarlo según sea necesario
+                        # If a non-numeric value is entered, assign 0 or handle as needed
                         sprites.append(0)
                 else:
-                    sprites.append(0)  # O cualquier valor predeterminado, ya que no se usará
+                    sprites.append(0)  # Or any default value, since it won't be used
             
             anim = self.anim_data[self.current_anim_index]
             frames_per_group = anim["frames_per_group"]
             
-            # Crear la estructura de sprites con el nuevo formato
+            # Create the sprites structure with the new format
             grouped_sprites = {}
             for group_idx, group_name in enumerate(group_names):
                 start = group_idx * frames_per_group
                 end = start + frames_per_group
                 group_values = sprites[start:end]
                 
-                # Determinar si el grupo está "mirrored"
+                # Determine if the group is "mirrored"
                 mirrored = group_idx in self.linked_groups
                 
-                # Crear la entrada del grupo
+                # Create the group entry
                 group_entry = {
                     "name": group_name,
                     "mirrored": mirrored
                 }
                 
                 if mirrored:
-                    # Si el grupo está "mirrored", guardar el ID del grupo que está copiando
+                    # If the group is "mirrored", save the ID of the group it's copying
                     source_group = self.linked_groups[group_idx]
-                    group_entry["copy"] = str(source_group + 1)  # +1 porque los IDs empiezan en 1
+                    group_entry["copy"] = str(source_group + 1)  # +1 because IDs start at 1
                 else:
-                    # Si no está "mirrored", guardar los valores de los sprites
+                    # If it's not "mirrored", save the sprite values
                     group_entry["values"] = group_values
                 
-                # Añadir el grupo al diccionario de sprites
-                grouped_sprites[str(group_idx + 1)] = group_entry  # Usar el índice + 1 como ID
+                # Add the group to the sprites dictionary
+                grouped_sprites[str(group_idx + 1)] = group_entry  # Use index + 1 as ID
             
-            # Crear estructura JSON
+            # Create JSON structure
             json_data = {
                 "index": self.current_anim_index,
                 "name": anim["name"],
                 "framewidth": anim["frame_width"],
                 "frameheight": anim["frame_height"],
-                "sprites": grouped_sprites,  # Nuevo formato de sprites
+                "sprites": grouped_sprites,  # New sprites format
                 "durations": anim["durations"]
             }
             
-            # Guardar archivo
+            # Save file
             folder_name = os.path.basename(self.anim_folder) + "AnimationData"
             output_folder = os.path.join(self.anim_folder, folder_name)
             os.makedirs(output_folder, exist_ok=True)
@@ -535,7 +564,7 @@ class AnimationViewer:
 
     def is_group_mirrored(self, entry):
         """
-        Determina si el grupo al que pertenece el campo de entrada está marcado como "mirrored".
+        Determines if the group to which the input field belongs is marked as "mirrored".
         """
         for group_idx, widgets in self.group_widgets.items():
             if entry in widgets["entries"]:
