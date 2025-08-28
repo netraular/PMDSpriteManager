@@ -5,9 +5,8 @@ from tkinter import Tk, filedialog, Frame, Label, Button, messagebox
 from PIL import Image, ImageTk
 from sprite_sheet_handler import SpriteSheetHandler
 from animation_viewer import AnimationViewer
-from spritesheet_viewer import SpritesheetViewer
 from animation_creator import AnimationCreator
-from batch_resizer import BatchResizer # New import
+from batch_resizer import BatchResizer
 
 class MainApplication:
     def __init__(self, root):
@@ -16,10 +15,9 @@ class MainApplication:
         self.root.geometry("800x600")
         self.current_frame = None
         self.folder = None
-        self.spritesheet_viewer = None
         self.animation_viewer = None
         self.animation_creator = None
-        self.batch_resizer = None # New reference
+        self.batch_resizer = None
         
         self.show_folder_selection()
 
@@ -30,41 +28,61 @@ class MainApplication:
         self.current_frame.pack(fill='both', expand=True)
 
     def show_folder_selection(self):
+        """
+        Displays the initial screen with the two main workflow choices.
+        """
         self.clear_frame()
+        
         Label(self.current_frame, 
-             text="Select the folder with the spritesheet image\n and the subfolder with the animations",
-             font=('Arial', 14)).pack(pady=50)
-        Button(self.current_frame, text="Select Folder", 
-              command=self.select_folder, font=('Arial', 12)).pack()
+             text="Welcome to the PMD Sprite Manager",
+             font=('Arial', 16, 'bold')).pack(pady=(50, 10))
+             
+        Label(self.current_frame, 
+             text="Please choose your workflow:",
+             font=('Arial', 12)).pack(pady=(10, 30))
+        
+        # --- Workflow 1: Pokemon Project ---
+        Button(self.current_frame, 
+               text="Select Pokemon Folder", 
+               command=self.select_project_folder, 
+               font=('Arial', 12),
+               width=25,
+               height=2).pack(pady=10)
+        
+        # --- Workflow 2: Batch Utility ---
+        Button(self.current_frame, 
+               text="Batch Resize Sprites", 
+               command=self.launch_batch_resizer, 
+               font=('Arial', 12),
+               width=25,
+               height=2).pack(pady=10)
 
-    def select_folder(self):
-        folder = filedialog.askdirectory(title="Select a folder")
+    def select_project_folder(self):
+        """
+        Handles the selection of a Pokémon project folder and proceeds to the main menu.
+        """
+        folder = filedialog.askdirectory(title="Select a Pokémon Project Folder")
         if folder:
             self.folder = folder
             self.show_main_menu()
 
     def show_main_menu(self):
+        """
+        Displays the main menu for a selected Pokémon project folder.
+        """
         self.clear_frame()
         Label(self.current_frame, text=f"Selected folder:\n{self.folder}", 
              font=('Arial', 12)).pack(pady=20)
         
-        Button(self.current_frame, text="Split Spritesheet", 
-              command=self.show_sprite_splitter, width=25).pack(pady=10)
+        Button(self.current_frame, text="Process Spritesheet", 
+              command=self.show_animation_creator, width=25).pack(pady=10)
         Button(self.current_frame, text="View Animations", 
               command=self.show_animation_viewer, width=25).pack(pady=10)
-        Button(self.current_frame, text="Create Animations", 
-              command=self.show_animation_creator, width=25).pack(pady=10)
-        # New button for the Batch Resizer
-        Button(self.current_frame, text="Batch Resize Sprites", 
-              command=self.show_batch_resizer, width=25).pack(pady=10)
+        
+        # Add a button to go back to the initial selection screen
+        Button(self.current_frame, text="Back to Workflow Selection", 
+              command=self.show_folder_selection).pack(pady=20)
 
-    def show_sprite_splitter(self):
-        self.clear_frame()
-        self.spritesheet_viewer = SpritesheetViewer(
-            self.current_frame, 
-            self.folder, 
-            self.show_main_menu
-        )
 
     def show_animation_viewer(self):
         self.clear_frame()
@@ -81,14 +99,10 @@ class MainApplication:
             command=lambda: self.animation_viewer.generate_json()).pack(side='left', padx=5)
         Button(control_frame, text="View Sprites", 
             command=lambda: self.animation_viewer.view_sprites()).pack(side='left', padx=5)
-        
-        # >>> NEW BUTTON ADDED HERE <<<
         Button(control_frame, text="Save All Animations", 
             command=lambda: self.animation_viewer.save_all_animations(), bg="lightblue").pack(side='left', padx=5)
-        # >>> END OF CHANGE <<<
 
         try:
-            # Note: AnimationViewer depends on a selected folder, which is correct.
             self.animation_viewer = AnimationViewer(self.current_frame, self.folder)
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load animations: {str(e)}")
@@ -98,16 +112,19 @@ class MainApplication:
         self.clear_frame()
         self.animation_creator = AnimationCreator(
             self.current_frame,
+            self.folder,
             self.show_main_menu
         )
 
-    # New function to show the Batch Resizer
-    def show_batch_resizer(self):
+    def launch_batch_resizer(self):
+        """
+        Clears the frame and launches the BatchResizer module directly.
+        The callback is set to return to the initial folder selection screen.
+        """
         self.clear_frame()
-        # BatchResizer does not need the initial folder, as it asks for its own.
         self.batch_resizer = BatchResizer(
             self.current_frame,
-            self.show_main_menu
+            self.show_folder_selection  # <-- This is the important change
         )
 
 if __name__ == "__main__":
