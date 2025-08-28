@@ -1,4 +1,4 @@
-# main.py (versión actualizada)
+# main.py (updated version)
 
 import os
 from tkinter import Tk, filedialog, Frame, Label, Button, messagebox
@@ -7,7 +7,7 @@ from sprite_sheet_handler import SpriteSheetHandler
 from animation_viewer import AnimationViewer
 from spritesheet_viewer import SpritesheetViewer
 from animation_creator import AnimationCreator
-from batch_resizer import BatchResizer # Nueva importación
+from batch_resizer import BatchResizer # New import
 
 class MainApplication:
     def __init__(self, root):
@@ -19,7 +19,7 @@ class MainApplication:
         self.spritesheet_viewer = None
         self.animation_viewer = None
         self.animation_creator = None
-        self.batch_resizer = None # Nueva referencia
+        self.batch_resizer = None # New reference
         
         self.show_folder_selection()
 
@@ -54,7 +54,7 @@ class MainApplication:
               command=self.show_animation_viewer, width=25).pack(pady=10)
         Button(self.current_frame, text="Create Animations", 
               command=self.show_animation_creator, width=25).pack(pady=10)
-        # Nuevo botón para el Batch Resizer
+        # New button for the Batch Resizer
         Button(self.current_frame, text="Batch Resize Sprites", 
               command=self.show_batch_resizer, width=25).pack(pady=10)
 
@@ -81,9 +81,14 @@ class MainApplication:
             command=lambda: self.animation_viewer.generate_json()).pack(side='left', padx=5)
         Button(control_frame, text="View Sprites", 
             command=lambda: self.animation_viewer.view_sprites()).pack(side='left', padx=5)
+        
+        # >>> NEW BUTTON ADDED HERE <<<
+        Button(control_frame, text="Save All Animations", 
+            command=lambda: self.animation_viewer.save_all_animations(), bg="lightblue").pack(side='left', padx=5)
+        # >>> END OF CHANGE <<<
 
         try:
-            # Nota: AnimationViewer depende de una carpeta seleccionada, lo que es correcto.
+            # Note: AnimationViewer depends on a selected folder, which is correct.
             self.animation_viewer = AnimationViewer(self.current_frame, self.folder)
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load animations: {str(e)}")
@@ -96,10 +101,10 @@ class MainApplication:
             self.show_main_menu
         )
 
-    # Nueva función para mostrar el Batch Resizer
+    # New function to show the Batch Resizer
     def show_batch_resizer(self):
         self.clear_frame()
-        # BatchResizer no necesita la carpeta inicial, ya que pide la suya propia.
+        # BatchResizer does not need the initial folder, as it asks for its own.
         self.batch_resizer = BatchResizer(
             self.current_frame,
             self.show_main_menu
