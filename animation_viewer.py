@@ -132,15 +132,6 @@ class AnimationViewer:
             Button(result_preview_frame, text="Load Preview", command=lambda idx=group_idx: self.load_result_animation(idx)).pack(pady=2, padx=2)
             result_label = Label(result_preview_frame); result_label.pack(pady=5, padx=5, expand=True)
             
-            default_name = self._get_default_group_name(anim["name"], total_groups, group_idx)
-            group_name = default_name
-            if json_data and "sprites" in json_data:
-                group_info = json_data["sprites"].get(str(group_idx + 1), {})
-                group_name = group_info.get("name", default_name)
-                group_mirror_var.set(group_info.get("values_mirrored", False))
-            group_name_entry.insert(0, group_name)
-            
-            # <<< MODIFICATION: Add a list to store preview-specific animation IDs >>>
             self.group_widgets[group_idx] = {
                 "group_copy_var": group_copy_var, "dropdown": dropdown, "dropdown_var": dropdown_var, 
                 "ai_button": ai_button, "group_mirror_var": group_mirror_var, "group_mirror_cb": group_mirror_cb, 
@@ -151,7 +142,6 @@ class AnimationViewer:
             group_frames = all_frames[start:end]
             durations = anim["durations"] * (len(group_frames) // len(anim["durations"]) + 1)
             anim_label = Label(anim_panel); anim_label.pack()
-            # The main animation loop uses the global `self.after_ids` list
             self._start_animation_loop(anim_label, group_frames, durations[:len(group_frames)], self.after_ids)
             
             group_entries = []
@@ -159,41 +149,60 @@ class AnimationViewer:
                 frame.thumbnail((80, 80)); img = ImageTk.PhotoImage(frame)
                 lbl = Label(frames_panel, image=img); lbl.image = img; lbl.grid(row=0, column=idx, padx=2)
                 entry = Entry(frames_panel, width=5); entry.insert(0, "0")
-                if json_data and "sprites" in json_data:
-                    group_info = json_data["sprites"].get(str(group_idx + 1), {})
-                    if not group_info.get("mirrored", False):
-                        sprite_values = group_info.get("values", [])
+                entry.grid(row=1, column=idx, padx=2); group_entries.append(entry)
+                Label(frames_panel, text=f"Dur: {durations[idx]}", font=('Arial', 7)).grid(row=2, column=idx)
+            self.group_widgets[group_idx]["entries"] = group_entries
+            
+            is_group_copy = False
+            default_name = self._get_default_group_name(anim["name"], total_groups, group_idx)
+            group_name_entry.insert(0, default_name)
+
+            if json_data and "sprites" in json_data:
+                group_info = json_data["sprites"].get(str(group_idx + 1), {})
+                if group_info:
+                    group_name_entry.delete(0, 'end'); group_name_entry.insert(0, group_info.get("name", default_name))
+                    group_mirror_var.set(group_info.get("values_mirrored", False))
+
+                    sprite_values = group_info.get("values", [])
+                    for idx, entry in enumerate(group_entries):
                         if idx < len(sprite_values):
                             frame_val = sprite_values[idx]
                             sprite_id = frame_val if isinstance(frame_val, int) else frame_val.get("id", 0)
                             entry.delete(0, "end"); entry.insert(0, str(sprite_id))
-                entry.grid(row=1, column=idx, padx=2); group_entries.append(entry)
-                Label(frames_panel, text=f"Dur: {durations[idx]}", font=('Arial', 7)).grid(row=2, column=idx)
-            
-            self.group_widgets[group_idx]["entries"] = group_entries
-            
-            is_group_copy = False
-            if json_data and "sprites" in json_data:
-                group_info = json_data["sprites"].get(str(group_idx + 1), {})
-                if group_info.get("mirrored", False) and group_copy_var:
-                    is_group_copy = True; group_copy_var.set(True)
-                    source_group = group_info.get("copy", "1"); dropdown_var.set(f"Group {source_group}")
-                    self.toggle_mirror_copy(group_idx)
-                    self.linked_groups[group_idx] = int(source_group) - 1
+                    
+                    if group_info.get("mirrored", False) and group_copy_var:
+                        is_group_copy = True
+                        group_copy_var.set(True)
+                        source_group = group_info.get("copy", "1")
+                        dropdown_var.set(f"Group {source_group}")
+                        self.linked_groups[group_idx] = int(source_group) - 1
+                        
+                        dropdown.pack()
+                        ai_button.pack_forget()
+                        group_mirror_cb.config(state='disabled')
+                        for child in frames_panel.winfo_children():
+                            if isinstance(child, (Entry, Label)):
+                                child.grid_remove()
 
             if run_ai_automatically and not is_group_copy:
                 self.identify_group_sprites(group_idx)
 
+            # <<< NUEVO: Activar la vista previa automáticamente después de cargar/identificar >>>
+            self.load_result_animation(group_idx)
+
+
     def load_result_animation(self, group_idx):
         widgets = self.group_widgets[group_idx]
         
-        # <<< MODIFICATION: Cancel any previously running preview animation for this group >>>
         for aid in widgets["preview_after_ids"]:
             self.parent_frame.after_cancel(aid)
         widgets["preview_after_ids"].clear()
 
         if widgets["group_copy_var"] and widgets["group_copy_var"].get():
-            messagebox.showinfo("Info", "Cannot load preview for a group-copied animation."); return
+            # Clear the label if it's a copy group to avoid showing a stale preview
+            widgets["result_label"].config(image='')
+            widgets["result_label"].image = None
+            return
         
         is_group_mirrored = widgets["group_mirror_var"].get()
         entries = widgets["entries"]
@@ -221,7 +230,6 @@ class AnimationViewer:
                 draw.text((5, 10), f"!{num}!", fill="red"); result_frames.append(placeholder)
         
         durations = anim["durations"] * (len(result_frames) // len(result_frames) + 1)
-        # The preview animation now uses its own dedicated list to store IDs
         self._start_animation_loop(result_label, result_frames, durations[:len(result_frames)], widgets["preview_after_ids"])
 
     def identify_group_sprites(self, group_idx):
@@ -232,24 +240,23 @@ class AnimationViewer:
             sprites_folder = os.path.join(self.anim_folder, "Sprites")
             if not os.path.exists(sprites_folder):
                 print(f"Warning: 'Sprites' folder not found. Cannot run AI identification."); return
+            
             matcher = SpriteMatcher(sprites_folder)
-            matches = matcher.match_group(group_frames)
+            match_data = matcher.match_group(group_frames)
             
-            mirrored_count = 0
-            non_mirrored_count = 0
-            for match_filename, is_mirrored in matches:
-                if match_filename:
-                    if is_mirrored:
-                        mirrored_count += 1
-                    else:
-                        non_mirrored_count += 1
+            sprite_numbers = match_data["frame_matches"]
+            group_should_be_mirrored = match_data["group_is_mirrored"]
             
-            group_should_be_mirrored = mirrored_count > non_mirrored_count
+            anim_name = self.anim_data[self.current_anim_index]['name']
+            if group_should_be_mirrored:
+                print(f"[AI Identification] Animation: '{anim_name}', Group {group_idx + 1}: Detected as MIRRORED.")
+            else:
+                print(f"[AI Identification] Animation: '{anim_name}', Group {group_idx + 1}: Detected as standard (not mirrored).")
+            
             self.group_widgets[group_idx]["group_mirror_var"].set(group_should_be_mirrored)
 
-            for idx, (match_filename, _) in enumerate(matches):
-                if match_filename:
-                    sprite_number = int(match_filename.split('_')[-1].split('.')[0])
+            for idx, sprite_number in enumerate(sprite_numbers):
+                if sprite_number > 0:
                     entry = self.group_widgets[group_idx]["entries"][idx]
                     entry.delete(0, "end"); entry.insert(0, str(sprite_number))
         except Exception as e:
@@ -277,18 +284,20 @@ class AnimationViewer:
             widgets["group_mirror_var"].set(False)
             self.update_linked_group(group_idx)
         else: self.linked_groups.pop(group_idx, None)
+        
+        # Update the preview to reflect the change (e.g., hide it)
+        self.load_result_animation(group_idx)
 
     def clear_animations(self):
         for aid in self.after_ids: self.parent_frame.after_cancel(aid)
         self.after_ids.clear()
-        # Also clear any running preview animations when switching main animations
         for group_idx in self.group_widgets:
             for aid in self.group_widgets[group_idx].get("preview_after_ids", []):
                 self.parent_frame.after_cancel(aid)
-            self.group_widgets[group_idx]["preview_after_ids"] = []
+            if "preview_after_ids" in self.group_widgets[group_idx]:
+                self.group_widgets[group_idx]["preview_after_ids"].clear()
 
 
-    # <<< MODIFICATION: Add id_storage_list parameter >>>
     def _start_animation_loop(self, label, frames, durations, id_storage_list):
         current_frame = [0]
         def update():
@@ -297,7 +306,6 @@ class AnimationViewer:
             frame = frames[idx]; frame.thumbnail((200, 200)); img = ImageTk.PhotoImage(frame)
             label.config(image=img); label.image = img
             delay = durations[idx] * 33; current_frame[0] += 1
-            # Store the new after ID in the specified list
             after_id = self.parent_frame.after(delay, update)
             id_storage_list.append(after_id)
         update()
@@ -361,11 +369,9 @@ class AnimationViewer:
                 values, group_mirrored = [], False
                 if matcher:
                     start, end = group_idx * anim["frames_per_group"], (group_idx + 1) * anim["frames_per_group"]
-                    matches = matcher.match_group(all_frames[start:end])
-                    mirrored_count = sum(1 for _, m in matches if m)
-                    non_mirrored_count = sum(1 for f, _ in matches if f) - mirrored_count
-                    group_mirrored = mirrored_count > non_mirrored_count
-                    values = [int(m[0].split('_')[-1].split('.')[0]) if m[0] else 0 for m in matches]
+                    match_data = matcher.match_group(all_frames[start:end])
+                    values = match_data["frame_matches"]
+                    group_mirrored = match_data["group_is_mirrored"]
                 else:
                     values = [0] * anim["frames_per_group"]
                 
