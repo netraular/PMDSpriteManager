@@ -45,22 +45,70 @@ class AnimationViewer:
         tree = ET.parse(anim_data_path)
         return self.process_xml(tree)
 
+    # En animation_viewer.py
+
     def process_xml(self, tree):
         animations = []
-        for anim in tree.getroot().find("Anims"):
-            anim_data = {
-                "name": anim.find("Name").text,
-                "frame_width": int(anim.find("FrameWidth").text),
-                "frame_height": int(anim.find("FrameHeight").text),
-                "durations": [int(d.text) for d in anim.findall("Durations/Duration")],
-                "image_path": os.path.join(self.sprite_folder, f"{anim.find('Name').text}-Anim.png")
-            }
+        anims_root = tree.getroot().find("Anims")
+
+        # Paso 1: Crear un mapa de todas las animaciones por su nombre para una búsqueda rápida.
+        # Esto nos permite encontrar la animación "Attack" cuando procesamos "Strike".
+        xml_anims_map = {anim.find('Name').text: anim for anim in anims_root.findall('Anim')}
+
+        # Paso 2: Iterar sobre cada animación y procesarla.
+        for anim_name, anim_xml in xml_anims_map.items():
+            copy_of_tag = anim_xml.find('CopyOf')
+            anim_data = {}
+
+            try:
+                if copy_of_tag is not None:
+                    # Es una animación copiada.
+                    source_name = copy_of_tag.text
+                    if source_name not in xml_anims_map:
+                        print(f"Advertencia: La animación de origen '{source_name}' para '{anim_name}' no se encontró. Saltando.")
+                        continue
+                    
+                    # Obtenemos los datos del XML de la animación de origen.
+                    source_anim_xml = xml_anims_map[source_name]
+                    anim_data = {
+                        "name": anim_name,
+                        "frame_width": int(source_anim_xml.find("FrameWidth").text),
+                        "frame_height": int(source_anim_xml.find("FrameHeight").text),
+                        "durations": [int(d.text) for d in source_anim_xml.findall("Durations/Duration")],
+                        "image_path": os.path.join(self.sprite_folder, f"{anim_name}-Anim.png")
+                    }
+                else:
+                    # Es una animación normal.
+                    fw_tag = anim_xml.find("FrameWidth")
+                    fh_tag = anim_xml.find("FrameHeight")
+                    
+                    if fw_tag is None or fh_tag is None:
+                        print(f"Advertencia: La animación '{anim_name}' no tiene FrameWidth/FrameHeight y no es una copia. Saltando.")
+                        continue
+
+                    anim_data = {
+                        "name": anim_name,
+                        "frame_width": int(fw_tag.text),
+                        "frame_height": int(fh_tag.text),
+                        "durations": [int(d.text) for d in anim_xml.findall("Durations/Duration")],
+                        "image_path": os.path.join(self.sprite_folder, f"{anim_name}-Anim.png")
+                    }
+
+                # Procesamiento común para ambos tipos de animación
+                if not os.path.exists(anim_data["image_path"]):
+                    print(f"Advertencia: No se encontró el archivo de imagen para la animación '{anim_data['name']}'. Saltando: {anim_data['image_path']}")
+                    continue
+                    
+                with Image.open(anim_data["image_path"]) as img:
+                    anim_data["total_groups"] = img.height // anim_data["frame_height"]
+                    anim_data["frames_per_group"] = img.width // anim_data["frame_width"]
+                
+                animations.append(anim_data)
+
+            except Exception as e:
+                print(f"Error procesando la animación '{anim_name}': {e}. Saltando.")
+                continue
             
-            with Image.open(anim_data["image_path"]) as img:
-                anim_data["total_groups"] = img.height // anim_data["frame_height"]
-                anim_data["frames_per_group"] = img.width // anim_data["frame_width"]
-            
-            animations.append(anim_data)
         return animations
 
     def show_animation(self):
