@@ -279,8 +279,22 @@ class AnimationCreator:
             frames = self.get_group_frames(source_group)
             return [ImageOps.mirror(frame) for frame in frames]
         else:
-            sprite_numbers = group_data["values"]
-            return [self.load_sprite(num) for num in sprite_numbers]
+            sprite_values = group_data["values"]
+            frames = []
+            for val in sprite_values:
+                sprite_id = 0
+                is_mirrored = False
+                if isinstance(val, dict):
+                    sprite_id = val.get("id", 0)
+                    is_mirrored = val.get("mirrored", False)
+                elif isinstance(val, int):
+                    sprite_id = val
+                
+                sprite_img = self.load_sprite(sprite_id)
+                if is_mirrored:
+                    sprite_img = ImageOps.mirror(sprite_img)
+                frames.append(sprite_img)
+            return frames
 
     def load_sprite(self, sprite_num):
         """Load a sprite from the generated files in the 'Sprites' folder."""

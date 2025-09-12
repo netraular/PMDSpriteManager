@@ -116,7 +116,7 @@ class AnimationViewer:
             all_offsets_frames = offsets_handler.split_animation_frames(anim["frame_width"], anim["frame_height"])
             all_metadata = [self._get_frame_metadata(f) for f in all_offsets_frames]
         else:
-            default_anchor = (anim["frame_width"] // 2, anim["frame_height"] // 2)
+            default_anchor = (anim["frame_width"] // 2, anim["frame_height"] // 2 - 1)
             num_frames = anim["total_groups"] * anim["frames_per_group"]
             all_metadata = [{"anchors": {"black": default_anchor}}] * num_frames
             
@@ -131,7 +131,18 @@ class AnimationViewer:
             for y in range(height):
                 for color_name, color_value in anchor_colors.items():
                     if pixels[x, y] == color_value: found_anchors[color_name] = (x, y)
-        if found_anchors["black"] is None: found_anchors["black"] = (width // 2, height // 2)
+        
+        # Correct for the 1-pixel offset from the master spritesheet's guide row
+        for color, coords in found_anchors.items():
+            if coords:
+                x, y = coords
+                found_anchors[color] = (x, y - 1)
+
+        if found_anchors["black"] is None:
+            default_x = width // 2
+            default_y = height // 2 - 1
+            found_anchors["black"] = (default_x, default_y)
+            
         return {"anchors": found_anchors}
 
     def identify_group_sprites(self, group_ui_instance):
@@ -140,8 +151,7 @@ class AnimationViewer:
             matcher = SpriteMatcher(self.sprite_folder)
             match_data = matcher.match_group(group_ui_instance.group_frames)
             group_ui_instance.set_sprite_values(match_data["frame_matches"], match_data["per_frame_mirror"])
-            group_ui_instance.load_result_animation()
-            group_ui_instance.load_overlay_animation()
+            group_ui_instance.refresh_all_previews()
         except Exception as e:
             messagebox.showerror("Error", f"Error during identification: {str(e)}")
 

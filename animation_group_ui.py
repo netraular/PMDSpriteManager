@@ -17,7 +17,7 @@ class AnimationGroupUI:
         self.ai_callback = ai_callback
 
         self.after_ids = []
-        self.preview_after_ids = []
+        self.result_after_ids = []
         self.overlay_after_ids = []
         
         self.string_vars = []
@@ -27,8 +27,7 @@ class AnimationGroupUI:
         self._setup_ui()
         self._populate_initial_data()
         self.refresh_all_custom_previews()
-        self.load_result_animation()
-        self.load_overlay_animation()
+        self.refresh_all_previews()
 
     def _setup_ui(self):
         row_container = Frame(self.parent); row_container.pack(fill='x', padx=5, pady=5)
@@ -48,14 +47,25 @@ class AnimationGroupUI:
         anim_panel_copy = Frame(animation_previews_container); anim_panel_copy.pack(side="left", padx=5)
         frames_panel = Frame(content_frame); frames_panel.pack(side="left", fill="x", expand=True)
         
-        result_preview_frame = Frame(row_container, bd=1, relief="sunken"); result_preview_frame.pack(side='left', fill='y', padx=(5, 0))
-        Button(result_preview_frame, text="Load Preview", command=self.load_result_animation).pack(pady=2, padx=2)
+        # --- Previews Container ---
+        previews_container = Frame(row_container)
+        previews_container.pack(side='left', fill='y')
+        
+        Button(previews_container, text="Refresh Previews", command=self.refresh_all_previews).pack(pady=2, padx=2, fill='x')
+
+        # --- Uncorrected Overlay Preview (Left) ---
+        overlay_preview_frame = Frame(previews_container, bd=1, relief="sunken")
+        overlay_preview_frame.pack(side='left', fill='y', padx=(5, 0))
+        Label(overlay_preview_frame, text="Uncorrected Overlay", font=('Arial', 8, 'bold')).pack(pady=(5,0))
+        self.overlay_label = Label(overlay_preview_frame); self.overlay_label.pack(pady=5, padx=5, expand=True)
+        self.offset_label = Label(overlay_preview_frame, text="Offset: (N/A)", font=('Arial', 8)); self.offset_label.pack(pady=(0, 5))
+
+        # --- Corrected Result Preview (Right) ---
+        result_preview_frame = Frame(previews_container, bd=1, relief="sunken")
+        result_preview_frame.pack(side='left', fill='y', padx=(5, 0))
+        Label(result_preview_frame, text="Corrected Preview", font=('Arial', 8, 'bold')).pack(pady=(5,0))
         self.result_label = Label(result_preview_frame); self.result_label.pack(pady=5, padx=5, expand=True)
         
-        overlay_preview_frame = Frame(row_container, bd=1, relief="sunken"); overlay_preview_frame.pack(side='left', fill='y', padx=(5, 0))
-        Button(overlay_preview_frame, text="Load Overlay", command=self.load_overlay_animation).pack(pady=2, padx=2)
-        self.overlay_label = Label(overlay_preview_frame); self.overlay_label.pack(pady=5, padx=5, expand=True)
-
         durations = self.anim_data["durations"] * (len(self.group_frames) // len(self.anim_data["durations"]) + 1)
         
         anim_label = Label(anim_panel); anim_label.pack()
@@ -168,7 +178,16 @@ class AnimationGroupUI:
             label_to_update.config(image=img_tk)
             label_to_update.image = img_tk
 
-    def _generate_custom_animation_frames(self):
+    def _get_image_center_of_mass(self, image):
+        """Calculates the center of the visible pixels in an image."""
+        bbox = image.getbbox()
+        if not bbox:
+            return None
+        center_x = (bbox[0] + bbox[2]) / 2
+        center_y = (bbox[1] + bbox[3]) / 2
+        return (center_x, center_y)
+
+    def _generate_custom_frames(self, apply_correction):
         sprite_numbers = [int(sv.get()) if sv.get().isdigit() else 0 for sv in self.string_vars]
         result_frames = []
         frame_width, frame_height = self.anim_data["frame_width"], self.anim_data["frame_height"]
@@ -184,25 +203,49 @@ class AnimationGroupUI:
                     pass
             
             if sprite_to_paste:
+                if self.mirror_vars[i].get():
+                    sprite_to_paste = ImageOps.mirror(sprite_to_paste)
+
                 all_anchors = self.group_metadata[i]['anchors']
                 sprite_center_target = all_anchors.get("green") or all_anchors.get("black")
                 anchor_x, anchor_y = sprite_center_target
                 
-                if self.mirror_vars[i].get():
-                    sprite_to_paste = ImageOps.mirror(sprite_to_paste)
-
                 sprite_w, sprite_h = sprite_to_paste.size
-                paste_x, paste_y = anchor_x - sprite_w // 2, anchor_y - sprite_h // 2
-                composite_frame.paste(sprite_to_paste, (paste_x, paste_y), sprite_to_paste)
+                initial_paste_x = anchor_x - sprite_w // 2
+                initial_paste_y = anchor_y - sprite_h // 2
+                
+                final_paste_x, final_paste_y = initial_paste_x, initial_paste_y
+                
+                if apply_correction:
+                    original_frame = self.group_frames[i]
+                    temp_frame = Image.new('RGBA', (frame_width, frame_height), (0, 0, 0, 0))
+                    temp_frame.paste(sprite_to_paste, (initial_paste_x, initial_paste_y), sprite_to_paste)
+
+                    center_orig = self._get_image_center_of_mass(original_frame)
+                    center_temp = self._get_image_center_of_mass(temp_frame)
+                    
+                    correction_x, correction_y = 0, 0
+                    if center_orig and center_temp:
+                        correction_x = center_orig[0] - center_temp[0]
+                        correction_y = center_orig[1] - center_temp[1]
+
+                    final_paste_x += int(round(correction_x))
+                    final_paste_y += int(round(correction_y))
+                
+                composite_frame.paste(sprite_to_paste, (final_paste_x, final_paste_y), sprite_to_paste)
 
             result_frames.append(composite_frame)
         return result_frames
 
-    def load_result_animation(self):
-        for aid in self.preview_after_ids: self.parent.after_cancel(aid)
-        self.preview_after_ids.clear()
+    def refresh_all_previews(self):
+        self.load_corrected_result_animation()
+        self.load_uncorrected_overlay_animation()
 
-        custom_frames = self._generate_custom_animation_frames()
+    def load_corrected_result_animation(self):
+        for aid in self.result_after_ids: self.parent.after_cancel(aid)
+        self.result_after_ids.clear()
+
+        custom_frames = self._generate_custom_frames(apply_correction=True)
         if not custom_frames: return
 
         canvas_width, canvas_height = self.anim_data["frame_width"] * 2, self.anim_data["frame_height"] * 2
@@ -218,7 +261,7 @@ class AnimationGroupUI:
             final_frames.append(final_frame)
 
         durations = self.anim_data["durations"] * (len(final_frames) // len(self.anim_data["durations"]) + 1)
-        self._start_animation_loop(self.result_label, final_frames, durations[:len(final_frames)], self.preview_after_ids)
+        self._start_animation_loop(self.result_label, final_frames, durations[:len(final_frames)], self.result_after_ids)
 
     def _tint_image(self, image, color):
         image = image.convert('RGBA')
@@ -228,31 +271,45 @@ class AnimationGroupUI:
         tinted_sprite.paste(color_img, (0, 0), alpha_mask)
         return tinted_sprite
 
-    def load_overlay_animation(self):
+    def load_uncorrected_overlay_animation(self):
         for aid in self.overlay_after_ids: self.parent.after_cancel(aid)
         self.overlay_after_ids.clear()
 
-        custom_frames = self._generate_custom_animation_frames()
-        if not custom_frames or len(self.group_frames) != len(custom_frames): return
+        uncorrected_frames = self._generate_custom_frames(apply_correction=False)
+        if not uncorrected_frames or len(self.group_frames) != len(uncorrected_frames): return
             
         canvas_width, canvas_height = self.anim_data["frame_width"] * 2, self.anim_data["frame_height"] * 2
         overlay_frames = []
+        offset_texts = []
         
-        for i in range(len(custom_frames)):
+        for i in range(len(uncorrected_frames)):
             composite = Image.new('RGBA', (canvas_width, canvas_height), (0,0,0,0))
-
             tinted_original = self._tint_image(self.group_frames[i], (255, 0, 0, 128))
-            tinted_custom = self._tint_image(custom_frames[i], (0, 0, 255, 128))
-
+            tinted_custom = self._tint_image(uncorrected_frames[i], (0, 0, 255, 128))
             paste_pos = (self.anim_data["frame_width"] // 2, self.anim_data["frame_height"] // 2)
-            
             composite.paste(tinted_original, paste_pos, tinted_original)
             composite.paste(tinted_custom, paste_pos, tinted_custom)
-            
             overlay_frames.append(composite)
 
+            center_orig = self._get_image_center_of_mass(self.group_frames[i])
+            center_custom = self._get_image_center_of_mass(uncorrected_frames[i])
+
+            if center_orig and center_custom:
+                dx = center_custom[0] - center_orig[0]
+                dy = center_custom[1] - center_orig[1]
+                offset_texts.append(f"Offset: ({dx:+.1f}, {dy:+.1f})")
+            else:
+                offset_texts.append("Offset: (N/A)")
+
         durations = self.anim_data["durations"] * (len(overlay_frames) // len(self.anim_data["durations"]) + 1)
-        self._start_animation_loop(self.overlay_label, overlay_frames, durations[:len(overlay_frames)], self.overlay_after_ids)
+        self._start_animation_loop(
+            image_label=self.overlay_label, 
+            frames=overlay_frames, 
+            durations=durations[:len(overlay_frames)], 
+            id_storage_list=self.overlay_after_ids,
+            text_label=self.offset_label,
+            text_data=offset_texts
+        )
 
     def set_sprite_values(self, sprite_numbers, mirror_flags):
         for idx, sprite_number in enumerate(sprite_numbers):
@@ -261,32 +318,82 @@ class AnimationGroupUI:
                 self.mirror_vars[idx].set(mirror_flags[idx])
 
     def get_data(self):
-        group_entry = {"name": self.name_entry.get().strip(), "mirrored": False}
+        group_entry = {"name": self.name_entry.get().strip()}
+        frame_width, frame_height = self.anim_data["frame_width"], self.anim_data["frame_height"]
+
         values_list = []
+        corrected_offsets = []
+
         for i, sv in enumerate(self.string_vars):
             sprite_id = int(sv.get()) if sv.get().isdigit() else 0
             is_mirrored = self.mirror_vars[i].get()
             values_list.append({"id": sprite_id, "mirrored": is_mirrored})
+
+            # --- Calculate the corrected offset for this frame ---
+            original_anchor = self.group_metadata[i]['anchors']['black']
+            if not original_anchor:
+                corrected_offsets.append((0,0))
+                continue
+
+            sprite_to_paste = None
+            if sprite_id > 0:
+                try:
+                    path = os.path.join(self.sprite_folder, f"sprite_{sprite_id}.png")
+                    sprite_to_paste = Image.open(path).convert('RGBA')
+                except FileNotFoundError:
+                    pass
+            
+            if sprite_to_paste:
+                if is_mirrored:
+                    sprite_to_paste = ImageOps.mirror(sprite_to_paste)
+
+                anchor_x, anchor_y = original_anchor
+                sprite_w, sprite_h = sprite_to_paste.size
+                initial_paste_x = anchor_x - sprite_w // 2
+                initial_paste_y = anchor_y - sprite_h // 2
+                
+                temp_frame = Image.new('RGBA', (frame_width, frame_height), (0, 0, 0, 0))
+                temp_frame.paste(sprite_to_paste, (initial_paste_x, initial_paste_y), sprite_to_paste)
+
+                center_orig = self._get_image_center_of_mass(self.group_frames[i])
+                center_temp = self._get_image_center_of_mass(temp_frame)
+
+                correction_x, correction_y = 0, 0
+                if center_orig and center_temp:
+                    correction_x = center_orig[0] - center_temp[0]
+                    correction_y = center_orig[1] - center_temp[1]
+
+                corrected_anchor_x = anchor_x + int(round(correction_x))
+                corrected_anchor_y = anchor_y + int(round(correction_y))
+                corrected_offsets.append((corrected_anchor_x, corrected_anchor_y))
+            else:
+                corrected_offsets.append(original_anchor)
+
         group_entry["values"] = values_list
-        group_entry["offsets"] = [m['anchors']['black'] for m in self.group_metadata]
+        group_entry["offsets"] = corrected_offsets
         return group_entry
 
     def cleanup(self):
         for aid in self.after_ids: self.parent.after_cancel(aid)
-        for aid in self.preview_after_ids: self.parent.after_cancel(aid)
+        for aid in self.result_after_ids: self.parent.after_cancel(aid)
         for aid in self.overlay_after_ids: self.parent.after_cancel(aid)
         self.after_ids.clear()
-        self.preview_after_ids.clear()
+        self.result_after_ids.clear()
         self.overlay_after_ids.clear()
 
-    def _start_animation_loop(self, label, frames, durations, id_storage_list):
+    def _start_animation_loop(self, image_label, frames, durations, id_storage_list, text_label=None, text_data=None):
         current_frame = [0]
         def update():
-            if not label.winfo_exists() or not frames: return
+            if not image_label.winfo_exists() or not frames: return
             idx = current_frame[0] % len(frames)
+            
             frame = frames[idx]
             frame.thumbnail((200, 200)); img = ImageTk.PhotoImage(frame)
-            label.config(image=img); label.image = img
+            image_label.config(image=img); image_label.image = img
+            
+            if text_label and text_data:
+                text_label.config(text=text_data[idx % len(text_data)])
+            
             delay = durations[idx % len(durations)] * 33; current_frame[0] += 1
             after_id = self.parent.after(delay, update)
             id_storage_list.append(after_id)
