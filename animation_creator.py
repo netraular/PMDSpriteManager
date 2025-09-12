@@ -8,13 +8,13 @@ import math
 class AnimationCreator:
     def __init__(self, parent_frame, folder, return_to_main_callback, start_directly_at_json_upload=False):
         self.parent_frame = parent_frame
-        self.folder = folder  # The project folder
+        self.folder = folder
         self.return_to_main = return_to_main_callback
         self.start_directly_at_json_upload = start_directly_at_json_upload
         
         self.sprites = []
-        self.image_path = None # Will be auto-detected
-        self.output_folder = None # Will be the "Sprites" folder
+        self.image_path = None
+        self.output_folder = None # This will be dynamic based on the context
         self.json_data = None
         self.after_ids = []
         
@@ -81,11 +81,9 @@ class AnimationCreator:
             sprite_number = int(self.sprite_number_entry.get())
             
             self.saved_width = sprites_width
-            self.saved_height = sprites_height
             
-            # This is a rough estimation; the handler now returns the true number.
             img = Image.open(self.image_path)
-            total_sprites = (img.width // (img.width // sprites_width)) * (img.height // (img.height // sprites_height))
+            total_sprites = (img.width // sprites_width) * (img.height // sprites_height)
             
             if sprite_number > total_sprites:
                 messagebox.showerror("Error", f"Cannot save {sprite_number} sprites. The spritesheet may only contain up to {total_sprites} sprites.")
@@ -104,7 +102,7 @@ class AnimationCreator:
                 os.unlink(os.path.join(self.output_folder, file))
             
             handler = SpriteSheetHandler(self.image_path, remove_first_row=True, remove_first_col=False)
-            self.sprites, self.sprite_width, self.sprite_height = handler.split_sprites(sprites_width, sprites_height)
+            self.sprites, _, _ = handler.split_sprites(sprites_width, sprites_height)
             self.sprites = self.sprites[:sprite_number]
             
             for idx, sprite in enumerate(self.sprites):
@@ -131,7 +129,7 @@ class AnimationCreator:
         Button(button_frame, text="Main Menu", command=self.return_to_main).pack(side='left', padx=5)
         if not self.start_directly_at_json_upload:
             Button(button_frame, text="Back", command=self.show_process_sheet_view).pack(side='left', padx=5)
-        Button(button_frame, text="Select Animation JSON", command=self.load_json).pack(side='left', padx=5)
+        Button(button_frame, text="Select Optimized Animation JSON", command=self.load_json).pack(side='left', padx=5)
         
         self.show_generated_sprites()
 
@@ -140,15 +138,18 @@ class AnimationCreator:
         if not self.output_folder or not os.path.exists(self.output_folder):
             return
         
-        sprite_files = sorted(
-            [f for f in os.listdir(self.output_folder) if f.lower().endswith('.png')],
-            key=lambda x: int(x.split('_')[-1].split('.')[0])
-        )
+        try:
+            sprite_files = sorted(
+                [f for f in os.listdir(self.output_folder) if f.lower().endswith('.png')],
+                key=lambda x: int(x.split('_')[-1].split('.')[0])
+            )
+        except ValueError:
+            sprite_files = sorted([f for f in os.listdir(self.output_folder) if f.lower().endswith('.png')])
+
         
         sprite_display_frame = Frame(self.main_frame)
         sprite_display_frame.pack(fill='both', expand=True, pady=10)
         
-        # Try to determine a reasonable number of columns
         num_columns = getattr(self, 'saved_width', 10)
         row, col = 0, 0
         
@@ -172,10 +173,25 @@ class AnimationCreator:
 
     def load_json(self):
         """Load animation JSON file."""
-        file_path = filedialog.askopenfilename(title="Select Animation JSON", filetypes=(("JSON files", "*.json"), ("All files", "*.*")))
+        optimized_folder = os.path.join(self.folder, os.path.basename(self.folder) + "AnimationData_Optimized")
+        
+        file_path = filedialog.askopenfilename(
+            title="Select Optimized Animation JSON",
+            initialdir=optimized_folder if os.path.exists(optimized_folder) else self.folder,
+            filetypes=(("JSON files", "*.json"), ("All files", "*.*"))
+        )
         if file_path:
             with open(file_path, 'r') as f:
                 self.json_data = json.load(f)
+            
+            json_dir = os.path.dirname(file_path)
+            anim_name = self.json_data.get('name')
+            if anim_name:
+                self.output_folder = os.path.join(json_dir, anim_name)
+            else:
+                messagebox.showwarning("Warning", "Animation name not found in JSON. Sprite preview may fail.")
+                self.output_folder = json_dir
+
             self.show_animation_preview()
 
     def show_animation_preview(self):
@@ -209,24 +225,15 @@ class AnimationCreator:
         group_name = group_data.get("name", f"Group {group_id}")
         Label(header_frame, text=group_name, font=('Arial', 12, 'bold')).pack(side='left')
         
-        is_mirrored_copy = group_data.get("mirrored", False)
-        if is_mirrored_copy:
-            Label(header_frame, text="(Mirrored)", fg="blue").pack(side='left', padx=10)
-        
         content_frame = Frame(group_frame); content_frame.pack(fill="x")
         
         raw_frames = self.get_group_frames(group_data)
         
-        offsets = None
-        if is_mirrored_copy:
-            source_group_data = self.json_data["sprites"][group_data["copy"]]
-            offsets = source_group_data.get("offsets")
-        else:
-            offsets = group_data.get("offsets")
+        offsets = [frame.get('offset', [0, 0]) for frame in group_data.get('frames', [])]
 
         final_frames = []
         if offsets and self.json_data.get("framewidth"):
-            final_frames = self._apply_offsets_to_frames(raw_frames, offsets, is_mirrored_copy)
+            final_frames = self._apply_offsets_to_frames(raw_frames, offsets)
         else:
             final_frames = raw_frames
 
@@ -238,12 +245,13 @@ class AnimationCreator:
         
         sprite_panel = Frame(content_frame); sprite_panel.pack(side="right", fill="x", expand=True)
         for idx, frame in enumerate(raw_frames):
-            frame.thumbnail((80, 80))
-            img = ImageTk.PhotoImage(frame)
-            lbl = Label(sprite_panel, image=img); lbl.image = img; lbl.grid(row=0, column=idx, padx=2)
-            Label(sprite_panel, text=f"Dur: {durations[idx]}", font=('Arial', 7)).grid(row=1, column=idx)
+            if frame:
+                frame.thumbnail((80, 80))
+                img = ImageTk.PhotoImage(frame)
+                lbl = Label(sprite_panel, image=img); lbl.image = img; lbl.grid(row=0, column=idx, padx=2)
+                Label(sprite_panel, text=f"Dur: {durations[idx % len(durations)]}", font=('Arial', 7)).grid(row=1, column=idx)
 
-    def _apply_offsets_to_frames(self, frames, offsets, is_mirrored):
+    def _apply_offsets_to_frames(self, frames, offsets):
         frame_width = self.json_data["framewidth"]
         frame_height = self.json_data["frameheight"]
         canvas_width = frame_width * 2
@@ -251,21 +259,21 @@ class AnimationCreator:
         
         positioned_frames = []
         for i, sprite_img in enumerate(frames):
-            if i >= len(offsets): continue
+            if i >= len(offsets) or not sprite_img: continue
 
             composite_frame = Image.new('RGBA', (canvas_width, canvas_height), (0, 0, 0, 0))
             
             anchor_x, anchor_y = offsets[i]
-            
-            if is_mirrored:
-                anchor_x = frame_width - anchor_x
-
-            base_x = anchor_x + (frame_width // 2)
-            base_y = anchor_y + (frame_height // 2)
-            
             sprite_w, sprite_h = sprite_img.size
-            paste_x = base_x - sprite_w // 2
-            paste_y = base_y - sprite_h // 2
+            
+            # Center the animation frame within the larger canvas
+            frame_origin_x = (canvas_width - frame_width) // 2
+            frame_origin_y = (canvas_height - frame_height) // 2
+
+            # The offset is the absolute anchor point. Calculate the top-left paste position
+            # relative to the animation frame's origin on the canvas.
+            paste_x = frame_origin_x + anchor_x - (sprite_w // 2)
+            paste_y = frame_origin_y + anchor_y - (sprite_h // 2)
             
             composite_frame.paste(sprite_img, (paste_x, paste_y), sprite_img)
             positioned_frames.append(composite_frame)
@@ -273,53 +281,46 @@ class AnimationCreator:
         return positioned_frames
 
     def get_group_frames(self, group_data):
-        """Get the frames for the group, applying mirror if necessary."""
-        if group_data.get("mirrored", False):
-            source_group = self.json_data["sprites"][group_data["copy"]]
-            frames = self.get_group_frames(source_group)
-            return [ImageOps.mirror(frame) for frame in frames]
-        else:
-            sprite_values = group_data["values"]
-            frames = []
-            for val in sprite_values:
-                sprite_id = 0
-                is_mirrored = False
-                if isinstance(val, dict):
-                    sprite_id = val.get("id", 0)
-                    is_mirrored = val.get("mirrored", False)
-                elif isinstance(val, int):
-                    sprite_id = val
-                
-                sprite_img = self.load_sprite(sprite_id)
-                if is_mirrored:
-                    sprite_img = ImageOps.mirror(sprite_img)
-                frames.append(sprite_img)
-            return frames
+        """Get the frames for the group from the optimized format."""
+        frames = []
+        for frame_info in group_data.get("frames", []):
+            sprite_id_str = frame_info.get("id", "0")
+            sprite_img = self.load_sprite(sprite_id_str)
+            frames.append(sprite_img)
+        return frames
 
-    def load_sprite(self, sprite_num):
-        """Load a sprite from the generated files in the 'Sprites' folder."""
+    def load_sprite(self, sprite_id_str):
+        """Load a sprite using its string ID (e.g., '10' or '10_mirrored')."""
+        if sprite_id_str == "0":
+            return None 
         try:
-            sprite_path = os.path.join(self.output_folder, f"sprite_{sprite_num}.png")
+            sprite_path = os.path.join(self.output_folder, f"sprite_{sprite_id_str}.png")
             return Image.open(sprite_path).convert('RGBA')
         except (FileNotFoundError, ValueError):
             placeholder = Image.new('RGBA', (40, 40), (0, 0, 0, 0))
             draw = ImageDraw.Draw(placeholder)
-            draw.text((5, 10), f"?{sprite_num}?", fill="red")
+            draw.text((5, 10), f"?{sprite_id_str}?", fill="red")
             return placeholder
 
     def start_animation(self, label, frames, durations):
         """Start a real-time animation."""
+        valid_frames = [f for f in frames if f]
+        if not valid_frames:
+            label.config(image=None, text="[No valid frames]")
+            return
+
         current_frame = [0]
         def update():
-            if not frames: return
-            if current_frame[0] >= len(frames): current_frame[0] = 0
+            if not label.winfo_exists() or not valid_frames: return
+            frame_index = current_frame[0] % len(valid_frames)
             
-            frame = frames[current_frame[0]]
+            frame = valid_frames[frame_index]
             frame.thumbnail((200, 200))
             img = ImageTk.PhotoImage(frame)
             label.config(image=img); label.image = img
             
-            delay = durations[current_frame[0] % len(durations)] * 33
+            delay_index = frame_index % len(durations)
+            delay = durations[delay_index] * 33
             current_frame[0] += 1
             self.after_ids.append(self.parent_frame.after(delay, update))
         update()

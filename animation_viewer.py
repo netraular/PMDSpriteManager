@@ -3,7 +3,7 @@
 import os
 import json
 from tkinter import Frame, Label, Canvas, Scrollbar, messagebox, Toplevel, Button
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageOps
 import xml.etree.ElementTree as ET
 from sprite_sheet_handler import SpriteSheetHandler
 import math
@@ -80,8 +80,8 @@ class AnimationViewer:
         
         all_frames, all_offsets_frames, all_metadata = self._load_animation_assets(anim)
         
-        json_data = self.load_json_data(anim["name"])
-        run_ai_automatically = json_data is None
+        ui_compatible_json_data = self.load_and_convert_optimized_json(anim["name"])
+        run_ai_automatically = ui_compatible_json_data is None
 
         Label(self.scroll_frame, text=f"Animation: {anim['name']}", font=('Arial', 14, 'bold')).pack(pady=10)
         
@@ -96,7 +96,7 @@ class AnimationViewer:
                 group_offsets_frames=all_offsets_frames[start:end] if all_offsets_frames else [],
                 group_metadata=all_metadata[start:end],
                 sprite_folder=self.sprite_folder,
-                json_group_data=json_data["sprites"].get(str(group_idx + 1)) if json_data else None,
+                json_group_data=ui_compatible_json_data["sprites"].get(str(group_idx + 1)) if ui_compatible_json_data else None,
                 ai_callback=self.identify_group_sprites
             )
             self.group_ui_instances.append(group_ui)
@@ -132,7 +132,6 @@ class AnimationViewer:
                 for color_name, color_value in anchor_colors.items():
                     if pixels[x, y] == color_value: found_anchors[color_name] = (x, y)
         
-        # Correct for the 1-pixel offset from the master spritesheet's guide row
         for color, coords in found_anchors.items():
             if coords:
                 x, y = coords
@@ -184,6 +183,60 @@ class AnimationViewer:
                 Label(frame, image=photo).pack(); Label(frame, text=file, font=('Arial', 8)).pack(); frame.photo = photo
             except Exception as e: print(f"Error loading {file}: {str(e)}")
 
+    def _get_image_center_of_mass(self, image):
+        bbox = image.getbbox()
+        if not bbox:
+            return None
+        center_x = (bbox[0] + bbox[2]) / 2
+        center_y = (bbox[1] + bbox[3]) / 2
+        return (center_x, center_y)
+
+    def _calculate_corrected_offsets(self, frame_width, frame_height, original_frames, group_metadata, values_list):
+        corrected_offsets = []
+        for i, value_dict in enumerate(values_list):
+            sprite_id = value_dict["id"]
+            is_mirrored = value_dict["mirrored"]
+
+            original_anchor = group_metadata[i]['anchors']['black']
+            if not original_anchor:
+                corrected_offsets.append((0, 0))
+                continue
+
+            sprite_to_paste = None
+            if sprite_id > 0:
+                try:
+                    path = os.path.join(self.sprite_folder, f"sprite_{sprite_id}.png")
+                    sprite_to_paste = Image.open(path).convert('RGBA')
+                except FileNotFoundError:
+                    pass
+            
+            if sprite_to_paste:
+                if is_mirrored:
+                    sprite_to_paste = ImageOps.mirror(sprite_to_paste)
+
+                anchor_x, anchor_y = original_anchor
+                sprite_w, sprite_h = sprite_to_paste.size
+                initial_paste_x = anchor_x - sprite_w // 2
+                initial_paste_y = anchor_y - sprite_h // 2
+                
+                temp_frame = Image.new('RGBA', (frame_width, frame_height), (0, 0, 0, 0))
+                temp_frame.paste(sprite_to_paste, (initial_paste_x, initial_paste_y), sprite_to_paste)
+
+                center_orig = self._get_image_center_of_mass(original_frames[i])
+                center_temp = self._get_image_center_of_mass(temp_frame)
+
+                correction_x, correction_y = 0, 0
+                if center_orig and center_temp:
+                    correction_x = center_orig[0] - center_temp[0]
+                    correction_y = center_orig[1] - center_temp[1]
+
+                corrected_anchor_x = anchor_x + int(round(correction_x))
+                corrected_anchor_y = anchor_y + int(round(correction_y))
+                corrected_offsets.append((corrected_anchor_x, corrected_anchor_y))
+            else:
+                corrected_offsets.append(original_anchor)
+        return corrected_offsets
+
     def _get_data_from_current_view(self):
         try:
             anim = self.anim_data[self.current_anim_index]
@@ -202,72 +255,173 @@ class AnimationViewer:
 
     def _generate_headless_data(self, index):
         anim = self.anim_data[index]
-        json_data = self.load_json_data(anim['name'])
-        if json_data: return json_data
+        ui_compatible_json_data = self.load_and_convert_optimized_json(anim['name'])
+        if ui_compatible_json_data:
+            return ui_compatible_json_data
         
-        all_frames, all_offsets_frames, all_metadata = self._load_animation_assets(anim)
+        all_frames, _, all_metadata = self._load_animation_assets(anim)
         
         grouped_sprites = {}
         try:
             matcher = SpriteMatcher(self.sprite_folder) if os.path.exists(self.sprite_folder) else None
             for group_idx in range(anim["total_groups"]):
                 start, end = group_idx * anim["frames_per_group"], (group_idx + 1) * anim["frames_per_group"]
-                
+                group_frames = all_frames[start:end]
+                group_metadata = all_metadata[start:end]
+
                 values = []
                 if matcher:
-                    match_data = matcher.match_group(all_frames[start:end])
+                    match_data = matcher.match_group(group_frames)
                     values = [{"id": sid, "mirrored": m} for sid, m in zip(match_data["frame_matches"], match_data["per_frame_mirror"])]
                 else:
                     values = [{"id": 0, "mirrored": False}] * anim["frames_per_group"]
                 
-                group_metadata = all_metadata[start:end]
-                offsets = [m['anchors']['black'] for m in group_metadata]
+                corrected_offsets = self._calculate_corrected_offsets(
+                    anim["frame_width"], anim["frame_height"], group_frames, group_metadata, values
+                )
                 
                 group_ui_for_name = AnimationGroupUI(self.scroll_frame, group_idx, anim, [], [], [], "", {}, lambda s: None)
                 group_name = group_ui_for_name._get_default_group_name()
                 group_ui_for_name.cleanup()
 
-                grouped_sprites[str(group_idx + 1)] = {"name": group_name, "mirrored": False, "values": values, "offsets": offsets}
-        except Exception as e: print(f"Could not auto-generate data for '{anim['name']}': {e}"); return None
+                grouped_sprites[str(group_idx + 1)] = {"name": group_name, "values": values, "offsets": corrected_offsets}
+        except Exception as e:
+            print(f"Could not auto-generate data for '{anim['name']}': {e}")
+            return None
+            
         return {"index": index, "name": anim["name"], "framewidth": anim["frame_width"], "frameheight": anim["frame_height"], "sprites": grouped_sprites, "durations": anim["durations"]}
+
+    def export_optimized_animation(self, json_data):
+        if not json_data:
+            return None, "No JSON data provided."
+        
+        try:
+            base_folder_name = os.path.basename(self.anim_folder) + "AnimationData_Optimized"
+            output_folder = os.path.join(self.anim_folder, base_folder_name)
+            os.makedirs(output_folder, exist_ok=True)
+            
+            anim_name = json_data['name']
+            sprites_subfolder = os.path.join(output_folder, anim_name)
+            os.makedirs(sprites_subfolder, exist_ok=True)
+
+            processed_sprites = set()
+            
+            simplified_json = {}
+            for key in ["name", "framewidth", "frameheight", "durations"]:
+                if key in json_data:
+                    simplified_json[key] = json_data[key]
+            
+            simplified_json['sprites'] = {}
+            
+            for group_id, group_data in json_data.get('sprites', {}).items():
+                frames_list = []
+                offsets = group_data.get('offsets', [])
+                
+                for i, value in enumerate(group_data.get('values', [])):
+                    original_id = value.get('id', 0)
+                    is_mirrored = value.get('mirrored', False)
+                    offset = offsets[i] if i < len(offsets) else [0, 0]
+
+                    if original_id == 0:
+                        frames_list.append({"id": "0", "offset": offset})
+                        continue
+
+                    final_sprite_name = f"{original_id}_mirrored" if is_mirrored else str(original_id)
+                    
+                    if final_sprite_name not in processed_sprites:
+                        try:
+                            source_sprite_path = os.path.join(self.sprite_folder, f"sprite_{original_id}.png")
+                            img = Image.open(source_sprite_path).convert('RGBA')
+                            
+                            if is_mirrored:
+                                img = ImageOps.mirror(img)
+                            
+                            img_8bit = img.convert('P', palette=Image.ADAPTIVE, colors=256)
+                            
+                            output_filename = f"sprite_{final_sprite_name}.png"
+                            output_path = os.path.join(sprites_subfolder, output_filename)
+                            img_8bit.save(output_path)
+                            
+                            processed_sprites.add(final_sprite_name)
+                        except FileNotFoundError:
+                            print(f"Warning: Original sprite 'sprite_{original_id}.png' not found. Skipping export for this sprite.")
+                        except Exception as e:
+                            print(f"Error processing sprite {original_id} for export: {e}")
+                    
+                    frames_list.append({"id": final_sprite_name, "offset": offset})
+
+                simplified_group = {
+                    'name': group_data.get('name'),
+                    'frames': frames_list
+                }
+                simplified_json['sprites'][group_id] = simplified_group
+
+            json_output_path = os.path.join(output_folder, f"{anim_name}-AnimData.json")
+            with open(json_output_path, 'w') as f:
+                json.dump(simplified_json, f, indent=4)
+                
+            return json_output_path, None
+            
+        except Exception as e:
+            return None, f"Failed to export optimized animation '{json_data.get('name', 'Unknown')}': {e}"
 
     def generate_json(self):
         json_data = self._get_data_from_current_view()
         if json_data:
-            folder_name = os.path.basename(self.anim_folder) + "AnimationData"
-            output_folder = os.path.join(self.anim_folder, folder_name)
-            os.makedirs(output_folder, exist_ok=True)
-            output_path = os.path.join(output_folder, f"{json_data['name']}-AnimData.json")
-            with open(output_path, 'w') as f: json.dump(json_data, f, indent=4)
-            messagebox.showinfo("Success", f"JSON saved for {json_data['name']} in:\n{output_path}")
+            output_path, error = self.export_optimized_animation(json_data)
+            if error:
+                messagebox.showerror("Export Error", error)
+            else:
+                messagebox.showinfo("Success", f"Optimized animation saved for {json_data['name']} in:\n{os.path.dirname(output_path)}")
 
     def save_all_animations(self):
-        saved_count, generated_count, failed_count = 0, 0, 0
-        folder_name = os.path.basename(self.anim_folder) + "AnimationData"
-        output_folder = os.path.join(self.anim_folder, folder_name)
-        os.makedirs(output_folder, exist_ok=True)
+        saved_count, failed_count = 0, 0
+        
         for index, anim in enumerate(self.anim_data):
-            json_data, was_generated = None, False
-            if index == self.current_anim_index: json_data = self._get_data_from_current_view()
+            json_data = None
+            if index == self.current_anim_index:
+                json_data = self._get_data_from_current_view()
             else:
-                json_data = self.load_json_data(anim['name'])
-                if not json_data:
-                    json_data = self._generate_headless_data(index)
-                    if json_data: was_generated = True
-            if json_data:
-                output_path = os.path.join(output_folder, f"{anim['name']}-AnimData.json")
-                try:
-                    with open(output_path, 'w') as f: json.dump(json_data, f, indent=4)
-                    saved_count += 1
-                    if was_generated: generated_count +=1
-                except Exception as e: print(f"Failed to write file for {anim['name']}: {e}"); failed_count += 1
-            else: failed_count += 1
-        messagebox.showinfo("Batch Save Complete", f"Process finished.\n\nTotal Files Saved: {saved_count}\nNewly Generated: {generated_count}\nFailed/Skipped: {failed_count}")
+                json_data = self._generate_headless_data(index)
 
-    def load_json_data(self, anim_name):
-        folder_name = os.path.basename(self.anim_folder) + "AnimationData"
+            if json_data:
+                _, error = self.export_optimized_animation(json_data)
+                if error:
+                    print(f"Failed to export {anim['name']}: {error}")
+                    failed_count += 1
+                else:
+                    saved_count += 1
+            else:
+                failed_count += 1
+        
+        messagebox.showinfo("Batch Export Complete", f"Process finished.\n\nTotal Animations Exported: {saved_count}\nFailed/Skipped: {failed_count}")
+
+    def load_and_convert_optimized_json(self, anim_name):
+        folder_name = os.path.basename(self.anim_folder) + "AnimationData_Optimized"
         json_path = os.path.join(self.anim_folder, folder_name, f"{anim_name}-AnimData.json")
         if not os.path.exists(json_path): return None
+
         try:
-            with open(json_path, 'r') as f: return json.load(f)
-        except Exception as e: print(f"Error loading JSON for {anim_name}: {str(e)}"); return None
+            with open(json_path, 'r') as f:
+                optimized_data = json.load(f)
+        except Exception as e:
+            print(f"Error loading optimized JSON for {anim_name}: {str(e)}")
+            return None
+        
+        ui_data = optimized_data.copy()
+        ui_data['sprites'] = {}
+        for group_id, group_data in optimized_data.get('sprites', {}).items():
+            ui_group = {'name': group_data.get('name'), 'values': [], 'offsets': []}
+            for frame in group_data.get('frames', []):
+                sprite_id_str = frame.get('id', '0')
+                offset = frame.get('offset', [0, 0])
+                
+                is_mirrored = "_mirrored" in sprite_id_str
+                base_id_str = sprite_id_str.replace("_mirrored", "")
+                base_id = int(base_id_str) if base_id_str.isdigit() else 0
+                
+                ui_group['values'].append({'id': base_id, 'mirrored': is_mirrored})
+                ui_group['offsets'].append(offset)
+            ui_data['sprites'][group_id] = ui_group
+        
+        return ui_data
