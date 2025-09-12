@@ -127,14 +127,12 @@ class BatchResizer:
 
         try:
             # Procesar el spritesheet
-            handler = SpriteSheetHandler(self.current_image_path, remove_first_row_and_col=True)
+            handler = SpriteSheetHandler(self.current_image_path, remove_first_row=True, remove_first_col=False)
             sprites, _, _ = handler.split_sprites(size, size)
 
             if not sprites:
                 raise Exception("Splitting the spritesheet yielded no sprites.")
 
-            # <<< INICIO DE LA MODIFICACIÓN >>>
-            
             # Extraer el ID del nombre del archivo original
             # "sprite_recolor-0043-0000-0001.png" -> "0043"
             basename = os.path.basename(self.current_image_path)
@@ -161,8 +159,6 @@ class BatchResizer:
             else:
                 messagebox.showwarning("Filename Error", 
                                        f"Could not extract ID from filename: {basename}. Skipping save.")
-
-            # <<< FIN DE LA MODIFICACIÓN >>>
 
         except Exception as e:
             messagebox.showerror("Processing Error", f"An error occurred while processing the image: {e}")

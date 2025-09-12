@@ -142,7 +142,7 @@ class SpritesheetViewer:
             self.sprites_height = int(self.height_entry.get())
             
             # Process the spritesheet
-            handler = SpriteSheetHandler(self.image_path, True)
+            handler = SpriteSheetHandler(self.image_path, remove_first_row=True, remove_first_col=False)
             self.sprites, width, height = handler.split_sprites(self.sprites_width, self.sprites_height)
             
             # Show the result view

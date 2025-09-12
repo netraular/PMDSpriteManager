@@ -83,9 +83,12 @@ class AnimationCreator:
             self.saved_width = sprites_width
             self.saved_height = sprites_height
             
-            total_sprites = sprites_width * sprites_height
+            # This is a rough estimation; the handler now returns the true number.
+            img = Image.open(self.image_path)
+            total_sprites = (img.width // (img.width // sprites_width)) * (img.height // (img.height // sprites_height))
+            
             if sprite_number > total_sprites:
-                messagebox.showerror("Error", f"Cannot save {sprite_number} sprites. The spritesheet only contains {total_sprites} sprites.")
+                messagebox.showerror("Error", f"Cannot save {sprite_number} sprites. The spritesheet may only contain up to {total_sprites} sprites.")
                 return
             
             folder_name = "Sprites"
@@ -100,7 +103,7 @@ class AnimationCreator:
             for file in os.listdir(self.output_folder):
                 os.unlink(os.path.join(self.output_folder, file))
             
-            handler = SpriteSheetHandler(self.image_path, remove_first_row_and_col=True)
+            handler = SpriteSheetHandler(self.image_path, remove_first_row=True, remove_first_col=False)
             self.sprites, self.sprite_width, self.sprite_height = handler.split_sprites(sprites_width, sprites_height)
             self.sprites = self.sprites[:sprite_number]
             

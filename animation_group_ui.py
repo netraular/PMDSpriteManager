@@ -171,10 +171,10 @@ class AnimationGroupUI:
     def _generate_custom_animation_frames(self):
         sprite_numbers = [int(sv.get()) if sv.get().isdigit() else 0 for sv in self.string_vars]
         result_frames = []
-        canvas_width, canvas_height = self.anim_data["frame_width"] * 2, self.anim_data["frame_height"] * 2
+        frame_width, frame_height = self.anim_data["frame_width"], self.anim_data["frame_height"]
 
         for i, num in enumerate(sprite_numbers):
-            composite_frame = Image.new('RGBA', (canvas_width, canvas_height), (0, 0, 0, 0))
+            composite_frame = Image.new('RGBA', (frame_width, frame_height), (0, 0, 0, 0))
             sprite_to_paste = None
             if num > 0:
                 sprite_path = os.path.join(self.sprite_folder, f"sprite_{num}.png")
@@ -191,9 +191,8 @@ class AnimationGroupUI:
                 if self.mirror_vars[i].get():
                     sprite_to_paste = ImageOps.mirror(sprite_to_paste)
 
-                base_x, base_y = anchor_x + (self.anim_data["frame_width"] // 2), anchor_y + (self.anim_data["frame_height"] // 2)
                 sprite_w, sprite_h = sprite_to_paste.size
-                paste_x, paste_y = base_x - sprite_w // 2, base_y - sprite_h // 2
+                paste_x, paste_y = anchor_x - sprite_w // 2, anchor_y - sprite_h // 2
                 composite_frame.paste(sprite_to_paste, (paste_x, paste_y), sprite_to_paste)
 
             result_frames.append(composite_frame)
@@ -203,17 +202,19 @@ class AnimationGroupUI:
         for aid in self.preview_after_ids: self.parent.after_cancel(aid)
         self.preview_after_ids.clear()
 
-        result_frames = self._generate_custom_animation_frames()
-        if not result_frames: return
+        custom_frames = self._generate_custom_animation_frames()
+        if not custom_frames: return
 
+        canvas_width, canvas_height = self.anim_data["frame_width"] * 2, self.anim_data["frame_height"] * 2
         final_frames = []
-        for frame in result_frames:
-            final_frame = Image.new('RGBA', frame.size, (211, 211, 211, 255))
+        for frame in custom_frames:
+            final_frame = Image.new('RGBA', (canvas_width, canvas_height), (211, 211, 211, 255))
             draw = ImageDraw.Draw(final_frame)
             box_x0, box_y0 = self.anim_data["frame_width"] // 2, self.anim_data["frame_height"] // 2
             box_x1, box_y1 = box_x0 + self.anim_data["frame_width"], box_y0 + self.anim_data["frame_height"]
             draw.rectangle([box_x0, box_y0, box_x1, box_y1], fill=None, outline="grey")
-            final_frame = Image.alpha_composite(final_frame, frame)
+            
+            final_frame.paste(frame, (box_x0, box_y0), frame)
             final_frames.append(final_frame)
 
         durations = self.anim_data["durations"] * (len(final_frames) // len(self.anim_data["durations"]) + 1)
@@ -231,17 +232,23 @@ class AnimationGroupUI:
         for aid in self.overlay_after_ids: self.parent.after_cancel(aid)
         self.overlay_after_ids.clear()
 
-        canvas_width, canvas_height = self.anim_data["frame_width"] * 2, self.anim_data["frame_height"] * 2
         custom_frames = self._generate_custom_animation_frames()
         if not custom_frames or len(self.group_frames) != len(custom_frames): return
-
+            
+        canvas_width, canvas_height = self.anim_data["frame_width"] * 2, self.anim_data["frame_height"] * 2
         overlay_frames = []
+        
         for i in range(len(custom_frames)):
-            original_on_canvas = Image.new('RGBA', (canvas_width, canvas_height), (0,0,0,0))
-            original_on_canvas.paste(self.group_frames[i], (self.anim_data["frame_width"] // 2, self.anim_data["frame_height"] // 2))
-            tinted_original = self._tint_image(original_on_canvas, (255, 0, 0, 128))
+            composite = Image.new('RGBA', (canvas_width, canvas_height), (0,0,0,0))
+
+            tinted_original = self._tint_image(self.group_frames[i], (255, 0, 0, 128))
             tinted_custom = self._tint_image(custom_frames[i], (0, 0, 255, 128))
-            composite = Image.alpha_composite(tinted_original, tinted_custom)
+
+            paste_pos = (self.anim_data["frame_width"] // 2, self.anim_data["frame_height"] // 2)
+            
+            composite.paste(tinted_original, paste_pos, tinted_original)
+            composite.paste(tinted_custom, paste_pos, tinted_custom)
+            
             overlay_frames.append(composite)
 
         durations = self.anim_data["durations"] * (len(overlay_frames) // len(self.anim_data["durations"]) + 1)

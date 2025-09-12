@@ -2,15 +2,17 @@ from PIL import Image
 import os
 
 class SpriteSheetHandler:
-    def __init__(self, image_path, remove_first_row_and_col=False):
+    def __init__(self, image_path, remove_first_row=False, remove_first_col=False):
         """
         Initialize the SpriteSheetHandler with the path to the sprite sheet.
         :param image_path: Path to the sprite sheet image.
-        :param remove_first_row_and_col: If True, removes the first row and column of pixels from each sprite.
+        :param remove_first_row: If True, removes the first row of pixels from each sprite.
+        :param remove_first_col: If True, removes the first col of pixels from each sprite.
         """
         self.image_path = image_path
         self.image = Image.open(image_path)
-        self.remove_first_row_and_col = remove_first_row_and_col
+        self.remove_first_row = remove_first_row
+        self.remove_first_col = remove_first_col
 
     def split_sprites(self, sprites_width, sprites_height):
         """
@@ -26,17 +28,27 @@ class SpriteSheetHandler:
         sprites = []
         for i in range(sprites_height):
             for j in range(sprites_width):
-                # Calculate cropping coordinates
-                left = j * sprite_width + (1 if self.remove_first_row_and_col else 0)
-                top = i * sprite_height + (1 if self.remove_first_row_and_col else 0)
-                right = left + sprite_width - (1 if self.remove_first_row_and_col else 0)
-                bottom = top + sprite_height - (1 if self.remove_first_row_and_col else 0)
+                # Calculate offsets for guide pixels
+                left_offset = 1 if self.remove_first_col else 0
+                top_offset = 1 if self.remove_first_row else 0
+
+                # Define the crop box, starting after any guide pixels
+                left = j * sprite_width + left_offset
+                top = i * sprite_height + top_offset
+                
+                # The end of the crop box is the start plus the cell size
+                right = (j + 1) * sprite_width
+                bottom = (i + 1) * sprite_height
 
                 # Crop the sprite
                 sprite = self.image.crop((left, top, right, bottom))
                 sprites.append(sprite)
+        
+        # Return the actual dimensions of the cropped sprites
+        final_sprite_width = sprite_width - left_offset
+        final_sprite_height = sprite_height - top_offset
 
-        return sprites, sprite_width, sprite_height
+        return sprites, final_sprite_width, final_sprite_height
 
     def split_animation_frames(self, frame_width, frame_height):
         """
