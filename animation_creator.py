@@ -1,15 +1,16 @@
 from tkinter import Frame, Label, Button, Entry, Canvas, Scrollbar, messagebox, filedialog
-from PIL import Image, ImageTk, ImageOps
+from PIL import Image, ImageTk, ImageOps, ImageDraw
 from sprite_sheet_handler import SpriteSheetHandler
 import os
 import json
 import math
 
 class AnimationCreator:
-    def __init__(self, parent_frame, folder, return_to_main_callback):
+    def __init__(self, parent_frame, folder, return_to_main_callback, start_directly_at_json_upload=False):
         self.parent_frame = parent_frame
         self.folder = folder  # The project folder
         self.return_to_main = return_to_main_callback
+        self.start_directly_at_json_upload = start_directly_at_json_upload
         
         self.sprites = []
         self.image_path = None # Will be auto-detected
@@ -37,7 +38,10 @@ class AnimationCreator:
 
     def setup_ui(self):
         """Set up the step-by-step interface."""
-        if self._auto_load_image():
+        if self.start_directly_at_json_upload:
+            self.output_folder = os.path.join(self.folder, "Sprites")
+            self.show_json_upload_view()
+        elif self._auto_load_image():
             self.show_process_sheet_view()
 
     def show_process_sheet_view(self):
@@ -112,6 +116,7 @@ class AnimationCreator:
             messagebox.showerror("Error", f"Processing error: {str(e)}")
 
     def show_json_upload_view(self):
+        """Show Step 2: Upload JSON of animations and view generated sprites."""
         self.clear_frame()
         
         json_frame = Frame(self.main_frame)
@@ -121,13 +126,15 @@ class AnimationCreator:
         button_frame.pack(fill='x', pady=10)
         
         Button(button_frame, text="Main Menu", command=self.return_to_main).pack(side='left', padx=5)
-        Button(button_frame, text="Back", command=self.show_process_sheet_view).pack(side='left', padx=5)
+        if not self.start_directly_at_json_upload:
+            Button(button_frame, text="Back", command=self.show_process_sheet_view).pack(side='left', padx=5)
         Button(button_frame, text="Select Animation JSON", command=self.load_json).pack(side='left', padx=5)
         
         self.show_generated_sprites()
 
     def show_generated_sprites(self):
-        if not self.output_folder or not hasattr(self, 'sprite_width') or not hasattr(self, 'sprite_height'):
+        """Show the generated sprites in a grid."""
+        if not self.output_folder or not os.path.exists(self.output_folder):
             return
         
         sprite_files = sorted(
@@ -138,13 +145,14 @@ class AnimationCreator:
         sprite_display_frame = Frame(self.main_frame)
         sprite_display_frame.pack(fill='both', expand=True, pady=10)
         
-        num_columns = self.saved_width
+        # Try to determine a reasonable number of columns
+        num_columns = getattr(self, 'saved_width', 10)
         row, col = 0, 0
         
         for sprite_file in sprite_files:
             sprite_path = os.path.join(self.output_folder, sprite_file)
             sprite = Image.open(sprite_path)
-            sprite.thumbnail((self.sprite_width, self.sprite_height))
+            sprite.thumbnail((80, 80))
             img_tk = ImageTk.PhotoImage(sprite)
             
             sprite_frame = Frame(sprite_display_frame)
@@ -160,6 +168,7 @@ class AnimationCreator:
             if col >= num_columns: col = 0; row += 1
 
     def load_json(self):
+        """Load animation JSON file."""
         file_path = filedialog.askopenfilename(title="Select Animation JSON", filetypes=(("JSON files", "*.json"), ("All files", "*.*")))
         if file_path:
             with open(file_path, 'r') as f:
@@ -167,6 +176,7 @@ class AnimationCreator:
             self.show_animation_preview()
 
     def show_animation_preview(self):
+        """Show the animation preview view."""
         self.clear_frame()
         
         self.animation_frame = Frame(self.main_frame)
@@ -188,6 +198,7 @@ class AnimationCreator:
             self.create_group_preview(group_id, group_data)
 
     def create_group_preview(self, group_id, group_data):
+        """Create a preview for an animation group."""
         group_frame = Frame(self.scroll_frame, bd=2, relief="groove")
         group_frame.pack(fill="x", padx=5, pady=5)
         
@@ -259,6 +270,7 @@ class AnimationCreator:
         return positioned_frames
 
     def get_group_frames(self, group_data):
+        """Get the frames for the group, applying mirror if necessary."""
         if group_data.get("mirrored", False):
             source_group = self.json_data["sprites"][group_data["copy"]]
             frames = self.get_group_frames(source_group)
@@ -268,16 +280,18 @@ class AnimationCreator:
             return [self.load_sprite(num) for num in sprite_numbers]
 
     def load_sprite(self, sprite_num):
+        """Load a sprite from the generated files in the 'Sprites' folder."""
         try:
             sprite_path = os.path.join(self.output_folder, f"sprite_{sprite_num}.png")
             return Image.open(sprite_path).convert('RGBA')
         except (FileNotFoundError, ValueError):
             placeholder = Image.new('RGBA', (40, 40), (0, 0, 0, 0))
             draw = ImageDraw.Draw(placeholder)
-            draw.text((10, 10), f"?{sprite_num}?", fill="red")
+            draw.text((5, 10), f"?{sprite_num}?", fill="red")
             return placeholder
 
     def start_animation(self, label, frames, durations):
+        """Start a real-time animation."""
         current_frame = [0]
         def update():
             if not frames: return
@@ -294,6 +308,7 @@ class AnimationCreator:
         update()
             
     def clear_frame(self):
+        """Clear the current frame and stop animations."""
         for aid in self.after_ids:
             self.parent_frame.after_cancel(aid)
         self.after_ids.clear()

@@ -78,6 +78,8 @@ class MainApplication:
               command=self.show_animation_creator, width=25).pack(pady=10)
         Button(self.current_frame, text="View Animations", 
               command=self.show_animation_viewer, width=25).pack(pady=10)
+        Button(self.current_frame, text="Preview Animation JSON",
+              command=self.show_json_previewer, width=25).pack(pady=10)
         
         # Add a button to go back to the initial selection screen
         Button(self.current_frame, text="Back to Workflow Selection", 
@@ -116,6 +118,24 @@ class MainApplication:
             self.show_main_menu
         )
 
+    def show_json_previewer(self):
+        """
+        Launches the AnimationCreator directly into the JSON preview mode.
+        """
+        self.clear_frame()
+        sprites_folder = os.path.join(self.folder, "Sprites")
+        if not os.path.exists(sprites_folder) or not os.listdir(sprites_folder):
+            messagebox.showerror("Error", "The 'Sprites' folder is missing or empty.\nPlease process a spritesheet first.")
+            self.show_main_menu()
+            return
+            
+        self.animation_creator = AnimationCreator(
+            self.current_frame,
+            self.folder,
+            self.show_main_menu,
+            start_directly_at_json_upload=True
+        )
+
     def launch_batch_resizer(self):
         """
         Clears the frame and launches the BatchResizer module directly.
@@ -124,7 +144,7 @@ class MainApplication:
         self.clear_frame()
         self.batch_resizer = BatchResizer(
             self.current_frame,
-            self.show_folder_selection  # <-- This is the important change
+            self.show_folder_selection
         )
 
 if __name__ == "__main__":
