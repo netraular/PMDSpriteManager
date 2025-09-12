@@ -246,16 +246,19 @@ class AnimationViewer:
             if global_frame_idx < len(self.current_anim_metadata):
                 metadata = self.current_anim_metadata[global_frame_idx]
                 all_anchors = metadata.get('anchors', {})
-                main_anchor = all_anchors.get("black")
                 
-                if sprite_img and main_anchor:
+                green_anchor = all_anchors.get("green")
+                black_anchor = all_anchors.get("black")
+                sprite_center_target = green_anchor or black_anchor
+                
+                if sprite_img and sprite_center_target:
                     is_mirrored = mirror_var.get()
                     if is_mirrored:
                         sprite_img = ImageOps.mirror(sprite_img)
                     
                     sprite_w, sprite_h = sprite_img.size
-                    paste_x = main_anchor[0] - sprite_w // 2
-                    paste_y = main_anchor[1] - sprite_h // 2
+                    paste_x = sprite_center_target[0] - sprite_w // 2
+                    paste_y = sprite_center_target[1] - sprite_h // 2
                     composite_frame.paste(sprite_img, (paste_x, paste_y), sprite_img)
 
                 draw = ImageDraw.Draw(composite_frame)
@@ -335,28 +338,41 @@ class AnimationViewer:
 
         for i, num in enumerate(sprite_numbers):
             composite_frame = Image.new('RGBA', (canvas_width, canvas_height), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(composite_frame)
+            
+            box_x0 = anim["frame_width"] // 2
+            box_y0 = anim["frame_height"] // 2
+            box_x1 = box_x0 + anim["frame_width"]
+            box_y1 = box_y0 + anim["frame_height"]
+            draw.rectangle([box_x0, box_y0, box_x1, box_y1], fill=(211, 211, 211, 255))
+
             sprite_to_paste = None
             if num <= 0:
-                placeholder = Image.new('RGBA', (40, 40), (0, 0, 0, 0)); draw = ImageDraw.Draw(placeholder)
-                draw.text((10, 10), "?", fill="red"); sprite_to_paste = placeholder
+                placeholder = Image.new('RGBA', (40, 40), (0, 0, 0, 0)); draw_placeholder = ImageDraw.Draw(placeholder)
+                draw_placeholder.text((10, 10), "?", fill="red"); sprite_to_paste = placeholder
             else:
                 sprite_path = os.path.join(sprites_folder, f"sprite_{num}.png")
                 try:
                     sprite_img = Image.open(sprite_path).convert('RGBA')
                     sprite_to_paste = sprite_img
                 except FileNotFoundError:
-                    placeholder = Image.new('RGBA', (40, 40), (0, 0, 0, 0)); draw = ImageDraw.Draw(placeholder)
-                    draw.text((5, 10), f"!{num}!", fill="red"); sprite_to_paste = placeholder
+                    placeholder = Image.new('RGBA', (40, 40), (0, 0, 0, 0)); draw_placeholder = ImageDraw.Draw(placeholder)
+                    draw_placeholder.text((5, 10), f"!{num}!", fill="red"); sprite_to_paste = placeholder
             
             if sprite_to_paste:
-                anchor_x, anchor_y = frame_metadata[i]['anchors']['black']
+                all_anchors = frame_metadata[i]['anchors']
+                green_anchor = all_anchors.get("green")
+                black_anchor = all_anchors.get("black")
+                sprite_center_target = green_anchor or black_anchor
+                
+                anchor_x, anchor_y = sprite_center_target
                 per_sprite_mirror = widgets["mirror_vars"][i].get()
                 
                 if per_sprite_mirror:
                     sprite_to_paste = ImageOps.mirror(sprite_to_paste)
-                    anchor_x = anim["frame_width"] - 1 - anchor_x
 
-                base_x, base_y = anchor_x + (anim["frame_width"] // 2), anchor_y + (anim["frame_height"] // 2)
+                base_x = anchor_x + (anim["frame_width"] // 2)
+                base_y = anchor_y + (anim["frame_height"] // 2)
                 sprite_w, sprite_h = sprite_to_paste.size
                 paste_x, paste_y = base_x - sprite_w // 2, base_y - sprite_h // 2
                 
