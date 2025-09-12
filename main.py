@@ -51,7 +51,7 @@ class MainApplication:
         
         # --- Workflow 2: Batch Utility ---
         Button(self.current_frame, 
-               text="Batch Resize Sprites", 
+               text="Batch Process Spritesheets", 
                command=self.launch_batch_resizer, 
                font=('Arial', 12),
                width=25,
