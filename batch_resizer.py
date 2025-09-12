@@ -19,6 +19,7 @@ class BatchResizer:
         self.current_folder_index = 0
         self.cancel_operation = False
         self.animation_creator = None
+        self.sprite_previews = [] # To hold image references
 
         self.main_frame = Frame(self.parent_frame)
         self.main_frame.pack(fill='both', expand=True)
@@ -58,8 +59,9 @@ class BatchResizer:
         Button(content_frame, text="Preview Optimized Animations", command=self.show_pokemon_selection_view, font=('Arial', 12), width=30).pack(pady=10)
 
     def show_pokemon_selection_view(self):
-        """Displays a list of projects to choose from for previewing."""
+        """Displays a list of projects with sprite previews to choose from."""
         self.clear_frame()
+        self.sprite_previews.clear() # Clear previous image references
         top_frame = Frame(self.main_frame); top_frame.pack(fill='x', padx=10, pady=5)
         Button(top_frame, text="Back to Tasks", command=self.show_task_selection_view).pack(side='left')
         
@@ -74,9 +76,31 @@ class BatchResizer:
         canvas.pack(side="left", fill="both", expand=True); scrollbar.pack(side="right", fill="y")
 
         for folder_name in self.project_folders:
-            Button(scroll_frame, text=folder_name, 
-                   command=lambda f=folder_name: self.launch_previewer(f), 
-                   width=40).pack(padx=20, pady=5, anchor='w')
+            sprite_path = os.path.join(self.parent_folder, folder_name, "Sprites", "sprite_1.png")
+            
+            try:
+                if os.path.exists(sprite_path):
+                    img = Image.open(sprite_path).convert("RGBA")
+                else:
+                    # Create a transparent placeholder if sprite is not found
+                    img = Image.new('RGBA', (40, 40), (0, 0, 0, 0))
+                
+                img.thumbnail((40, 40))
+                photo = ImageTk.PhotoImage(img)
+                self.sprite_previews.append(photo) # Store reference
+            
+                btn = Button(scroll_frame, text=folder_name, image=photo, compound="left",
+                             anchor="w", justify="left",
+                             command=lambda f=folder_name: self.launch_previewer(f))
+                btn.pack(padx=20, pady=5, fill='x')
+
+            except Exception as e:
+                print(f"Could not load preview for {folder_name}: {e}")
+                # Fallback to a text-only button on error
+                Button(scroll_frame, text=folder_name, 
+                       command=lambda f=folder_name: self.launch_previewer(f), 
+                       width=40).pack(padx=20, pady=5, anchor='w')
+
 
     def launch_previewer(self, folder_name):
         """Launches the AnimationCreator in preview mode for the selected project."""
@@ -89,7 +113,6 @@ class BatchResizer:
             start_in_preview_mode=True
         )
 
-    # ... (start_sprite_generation and related methods remain unchanged)
     def start_sprite_generation(self):
         self.current_folder_index = 0
         self.show_sprite_generation_view()
@@ -150,7 +173,7 @@ class BatchResizer:
             for file in os.listdir(output_folder): os.unlink(os.path.join(output_folder, file))
             handler = SpriteSheetHandler(self.current_spritesheet_path, remove_first_row=True, remove_first_col=False)
             sprites, _, _ = handler.split_sprites(size, size)
-            if not sprites: raise Exception("Splitting yielded no sprites.")
+            if not sprites: raise Exception("Splitting the spritesheet yielded no sprites.")
             for idx, sprite in enumerate(sprites):
                 sprite.save(os.path.join(output_folder, f"sprite_{idx + 1}.png"))
         except Exception as e:
@@ -161,7 +184,6 @@ class BatchResizer:
         self.current_folder_index += 1
         self.show_sprite_generation_view()
 
-    # ... (Threading logic for animation generation remains unchanged)
     def start_animation_generation(self):
         self.clear_frame(); self.cancel_operation = False
         top_frame = Frame(self.main_frame); top_frame.pack(fill='x', padx=10, pady=5)
@@ -222,4 +244,5 @@ class BatchResizer:
 
     def clear_frame(self):
         self.cancel_operation = True
+        self.sprite_previews.clear()
         for widget in self.main_frame.winfo_children(): widget.destroy()
