@@ -51,12 +51,11 @@ class SpriteMatcher:
     def match_group(self, group_frames):
         """
         Finds the best matching library sprite for each frame and determines if the
-        entire group should be considered mirrored.
+        match was a mirrored one.
 
         Returns:
             A dictionary containing:
             - "frame_matches": A list of sprite numbers (e.g., [10, 11, 12]).
-            - "group_is_mirrored": A boolean indicating if the group is mirrored.
             - "per_frame_mirror": A list of booleans indicating if each individual match was mirrored.
         """
         frame_results = []
@@ -78,26 +77,17 @@ class SpriteMatcher:
             
             frame_results.append((match_filename, is_mirrored))
         
-        mirrored_count = 0
-        non_mirrored_count = 0
         sprite_numbers = []
         per_frame_mirror_flags = []
 
         for filename, is_mirrored in frame_results:
             per_frame_mirror_flags.append(is_mirrored)
             if filename:
-                if is_mirrored:
-                    mirrored_count += 1
-                else:
-                    non_mirrored_count += 1
                 sprite_numbers.append(int(filename.split('_')[-1].split('.')[0]))
             else:
                 sprite_numbers.append(0)
         
-        group_is_mirrored = mirrored_count > non_mirrored_count
-        
         return {
             "frame_matches": sprite_numbers,
-            "group_is_mirrored": group_is_mirrored,
             "per_frame_mirror": per_frame_mirror_flags
         }
