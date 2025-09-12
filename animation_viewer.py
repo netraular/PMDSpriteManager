@@ -92,6 +92,19 @@ class AnimationViewer:
         if not self.anim_data:
              Label(self.scroll_frame, text="No animations found or loaded.", font=('Arial', 14, 'bold')).pack(pady=20); return
         anim = self.anim_data[self.current_anim_index]
+        
+        self.current_anim_metadata = []
+        all_offsets_frames = []
+        offsets_image_path = anim["image_path"].replace("-Anim.png", "-Offsets.png")
+        if os.path.exists(offsets_image_path):
+            offsets_handler = SpriteSheetHandler(offsets_image_path)
+            all_offsets_frames = offsets_handler.split_animation_frames(anim["frame_width"], anim["frame_height"])
+            self.current_anim_metadata = [self._get_frame_metadata(f) for f in all_offsets_frames]
+        else:
+            default_anchor = (anim["frame_width"] // 2, anim["frame_height"] // 2)
+            num_frames = anim["total_groups"] * anim["frames_per_group"]
+            self.current_anim_metadata = [{"anchors": {"black": default_anchor}}] * num_frames
+
         handler = SpriteSheetHandler(anim["image_path"])
         all_frames = handler.split_animation_frames(anim["frame_width"], anim["frame_height"])
         
@@ -132,17 +145,29 @@ class AnimationViewer:
             self._start_animation_loop(anim_label, [f.copy() for f in group_frames], durations[:len(group_frames)], self.after_ids)
             
             anim_label_copy = Label(anim_panel_copy, bg="lightgrey"); anim_label_copy.pack()
-            offsets_image_path = anim["image_path"].replace("-Anim.png", "-Offsets.png")
-            if os.path.exists(offsets_image_path):
-                offsets_handler = SpriteSheetHandler(offsets_image_path)
-                all_offsets_frames = offsets_handler.split_animation_frames(anim["frame_width"], anim["frame_height"])
+            if all_offsets_frames:
                 group_offsets_frames = all_offsets_frames[start:end]
                 self._start_animation_loop(anim_label_copy, [f.copy() for f in group_offsets_frames], durations[:len(group_offsets_frames)], self.after_ids)
 
             for idx, frame in enumerate(group_frames):
                 frame_container = Frame(frames_panel); frame_container.grid(row=0, column=idx, padx=2, pady=2)
                 
-                frame.thumbnail((80, 80)); img = ImageTk.PhotoImage(frame)
+                display_frame = frame.copy().convert('RGBA')
+                global_frame_idx = start + idx
+
+                if global_frame_idx < len(self.current_anim_metadata):
+                    metadata = self.current_anim_metadata[global_frame_idx]
+                    all_anchors = metadata.get('anchors', {})
+                    draw = ImageDraw.Draw(display_frame)
+                    cross_size = 2
+                    for color_name, coords in all_anchors.items():
+                        if coords:
+                            x, y = coords
+                            draw.line((x - cross_size, y, x + cross_size, y), fill=color_name, width=1)
+                            draw.line((x, y - cross_size, x, y + cross_size), fill=color_name, width=1)
+                
+                display_frame.thumbnail((80, 80))
+                img = ImageTk.PhotoImage(display_frame)
                 lbl = Label(frame_container, image=img, relief="sunken", bd=1); lbl.image = img; lbl.pack()
                 
                 custom_sprite_lbl = Label(frame_container, relief="sunken", bd=1); custom_sprite_lbl.pack()
@@ -160,7 +185,6 @@ class AnimationViewer:
                 self.group_widgets[group_idx]["string_vars"].append(sv)
                 self.group_widgets[group_idx]["mirror_vars"].append(mirror_var)
                 
-                global_frame_idx = start + idx
                 callback = lambda *args, g_idx=group_idx, f_idx=idx, gfi=global_frame_idx: self.update_custom_sprite_preview(g_idx, f_idx, gfi)
                 sv.trace_add("write", callback)
                 mirror_var.trace_add("write", callback)
@@ -186,6 +210,7 @@ class AnimationViewer:
             if run_ai_automatically and not (json_data and "sprites" in json_data):
                 self.identify_group_sprites(group_idx)
 
+            self.refresh_all_custom_previews_in_group(group_idx)
             self.load_result_animation(group_idx)
 
     def refresh_all_custom_previews_in_group(self, group_idx):
@@ -201,25 +226,57 @@ class AnimationViewer:
         sv = widgets["string_vars"][frame_idx]
         mirror_var = widgets["mirror_vars"][frame_idx]
         label_to_update = widgets["custom_sprite_labels"][frame_idx]
+        anim = self.anim_data[self.current_anim_index]
+
+        frame_width, frame_height = anim["frame_width"], anim["frame_height"]
+        composite_frame = Image.new('RGBA', (frame_width, frame_height), (0, 0, 0, 0))
         
         sprite_num_str = sv.get()
-        if not sprite_num_str.isdigit() or int(sprite_num_str) <= 0:
-            label_to_update.config(image=''); return
+        sprite_img = None
 
-        sprite_path = os.path.join(self.anim_folder, "Sprites", f"sprite_{int(sprite_num_str)}.png")
-        
         try:
-            sprite_img = Image.open(sprite_path).convert('RGBA')
+            if sprite_num_str.isdigit() and int(sprite_num_str) > 0:
+                sprite_path = os.path.join(self.anim_folder, "Sprites", f"sprite_{int(sprite_num_str)}.png")
+                try:
+                    sprite_img = Image.open(sprite_path).convert('RGBA')
+                except FileNotFoundError:
+                    draw_err = ImageDraw.Draw(composite_frame)
+                    draw_err.text((frame_width / 2, frame_height / 2), f"?{sprite_num_str}?", fill="red", anchor="mm")
             
-            if mirror_var.get():
-                sprite_img = ImageOps.mirror(sprite_img)
+            if global_frame_idx < len(self.current_anim_metadata):
+                metadata = self.current_anim_metadata[global_frame_idx]
+                all_anchors = metadata.get('anchors', {})
+                main_anchor = all_anchors.get("black")
+                
+                if sprite_img and main_anchor:
+                    is_mirrored = mirror_var.get()
+                    if is_mirrored:
+                        sprite_img = ImageOps.mirror(sprite_img)
+                    
+                    sprite_w, sprite_h = sprite_img.size
+                    paste_x = main_anchor[0] - sprite_w // 2
+                    paste_y = main_anchor[1] - sprite_h // 2
+                    composite_frame.paste(sprite_img, (paste_x, paste_y), sprite_img)
 
-            sprite_img.thumbnail((80, 80))
-            img_tk = ImageTk.PhotoImage(sprite_img)
+                draw = ImageDraw.Draw(composite_frame)
+                cross_size = 2
+                for color_name, coords in all_anchors.items():
+                    if coords:
+                        x, y = coords
+                        draw.line((x - cross_size, y, x + cross_size, y), fill=color_name, width=1)
+                        draw.line((x, y - cross_size, x, y + cross_size), fill=color_name, width=1)
+            
+            elif sprite_img:
+                sprite_w, sprite_h = sprite_img.size
+                paste_x = (frame_width - sprite_w) // 2
+                paste_y = (frame_height - sprite_h) // 2
+                composite_frame.paste(sprite_img, (paste_x, paste_y), sprite_img)
+
+        finally:
+            composite_frame.thumbnail((80, 80))
+            img_tk = ImageTk.PhotoImage(composite_frame)
             label_to_update.config(image=img_tk)
             label_to_update.image = img_tk
-        except FileNotFoundError:
-            label_to_update.config(image='')
 
     def _get_frame_metadata(self, frame_image):
         if frame_image.mode != 'RGBA':
@@ -228,16 +285,25 @@ class AnimationViewer:
         width, height = frame_image.size
         pixels = frame_image.load()
         
-        anchor = None
+        anchor_colors = {
+            "black": (0, 0, 0, 255),
+            "red":   (255, 0, 0, 255),
+            "green": (0, 255, 0, 255),
+            "blue":  (0, 0, 255, 255),
+        }
+        found_anchors = {color: None for color in anchor_colors}
+        
         for x in range(width):
             for y in range(height):
-                if pixels[x, y] == (0, 0, 0, 255):
-                    anchor = (x, y)
-                    break
-            if anchor:
-                break
+                pixel_color = pixels[x, y]
+                for color_name, color_value in anchor_colors.items():
+                    if pixel_color == color_value:
+                        found_anchors[color_name] = (x, y)
         
-        return {"anchor": anchor or (width // 2, height // 2)}
+        if found_anchors["black"] is None:
+            found_anchors["black"] = (width // 2, height // 2)
+
+        return {"anchors": found_anchors}
 
     def load_result_animation(self, group_idx):
         widgets = self.group_widgets[group_idx]
@@ -256,15 +322,13 @@ class AnimationViewer:
             messagebox.showwarning("Warning", "The 'Sprites' folder was not found."); return
 
         frame_metadata = []
-        offsets_image_path = anim["image_path"].replace("-Anim.png", "-Offsets.png")
-        if os.path.exists(offsets_image_path):
-            offsets_handler = SpriteSheetHandler(offsets_image_path)
-            all_offsets_frames = offsets_handler.split_animation_frames(anim["frame_width"], anim["frame_height"])
-            start, end = group_idx * anim["frames_per_group"], (group_idx + 1) * anim["frames_per_group"]
-            frame_metadata = [self._get_frame_metadata(f) for f in all_offsets_frames[start:end]]
+        start_frame_idx = group_idx * anim["frames_per_group"]
+        end_frame_idx = start_frame_idx + len(sprite_numbers)
+        if start_frame_idx < len(self.current_anim_metadata):
+            frame_metadata = self.current_anim_metadata[start_frame_idx:end_frame_idx]
         else:
             default_anchor = (anim["frame_width"] // 2, anim["frame_height"] // 2)
-            frame_metadata = [{"anchor": default_anchor}] * len(sprite_numbers)
+            frame_metadata = [{"anchors": {"black": default_anchor}}] * len(sprite_numbers)
 
         result_frames = []
         canvas_width, canvas_height = anim["frame_width"] * 2, anim["frame_height"] * 2
@@ -285,7 +349,7 @@ class AnimationViewer:
                     draw.text((5, 10), f"!{num}!", fill="red"); sprite_to_paste = placeholder
             
             if sprite_to_paste:
-                anchor_x, anchor_y = frame_metadata[i]['anchor']
+                anchor_x, anchor_y = frame_metadata[i]['anchors']['black']
                 per_sprite_mirror = widgets["mirror_vars"][i].get()
                 
                 if per_sprite_mirror:
@@ -394,12 +458,10 @@ class AnimationViewer:
                 group_entry["values"] = values_list
                 
                 offsets = []
-                offsets_image_path = anim["image_path"].replace("-Anim.png", "-Offsets.png")
-                if os.path.exists(offsets_image_path):
-                    offsets_handler = SpriteSheetHandler(offsets_image_path)
-                    all_offsets_frames = offsets_handler.split_animation_frames(anim["frame_width"], anim["frame_height"])
-                    start, end = group_idx * anim["frames_per_group"], (group_idx + 1) * anim["frames_per_group"]
-                    offsets = [self._get_frame_metadata(f)['anchor'] for f in all_offsets_frames[start:end]]
+                start_frame_idx = group_idx * anim["frames_per_group"]
+                end_frame_idx = start_frame_idx + len(entries)
+                if self.current_anim_metadata:
+                    offsets = [m['anchors']['black'] for m in self.current_anim_metadata[start_frame_idx:end_frame_idx]]
                 group_entry["offsets"] = offsets
 
                 grouped_sprites[str(group_idx + 1)] = group_entry
@@ -418,8 +480,8 @@ class AnimationViewer:
             handler = SpriteSheetHandler(anim["image_path"])
             all_frames = handler.split_animation_frames(anim["frame_width"], anim["frame_height"])
             
-            offsets_image_path = anim["image_path"].replace("-Anim.png", "-Offsets.png")
             all_offsets_frames = []
+            offsets_image_path = anim["image_path"].replace("-Anim.png", "-Offsets.png")
             if os.path.exists(offsets_image_path):
                 offsets_handler = SpriteSheetHandler(offsets_image_path)
                 all_offsets_frames = offsets_handler.split_animation_frames(anim["frame_width"], anim["frame_height"])
@@ -436,7 +498,8 @@ class AnimationViewer:
                     values = [{"id": 0, "mirrored": False}] * anim["frames_per_group"]
                 
                 if all_offsets_frames:
-                    offsets = [self._get_frame_metadata(f)['anchor'] for f in all_offsets_frames[start:end]]
+                    frame_meta = [self._get_frame_metadata(f) for f in all_offsets_frames[start:end]]
+                    offsets = [m['anchors']['black'] for m in frame_meta]
 
                 grouped_sprites[str(group_idx + 1)] = {"name": group_name, "mirrored": False, "values": values, "offsets": offsets}
         except Exception as e: print(f"Could not auto-generate data for '{anim['name']}': {e}"); return None
