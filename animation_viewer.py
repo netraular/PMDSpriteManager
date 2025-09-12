@@ -145,7 +145,6 @@ class AnimationViewer:
             if index == self.current_anim_index:
                 json_data = self._get_data_from_current_view()
             else:
-                # Delegate to the data handler
                 json_data = self.data_handler.generate_animation_data(index)
 
             if json_data:
@@ -161,7 +160,7 @@ class AnimationViewer:
         messagebox.showinfo("Batch Export Complete", f"Process finished.\n\nTotal Animations Exported: {saved_count}\nFailed/Skipped: {failed_count}")
 
     def load_and_convert_optimized_json(self, anim_name):
-        folder_name = os.path.basename(self.anim_folder) + "AnimationData_Optimized"
+        folder_name = "AnimationData"
         json_path = os.path.join(self.anim_folder, folder_name, f"{anim_name}-AnimData.json")
         if not os.path.exists(json_path): return None
         try:

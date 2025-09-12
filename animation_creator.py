@@ -27,7 +27,6 @@ class AnimationCreator:
         self.setup_ui()
         
     def _auto_load_image(self):
-        """Automatically find and load the first PNG spritesheet in the folder."""
         try:
             png_files = [f for f in os.listdir(self.folder) if f.lower().endswith('.png')]
             if not png_files:
@@ -40,7 +39,6 @@ class AnimationCreator:
             return False
 
     def setup_ui(self):
-        """Set up the step-by-step interface."""
         if self.start_in_preview_mode:
             self.show_animation_selector_view()
         elif self.start_directly_at_json_upload:
@@ -50,7 +48,6 @@ class AnimationCreator:
             self.show_process_sheet_view()
 
     def show_animation_selector_view(self):
-        """Shows a view to select an optimized animation JSON from the project folder."""
         self.clear_frame()
         selector_frame = Frame(self.main_frame)
         selector_frame.pack(pady=20)
@@ -58,11 +55,10 @@ class AnimationCreator:
         Button(selector_frame, text="Back", command=self.return_to_main).pack(pady=10)
         Label(selector_frame, text="Select Animation to Preview", font=('Arial', 16)).pack(pady=10)
         
-        base_folder_name = os.path.basename(self.folder) + "AnimationData_Optimized"
-        self.optimized_folder = os.path.join(self.folder, base_folder_name)
+        self.optimized_folder = os.path.join(self.folder, "AnimationData")
 
         if not os.path.exists(self.optimized_folder):
-            messagebox.showerror("Error", f"Optimized data folder not found at:\n{self.optimized_folder}")
+            messagebox.showerror("Error", f"Animation data folder not found at:\n{self.optimized_folder}")
             self.return_to_main()
             return
 
@@ -75,7 +71,7 @@ class AnimationCreator:
                 return
 
             self.selected_anim_var = StringVar(selector_frame)
-            self.selected_anim_var.set(anim_names[0]) # default value
+            self.selected_anim_var.set(anim_names[0])
 
             dropdown = OptionMenu(selector_frame, self.selected_anim_var, *anim_names)
             dropdown.pack(pady=10)
@@ -86,7 +82,6 @@ class AnimationCreator:
             messagebox.showerror("Error", f"Failed to read animations: {e}")
 
     def _load_selected_animation(self):
-        """Loads the JSON file corresponding to the animation selected in the dropdown."""
         anim_name = self.selected_anim_var.get()
         if not anim_name:
             messagebox.showwarning("Warning", "No animation selected.")
@@ -96,7 +91,6 @@ class AnimationCreator:
         self._load_json_from_path(file_path)
 
     def show_process_sheet_view(self):
-        """Show Step 1: Process the spritesheet and save sprites."""
         self.clear_frame()
         self.process_frame = Frame(self.main_frame); self.process_frame.pack(pady=20)
         Label(self.process_frame, text="Step 1: Process Spritesheet", font=('Arial', 14)).pack(pady=10)
@@ -110,7 +104,6 @@ class AnimationCreator:
         Button(form_frame, text="Process and Save Sprites", command=self.process_spritesheet).grid(row=2, columnspan=2, pady=10)
 
     def process_spritesheet(self):
-        """Process the spritesheet and save individual sprites to the 'Sprites' folder."""
         try:
             size = int(self.size_entry.get())
             sprite_number = int(self.sprite_number_entry.get())
@@ -138,7 +131,6 @@ class AnimationCreator:
         except Exception as e: messagebox.showerror("Error", f"Processing error: {str(e)}")
 
     def show_json_upload_view(self):
-        """Show Step 2: Upload JSON of animations and view generated sprites."""
         self.clear_frame()
         json_frame = Frame(self.main_frame); json_frame.pack(pady=20, fill='both', expand=True)
         button_frame = Frame(json_frame); button_frame.pack(fill='x', pady=10)
@@ -149,7 +141,6 @@ class AnimationCreator:
         self.show_generated_sprites()
 
     def show_generated_sprites(self):
-        """Show the generated sprites in a grid."""
         if not self.output_folder or not os.path.exists(self.output_folder): return
         try:
             sprite_files = sorted([f for f in os.listdir(self.output_folder) if f.lower().endswith('.png')], key=lambda x: int(x.split('_')[-1].split('.')[0]))
@@ -169,8 +160,7 @@ class AnimationCreator:
             if col >= num_columns: col = 0; row += 1
 
     def _load_json_from_dialog(self):
-        """Load animation JSON file via a file dialog."""
-        optimized_folder = os.path.join(self.folder, os.path.basename(self.folder) + "AnimationData_Optimized")
+        optimized_folder = os.path.join(self.folder, "AnimationData")
         file_path = filedialog.askopenfilename(
             title="Select Optimized Animation JSON",
             initialdir=optimized_folder if os.path.exists(optimized_folder) else self.folder,
@@ -180,7 +170,6 @@ class AnimationCreator:
             self._load_json_from_path(file_path)
 
     def _load_json_from_path(self, file_path):
-        """Loads and processes a JSON file from a given path."""
         try:
             with open(file_path, 'r') as f:
                 self.json_data = json.load(f)
@@ -200,7 +189,6 @@ class AnimationCreator:
             messagebox.showerror("Error", f"Failed to load or process JSON file: {e}")
 
     def show_animation_preview(self):
-        """Show the animation preview view."""
         self.clear_frame()
         self.animation_frame = Frame(self.main_frame); self.animation_frame.pack(fill='both', expand=True)
         self.canvas = Canvas(self.animation_frame)
@@ -220,7 +208,6 @@ class AnimationCreator:
             self.create_group_preview(group_id, group_data)
 
     def create_group_preview(self, group_id, group_data):
-        """Create a preview for an animation group."""
         group_frame = Frame(self.scroll_frame, bd=2, relief="groove"); group_frame.pack(fill="x", padx=5, pady=5)
         header_frame = Frame(group_frame); header_frame.pack(fill="x", pady=5)
         group_name = group_data.get("name", f"Group {group_id}")

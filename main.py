@@ -68,9 +68,9 @@ class MainApplication:
 
     def show_json_previewer(self):
         self.clear_frame()
-        optimized_folder = os.path.join(self.folder, os.path.basename(self.folder) + "AnimationData_Optimized")
+        optimized_folder = os.path.join(self.folder, "AnimationData")
         if not os.path.exists(optimized_folder):
-            messagebox.showerror("Error", "The 'AnimationData_Optimized' folder is missing.\nPlease generate animations first.")
+            messagebox.showerror("Error", "The 'AnimationData' folder is missing.\nPlease generate animations first.")
             self.show_main_menu()
             return
         self.animation_creator = AnimationCreator(

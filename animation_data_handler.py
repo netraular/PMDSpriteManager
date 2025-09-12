@@ -167,7 +167,7 @@ class AnimationDataHandler:
     def export_optimized_animation(self, json_data):
         if not json_data: return None, "No JSON data provided."
         try:
-            base_folder_name = os.path.basename(self.project_path) + "AnimationData_Optimized"
+            base_folder_name = "AnimationData"
             output_folder = os.path.join(self.project_path, base_folder_name)
             os.makedirs(output_folder, exist_ok=True)
             
