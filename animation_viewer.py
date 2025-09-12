@@ -126,7 +126,16 @@ class AnimationViewer:
                 dropdown_var.trace_add("write", lambda *args, idx=group_idx: self.update_linked_group(idx))
 
             content_frame = Frame(group_frame); content_frame.pack(fill="both", expand=True)
-            anim_panel = Frame(content_frame); anim_panel.pack(side="left", padx=10)
+            
+            animation_previews_container = Frame(content_frame)
+            animation_previews_container.pack(side="left", padx=10)
+            
+            anim_panel = Frame(animation_previews_container)
+            anim_panel.pack(side="left", padx=5)
+            
+            anim_panel_copy = Frame(animation_previews_container)
+            anim_panel_copy.pack(side="left", padx=5)
+
             frames_panel = Frame(content_frame); frames_panel.pack(side="left", fill="x", expand=True)
             result_preview_frame = Frame(row_container, bd=1, relief="sunken"); result_preview_frame.pack(side='left', fill='y', padx=(5, 0))
             Button(result_preview_frame, text="Load Preview", command=lambda idx=group_idx: self.load_result_animation(idx)).pack(pady=2, padx=2)
@@ -141,9 +150,20 @@ class AnimationViewer:
             start, end = group_idx * frames_per_group, (group_idx + 1) * frames_per_group
             group_frames = all_frames[start:end]
             durations = anim["durations"] * (len(group_frames) // len(anim["durations"]) + 1)
-            anim_label = Label(anim_panel); anim_label.pack()
-            self._start_animation_loop(anim_label, group_frames, durations[:len(group_frames)], self.after_ids)
             
+            anim_label = Label(anim_panel); anim_label.pack()
+            self._start_animation_loop(anim_label, [f.copy() for f in group_frames], durations[:len(group_frames)], self.after_ids)
+            
+            anim_label_copy = Label(anim_panel_copy, bg="lightgrey"); anim_label_copy.pack()
+            offsets_image_path = anim["image_path"].replace("-Anim.png", "-Offsets.png")
+            if os.path.exists(offsets_image_path):
+                offsets_handler = SpriteSheetHandler(offsets_image_path)
+                all_offsets_frames = offsets_handler.split_animation_frames(anim["frame_width"], anim["frame_height"])
+                group_offsets_frames = all_offsets_frames[start:end]
+                self._start_animation_loop(anim_label_copy, [f.copy() for f in group_offsets_frames], durations[:len(group_offsets_frames)], self.after_ids)
+            else:
+                anim_label_copy.config(text="No Offsets.png")
+
             group_entries = []
             for idx, frame in enumerate(group_frames):
                 frame.thumbnail((80, 80)); img = ImageTk.PhotoImage(frame)
@@ -187,7 +207,6 @@ class AnimationViewer:
             if run_ai_automatically and not is_group_copy:
                 self.identify_group_sprites(group_idx)
 
-            # <<< NUEVO: Activar la vista previa automáticamente después de cargar/identificar >>>
             self.load_result_animation(group_idx)
 
 
@@ -199,7 +218,6 @@ class AnimationViewer:
         widgets["preview_after_ids"].clear()
 
         if widgets["group_copy_var"] and widgets["group_copy_var"].get():
-            # Clear the label if it's a copy group to avoid showing a stale preview
             widgets["result_label"].config(image='')
             widgets["result_label"].image = None
             return
@@ -285,7 +303,6 @@ class AnimationViewer:
             self.update_linked_group(group_idx)
         else: self.linked_groups.pop(group_idx, None)
         
-        # Update the preview to reflect the change (e.g., hide it)
         self.load_result_animation(group_idx)
 
     def clear_animations(self):
