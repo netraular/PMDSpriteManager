@@ -49,7 +49,6 @@ class AnimationCreator:
         
         Label(self.process_frame, text="Step 1: Process Spritesheet", font=('Arial', 14)).pack(pady=10)
         
-        # Display the auto-loaded image preview
         img = Image.open(self.image_path)
         img.thumbnail((500, 400))
         self.img_tk = ImageTk.PhotoImage(img)
@@ -58,7 +57,6 @@ class AnimationCreator:
         form_frame = Frame(self.process_frame)
         form_frame.pack(pady=10)
         
-        # Replaced separate width and height entries with a single size entry.
         Label(form_frame, text="Size (width/height):").grid(row=0, column=0)
         self.size_entry = Entry(form_frame)
         self.size_entry.grid(row=0, column=1, padx=5)
@@ -72,7 +70,6 @@ class AnimationCreator:
     def process_spritesheet(self):
         """Process the spritesheet and save individual sprites to the 'Sprites' folder."""
         try:
-            # Read from the single size_entry and use it for both width and height.
             size = int(self.size_entry.get())
             sprites_width = size
             sprites_height = size
@@ -87,7 +84,6 @@ class AnimationCreator:
                 messagebox.showerror("Error", f"Cannot save {sprite_number} sprites. The spritesheet only contains {total_sprites} sprites.")
                 return
             
-            # Save to the generic "Sprites" folder
             folder_name = "Sprites"
             self.output_folder = os.path.join(self.folder, folder_name)
             
@@ -116,7 +112,6 @@ class AnimationCreator:
             messagebox.showerror("Error", f"Processing error: {str(e)}")
 
     def show_json_upload_view(self):
-        """Show Step 2: Upload JSON of animations and view generated sprites."""
         self.clear_frame()
         
         json_frame = Frame(self.main_frame)
@@ -132,7 +127,6 @@ class AnimationCreator:
         self.show_generated_sprites()
 
     def show_generated_sprites(self):
-        """Show the generated sprites in a grid."""
         if not self.output_folder or not hasattr(self, 'sprite_width') or not hasattr(self, 'sprite_height'):
             return
         
@@ -166,7 +160,6 @@ class AnimationCreator:
             if col >= num_columns: col = 0; row += 1
 
     def load_json(self):
-        """Load animation JSON file."""
         file_path = filedialog.askopenfilename(title="Select Animation JSON", filetypes=(("JSON files", "*.json"), ("All files", "*.*")))
         if file_path:
             with open(file_path, 'r') as f:
@@ -174,7 +167,6 @@ class AnimationCreator:
             self.show_animation_preview()
 
     def show_animation_preview(self):
-        """Show the animation preview view."""
         self.clear_frame()
         
         self.animation_frame = Frame(self.main_frame)
@@ -196,33 +188,77 @@ class AnimationCreator:
             self.create_group_preview(group_id, group_data)
 
     def create_group_preview(self, group_id, group_data):
-        """Create a preview for an animation group."""
         group_frame = Frame(self.scroll_frame, bd=2, relief="groove")
         group_frame.pack(fill="x", padx=5, pady=5)
         
         header_frame = Frame(group_frame); header_frame.pack(fill="x", pady=5)
         group_name = group_data.get("name", f"Group {group_id}")
         Label(header_frame, text=group_name, font=('Arial', 12, 'bold')).pack(side='left')
-        if group_data.get("mirrored", False):
+        
+        is_mirrored_copy = group_data.get("mirrored", False)
+        if is_mirrored_copy:
             Label(header_frame, text="(Mirrored)", fg="blue").pack(side='left', padx=10)
         
         content_frame = Frame(group_frame); content_frame.pack(fill="x")
-        frames = self.get_group_frames(group_data)
+        
+        raw_frames = self.get_group_frames(group_data)
+        
+        offsets = None
+        if is_mirrored_copy:
+            source_group_data = self.json_data["sprites"][group_data["copy"]]
+            offsets = source_group_data.get("offsets")
+        else:
+            offsets = group_data.get("offsets")
+
+        final_frames = []
+        if offsets and self.json_data.get("framewidth"):
+            final_frames = self._apply_offsets_to_frames(raw_frames, offsets, is_mirrored_copy)
+        else:
+            final_frames = raw_frames
+
         durations = self.json_data["durations"]
         
         anim_panel = Frame(content_frame); anim_panel.pack(side="left", padx=10)
         anim_label = Label(anim_panel); anim_label.pack()
-        self.start_animation(anim_label, frames, durations)
+        self.start_animation(anim_label, final_frames, durations)
         
         sprite_panel = Frame(content_frame); sprite_panel.pack(side="right", fill="x", expand=True)
-        for idx, frame in enumerate(frames):
+        for idx, frame in enumerate(raw_frames):
             frame.thumbnail((80, 80))
             img = ImageTk.PhotoImage(frame)
             lbl = Label(sprite_panel, image=img); lbl.image = img; lbl.grid(row=0, column=idx, padx=2)
             Label(sprite_panel, text=f"Dur: {durations[idx]}", font=('Arial', 7)).grid(row=1, column=idx)
 
+    def _apply_offsets_to_frames(self, frames, offsets, is_mirrored):
+        frame_width = self.json_data["framewidth"]
+        frame_height = self.json_data["frameheight"]
+        canvas_width = frame_width * 2
+        canvas_height = frame_height * 2
+        
+        positioned_frames = []
+        for i, sprite_img in enumerate(frames):
+            if i >= len(offsets): continue
+
+            composite_frame = Image.new('RGBA', (canvas_width, canvas_height), (0, 0, 0, 0))
+            
+            anchor_x, anchor_y = offsets[i]
+            
+            if is_mirrored:
+                anchor_x = frame_width - anchor_x
+
+            base_x = anchor_x + (frame_width // 2)
+            base_y = anchor_y + (frame_height // 2)
+            
+            sprite_w, sprite_h = sprite_img.size
+            paste_x = base_x - sprite_w // 2
+            paste_y = base_y - sprite_h // 2
+            
+            composite_frame.paste(sprite_img, (paste_x, paste_y), sprite_img)
+            positioned_frames.append(composite_frame)
+            
+        return positioned_frames
+
     def get_group_frames(self, group_data):
-        """Get the frames for the group, applying mirror if necessary."""
         if group_data.get("mirrored", False):
             source_group = self.json_data["sprites"][group_data["copy"]]
             frames = self.get_group_frames(source_group)
@@ -232,25 +268,32 @@ class AnimationCreator:
             return [self.load_sprite(num) for num in sprite_numbers]
 
     def load_sprite(self, sprite_num):
-        """Load a sprite from the generated files in the 'Sprites' folder."""
-        sprite_path = os.path.join(self.output_folder, f"sprite_{sprite_num}.png")
-        return Image.open(sprite_path)
+        try:
+            sprite_path = os.path.join(self.output_folder, f"sprite_{sprite_num}.png")
+            return Image.open(sprite_path).convert('RGBA')
+        except (FileNotFoundError, ValueError):
+            placeholder = Image.new('RGBA', (40, 40), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(placeholder)
+            draw.text((10, 10), f"?{sprite_num}?", fill="red")
+            return placeholder
 
     def start_animation(self, label, frames, durations):
-        """Start a real-time animation."""
         current_frame = [0]
         def update():
+            if not frames: return
             if current_frame[0] >= len(frames): current_frame[0] = 0
-            frame = frames[current_frame[0]]; frame.thumbnail((200, 200))
+            
+            frame = frames[current_frame[0]]
+            frame.thumbnail((200, 200))
             img = ImageTk.PhotoImage(frame)
             label.config(image=img); label.image = img
-            delay = durations[current_frame[0]] * 33
+            
+            delay = durations[current_frame[0] % len(durations)] * 33
             current_frame[0] += 1
             self.after_ids.append(self.parent_frame.after(delay, update))
         update()
             
     def clear_frame(self):
-        """Clear the current frame and stop animations."""
         for aid in self.after_ids:
             self.parent_frame.after_cancel(aid)
         self.after_ids.clear()

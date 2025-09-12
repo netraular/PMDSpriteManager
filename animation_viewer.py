@@ -209,6 +209,19 @@ class AnimationViewer:
 
             self.load_result_animation(group_idx)
 
+    def _get_offset_from_frame(self, frame_image):
+        if frame_image.mode != 'RGBA':
+            frame_image = frame_image.convert('RGBA')
+        
+        width, height = frame_image.size
+        pixels = frame_image.load()
+        
+        for x in range(width):
+            for y in range(height):
+                if pixels[x, y] == (0, 0, 0, 255):
+                    return (x, y)
+        
+        return (width // 2, height // 2)
 
     def load_result_animation(self, group_idx):
         widgets = self.group_widgets[group_idx]
@@ -231,23 +244,57 @@ class AnimationViewer:
         sprites_folder = os.path.join(self.anim_folder, "Sprites")
         if not os.path.exists(sprites_folder):
             messagebox.showwarning("Warning", "The 'Sprites' folder was not found."); return
-            
+
+        offsets = []
+        offsets_image_path = anim["image_path"].replace("-Anim.png", "-Offsets.png")
+        if os.path.exists(offsets_image_path):
+            offsets_handler = SpriteSheetHandler(offsets_image_path)
+            all_offsets_frames = offsets_handler.split_animation_frames(anim["frame_width"], anim["frame_height"])
+            start = group_idx * anim["frames_per_group"]
+            end = (group_idx + 1) * anim["frames_per_group"]
+            group_offsets_frames = all_offsets_frames[start:end]
+            offsets = [self._get_offset_from_frame(f) for f in group_offsets_frames]
+        else:
+            default_offset = (anim["frame_width"] // 2, anim["frame_height"] // 2)
+            offsets = [default_offset] * len(sprite_numbers)
+
         result_frames = []
+        canvas_width = anim["frame_width"] * 2
+        canvas_height = anim["frame_height"] * 2
+
         for i, num in enumerate(sprite_numbers):
+            composite_frame = Image.new('RGBA', (canvas_width, canvas_height), (0, 0, 0, 0))
+            
+            sprite_to_paste = None
             if num <= 0:
                 placeholder = Image.new('RGBA', (40, 40), (0, 0, 0, 0)); draw = ImageDraw.Draw(placeholder)
-                draw.text((10, 10), "?", fill="red"); result_frames.append(placeholder); continue
-            sprite_path = os.path.join(sprites_folder, f"sprite_{num}.png")
-            try:
-                sprite_img = Image.open(sprite_path).copy()
-                if is_group_mirrored:
-                    sprite_img = ImageOps.mirror(sprite_img)
-                result_frames.append(sprite_img)
-            except FileNotFoundError:
-                placeholder = Image.new('RGBA', (40, 40), (0, 0, 0, 0)); draw = ImageDraw.Draw(placeholder)
-                draw.text((5, 10), f"!{num}!", fill="red"); result_frames.append(placeholder)
+                draw.text((10, 10), "?", fill="red"); sprite_to_paste = placeholder
+            else:
+                sprite_path = os.path.join(sprites_folder, f"sprite_{num}.png")
+                try:
+                    sprite_img = Image.open(sprite_path).convert('RGBA')
+                    if is_group_mirrored:
+                        sprite_img = ImageOps.mirror(sprite_img)
+                    sprite_to_paste = sprite_img
+                except FileNotFoundError:
+                    placeholder = Image.new('RGBA', (40, 40), (0, 0, 0, 0)); draw = ImageDraw.Draw(placeholder)
+                    draw.text((5, 10), f"!{num}!", fill="red"); sprite_to_paste = placeholder
+            
+            if sprite_to_paste:
+                anchor_x, anchor_y = offsets[i]
+                
+                base_x = anchor_x + (anim["frame_width"] // 2)
+                base_y = anchor_y + (anim["frame_height"] // 2)
+                
+                sprite_w, sprite_h = sprite_to_paste.size
+                paste_x = base_x - sprite_w // 2
+                paste_y = base_y - sprite_h // 2
+                
+                composite_frame.paste(sprite_to_paste, (paste_x, paste_y), sprite_to_paste)
+
+            result_frames.append(composite_frame)
         
-        durations = anim["durations"] * (len(result_frames) // len(result_frames) + 1)
+        durations = anim["durations"] * (len(result_frames) // len(anim["durations"]) + 1)
         self._start_animation_loop(result_label, result_frames, durations[:len(result_frames)], widgets["preview_after_ids"])
 
     def identify_group_sprites(self, group_idx):
@@ -366,6 +413,18 @@ class AnimationViewer:
                     entries = self.group_widgets[group_idx]["entries"]
                     group_entry["values"] = [int(e.get()) if e.get().isdigit() else 0 for e in entries]
                     group_entry["values_mirrored"] = self.group_widgets[group_idx]["group_mirror_var"].get()
+                    
+                    offsets = []
+                    offsets_image_path = anim["image_path"].replace("-Anim.png", "-Offsets.png")
+                    if os.path.exists(offsets_image_path):
+                        offsets_handler = SpriteSheetHandler(offsets_image_path)
+                        all_offsets_frames = offsets_handler.split_animation_frames(anim["frame_width"], anim["frame_height"])
+                        start = group_idx * anim["frames_per_group"]
+                        end = (group_idx + 1) * anim["frames_per_group"]
+                        group_offsets_frames = all_offsets_frames[start:end]
+                        offsets = [self._get_offset_from_frame(f) for f in group_offsets_frames]
+                    group_entry["offsets"] = offsets
+
                 grouped_sprites[str(group_idx + 1)] = group_entry
             return {"index": self.current_anim_index, "name": anim["name"], "framewidth": anim["frame_width"], "frameheight": anim["frame_height"], "sprites": grouped_sprites, "durations": anim["durations"]}
         except Exception as e: messagebox.showerror("Error", f"Failed to gather data from view: {str(e)}"); return None
@@ -381,18 +440,30 @@ class AnimationViewer:
             matcher = SpriteMatcher(sprites_folder) if os.path.exists(sprites_folder) else None
             handler = SpriteSheetHandler(anim["image_path"])
             all_frames = handler.split_animation_frames(anim["frame_width"], anim["frame_height"])
+            
+            offsets_image_path = anim["image_path"].replace("-Anim.png", "-Offsets.png")
+            all_offsets_frames = []
+            if os.path.exists(offsets_image_path):
+                offsets_handler = SpriteSheetHandler(offsets_image_path)
+                all_offsets_frames = offsets_handler.split_animation_frames(anim["frame_width"], anim["frame_height"])
+
             for group_idx in range(anim["total_groups"]):
                 group_name = self._get_default_group_name(anim["name"], anim["total_groups"], group_idx)
-                values, group_mirrored = [], False
+                values, group_mirrored, offsets = [], False, []
+                start, end = group_idx * anim["frames_per_group"], (group_idx + 1) * anim["frames_per_group"]
+                
                 if matcher:
-                    start, end = group_idx * anim["frames_per_group"], (group_idx + 1) * anim["frames_per_group"]
                     match_data = matcher.match_group(all_frames[start:end])
                     values = match_data["frame_matches"]
                     group_mirrored = match_data["group_is_mirrored"]
                 else:
                     values = [0] * anim["frames_per_group"]
                 
-                grouped_sprites[str(group_idx + 1)] = {"name": group_name, "mirrored": False, "values": values, "values_mirrored": group_mirrored}
+                if all_offsets_frames:
+                    group_offsets_frames = all_offsets_frames[start:end]
+                    offsets = [self._get_offset_from_frame(f) for f in group_offsets_frames]
+
+                grouped_sprites[str(group_idx + 1)] = {"name": group_name, "mirrored": False, "values": values, "values_mirrored": group_mirrored, "offsets": offsets}
         except Exception as e: print(f"Could not auto-generate data for '{anim['name']}': {e}"); return None
         return {"index": index, "name": anim["name"], "framewidth": anim["frame_width"], "frameheight": anim["frame_height"], "sprites": grouped_sprites, "durations": anim["durations"]}
 
