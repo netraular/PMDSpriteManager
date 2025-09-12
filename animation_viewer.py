@@ -128,14 +128,21 @@ class AnimationViewer:
             anim_panel = Frame(animation_previews_container); anim_panel.pack(side="left", padx=5)
             anim_panel_copy = Frame(animation_previews_container); anim_panel_copy.pack(side="left", padx=5)
             frames_panel = Frame(content_frame); frames_panel.pack(side="left", fill="x", expand=True)
+            
             result_preview_frame = Frame(row_container, bd=1, relief="sunken"); result_preview_frame.pack(side='left', fill='y', padx=(5, 0))
             Button(result_preview_frame, text="Load Preview", command=lambda idx=group_idx: self.load_result_animation(idx)).pack(pady=2, padx=2)
             result_label = Label(result_preview_frame); result_label.pack(pady=5, padx=5, expand=True)
             
+            overlay_preview_frame = Frame(row_container, bd=1, relief="sunken"); overlay_preview_frame.pack(side='left', fill='y', padx=(5, 0))
+            Button(overlay_preview_frame, text="Load Overlay", command=lambda idx=group_idx: self.load_overlay_animation(idx)).pack(pady=2, padx=2)
+            overlay_label = Label(overlay_preview_frame); overlay_label.pack(pady=5, padx=5, expand=True)
+
             self.group_widgets[group_idx] = {
                 "ai_button": ai_button,
                 "entries": [], "frame": frames_panel, "result_label": result_label,
-                "preview_after_ids": [], "custom_sprite_labels": [], "string_vars": [], "mirror_vars": []
+                "overlay_label": overlay_label,
+                "preview_after_ids": [], "overlay_after_ids": [],
+                "custom_sprite_labels": [], "string_vars": [], "mirror_vars": []
             }
             start, end = group_idx * frames_per_group, (group_idx + 1) * frames_per_group
             group_frames = all_frames[start:end]
@@ -212,6 +219,7 @@ class AnimationViewer:
 
             self.refresh_all_custom_previews_in_group(group_idx)
             self.load_result_animation(group_idx)
+            self.load_overlay_animation(group_idx)
 
     def refresh_all_custom_previews_in_group(self, group_idx):
         anim = self.anim_data[self.current_anim_index]
@@ -308,21 +316,15 @@ class AnimationViewer:
 
         return {"anchors": found_anchors}
 
-    def load_result_animation(self, group_idx):
+    def _generate_custom_animation_frames(self, group_idx):
         widgets = self.group_widgets[group_idx]
-        
-        for aid in widgets["preview_after_ids"]:
-            self.parent_frame.after_cancel(aid)
-        widgets["preview_after_ids"].clear()
-
-        entries = widgets["entries"]
-        result_label = widgets["result_label"]
         anim = self.anim_data[self.current_anim_index]
-        
-        sprite_numbers = [int(entry.get()) if entry.get().isdigit() else 0 for entry in entries]
+        sprite_numbers = [int(entry.get()) if entry.get().isdigit() else 0 for entry in widgets["entries"]]
         sprites_folder = os.path.join(self.anim_folder, "Sprites")
+        
         if not os.path.exists(sprites_folder):
-            messagebox.showwarning("Warning", "The 'Sprites' folder was not found."); return
+            messagebox.showwarning("Warning", "The 'Sprites' folder was not found.")
+            return []
 
         frame_metadata = []
         start_frame_idx = group_idx * anim["frames_per_group"]
@@ -338,50 +340,99 @@ class AnimationViewer:
 
         for i, num in enumerate(sprite_numbers):
             composite_frame = Image.new('RGBA', (canvas_width, canvas_height), (0, 0, 0, 0))
-            draw = ImageDraw.Draw(composite_frame)
+            sprite_to_paste = None
+            if num <= 0:
+                placeholder = Image.new('RGBA', (40, 40), (0, 0, 0, 0)); draw = ImageDraw.Draw(placeholder)
+                draw.text((10, 10), "?", fill="red"); sprite_to_paste = placeholder
+            else:
+                sprite_path = os.path.join(sprites_folder, f"sprite_{num}.png")
+                try: sprite_to_paste = Image.open(sprite_path).convert('RGBA')
+                except FileNotFoundError:
+                    placeholder = Image.new('RGBA', (40, 40), (0, 0, 0, 0)); draw = ImageDraw.Draw(placeholder)
+                    draw.text((5, 10), f"!{num}!", fill="red"); sprite_to_paste = placeholder
             
+            if sprite_to_paste:
+                all_anchors = frame_metadata[i]['anchors']
+                sprite_center_target = all_anchors.get("green") or all_anchors.get("black")
+                anchor_x, anchor_y = sprite_center_target
+                
+                if widgets["mirror_vars"][i].get():
+                    sprite_to_paste = ImageOps.mirror(sprite_to_paste)
+
+                base_x, base_y = anchor_x + (anim["frame_width"] // 2), anchor_y + (anim["frame_height"] // 2)
+                sprite_w, sprite_h = sprite_to_paste.size
+                paste_x, paste_y = base_x - sprite_w // 2, base_y - sprite_h // 2
+                composite_frame.paste(sprite_to_paste, (paste_x, paste_y), sprite_to_paste)
+
+            result_frames.append(composite_frame)
+        return result_frames
+
+    def load_result_animation(self, group_idx):
+        widgets = self.group_widgets[group_idx]
+        for aid in widgets["preview_after_ids"]: self.parent_frame.after_cancel(aid)
+        widgets["preview_after_ids"].clear()
+
+        anim = self.anim_data[self.current_anim_index]
+        result_frames = self._generate_custom_animation_frames(group_idx)
+        
+        if not result_frames: return
+
+        final_frames = []
+        for frame in result_frames:
+            final_frame = Image.new('RGBA', frame.size, (0, 0, 0, 0))
+            draw = ImageDraw.Draw(final_frame)
             box_x0 = anim["frame_width"] // 2
             box_y0 = anim["frame_height"] // 2
             box_x1 = box_x0 + anim["frame_width"]
             box_y1 = box_y0 + anim["frame_height"]
             draw.rectangle([box_x0, box_y0, box_x1, box_y1], fill=(211, 211, 211, 255))
-
-            sprite_to_paste = None
-            if num <= 0:
-                placeholder = Image.new('RGBA', (40, 40), (0, 0, 0, 0)); draw_placeholder = ImageDraw.Draw(placeholder)
-                draw_placeholder.text((10, 10), "?", fill="red"); sprite_to_paste = placeholder
-            else:
-                sprite_path = os.path.join(sprites_folder, f"sprite_{num}.png")
-                try:
-                    sprite_img = Image.open(sprite_path).convert('RGBA')
-                    sprite_to_paste = sprite_img
-                except FileNotFoundError:
-                    placeholder = Image.new('RGBA', (40, 40), (0, 0, 0, 0)); draw_placeholder = ImageDraw.Draw(placeholder)
-                    draw_placeholder.text((5, 10), f"!{num}!", fill="red"); sprite_to_paste = placeholder
             
-            if sprite_to_paste:
-                all_anchors = frame_metadata[i]['anchors']
-                green_anchor = all_anchors.get("green")
-                black_anchor = all_anchors.get("black")
-                sprite_center_target = green_anchor or black_anchor
-                
-                anchor_x, anchor_y = sprite_center_target
-                per_sprite_mirror = widgets["mirror_vars"][i].get()
-                
-                if per_sprite_mirror:
-                    sprite_to_paste = ImageOps.mirror(sprite_to_paste)
+            final_frame = Image.alpha_composite(final_frame, frame)
+            final_frames.append(final_frame)
 
-                base_x = anchor_x + (anim["frame_width"] // 2)
-                base_y = anchor_y + (anim["frame_height"] // 2)
-                sprite_w, sprite_h = sprite_to_paste.size
-                paste_x, paste_y = base_x - sprite_w // 2, base_y - sprite_h // 2
-                
-                composite_frame.paste(sprite_to_paste, (paste_x, paste_y), sprite_to_paste)
-
-            result_frames.append(composite_frame)
+        durations = anim["durations"] * (len(final_frames) // len(anim["durations"]) + 1)
+        self._start_animation_loop(widgets["result_label"], final_frames, durations[:len(final_frames)], widgets["preview_after_ids"])
+    
+    def _tint_image(self, image, color):
+        image = image.convert('RGBA')
+        color_img = Image.new('RGBA', image.size, color)
+        alpha_mask = image.getchannel('A')
         
-        durations = anim["durations"] * (len(result_frames) // len(anim["durations"]) + 1)
-        self._start_animation_loop(result_label, result_frames, durations[:len(result_frames)], widgets["preview_after_ids"])
+        tinted_sprite = Image.new('RGBA', image.size, (0, 0, 0, 0))
+        tinted_sprite.paste(color_img, (0, 0), alpha_mask)
+        return tinted_sprite
+
+    def load_overlay_animation(self, group_idx):
+        widgets = self.group_widgets[group_idx]
+        for aid in widgets["overlay_after_ids"]: self.parent_frame.after_cancel(aid)
+        widgets["overlay_after_ids"].clear()
+
+        anim = self.anim_data[self.current_anim_index]
+        canvas_width, canvas_height = anim["frame_width"] * 2, anim["frame_height"] * 2
+
+        handler = SpriteSheetHandler(anim["image_path"])
+        all_original_frames = handler.split_animation_frames(anim["frame_width"], anim["frame_height"])
+        start, end = group_idx * anim["frames_per_group"], (group_idx + 1) * anim["frames_per_group"]
+        original_group_frames = all_original_frames[start:end]
+        
+        custom_frames = self._generate_custom_animation_frames(group_idx)
+
+        if not custom_frames or len(original_group_frames) != len(custom_frames): return
+
+        overlay_frames = []
+        for i in range(len(custom_frames)):
+            original_on_canvas = Image.new('RGBA', (canvas_width, canvas_height), (0,0,0,0))
+            original_on_canvas.paste(original_group_frames[i], (anim["frame_width"] // 2, anim["frame_height"] // 2))
+            tinted_original = self._tint_image(original_on_canvas, (255, 0, 0, 128))
+
+            tinted_custom = self._tint_image(custom_frames[i], (0, 0, 255, 128))
+            
+            composite = Image.alpha_composite(tinted_original, tinted_custom)
+            overlay_frames.append(composite)
+
+        durations = anim["durations"] * (len(overlay_frames) // len(anim["durations"]) + 1)
+        self._start_animation_loop(widgets["overlay_label"], overlay_frames, durations[:len(overlay_frames)], widgets["overlay_after_ids"])
+
 
     def identify_group_sprites(self, group_idx):
         try:
@@ -415,6 +466,11 @@ class AnimationViewer:
                 self.parent_frame.after_cancel(aid)
             if "preview_after_ids" in self.group_widgets[group_idx]:
                 self.group_widgets[group_idx]["preview_after_ids"].clear()
+
+            for aid in self.group_widgets[group_idx].get("overlay_after_ids", []):
+                self.parent_frame.after_cancel(aid)
+            if "overlay_after_ids" in self.group_widgets[group_idx]:
+                self.group_widgets[group_idx]["overlay_after_ids"].clear()
 
     def _start_animation_loop(self, label, frames, durations, id_storage_list):
         current_frame = [0]
