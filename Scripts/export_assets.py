@@ -1,126 +1,155 @@
-# exportar_assets_comunes.py
-
 from pathlib import Path
-import shutil # Módulo para operaciones de archivos de alto nivel (copiar, borrar carpetas)
+import shutil  # Module for high-level file operations (copying, removing folders)
 
-def procesar_y_exportar_animaciones():
+
+def get_main_folder():
     """
-    Busca animaciones .json comunes a todos los personajes y genera una carpeta 'output'
-    con los assets correspondientes (JSONs y sprites PNGs únicos).
+    Prompts the user to enter the main folder path and validates it.
+
+    Returns:
+        Path: A Path object for the valid, existing directory, or None if the user cancels.
     """
-    carpeta_principal = Path.cwd()
-    print(f"Analizando la estructura de carpetas en: {carpeta_principal}\n")
+    while True:
+        try:
+            input_path = input("Please enter the full path to the main folder to process (or press Enter to exit): ")
+            if not input_path:
+                return None
 
-    # --- PARTE 1: Encontrar las animaciones comunes (lógica del script anterior) ---
+            main_path = Path(input_path).resolve()
 
-    animaciones_por_personaje = {}
-    carpetas_personajes = [d for d in carpeta_principal.iterdir() if d.is_dir() and not d.name.startswith(('.', 'output'))]
+            if not main_path.is_dir():
+                print(f"❌ ERROR: The path '{main_path}' is not a valid directory. Please try again.")
+                continue
 
-    if not carpetas_personajes:
-        print("Error: No se encontraron subcarpetas de personajes en el directorio actual.")
+            print(f"✅ Using directory: {main_path}\n")
+            return main_path
+
+        except (KeyboardInterrupt, EOFError):
+            return None
+
+
+def process_and_export_animations(main_path: Path):
+    """
+    Finds common .json animations across all characters and generates an 'output'
+    folder with the corresponding assets (JSONs and unique PNG sprites).
+    """
+    print(f"Analyzing folder structure in: {main_path}\n")
+
+    # --- PART 1: Find common animations ---
+
+    animations_by_character = {}
+    character_folders = [d for d in main_path.iterdir() if d.is_dir() and not d.name.startswith(('.', 'output'))]
+
+    if not character_folders:
+        print("Error: No character subfolders found in the specified directory.")
         return
 
-    for carpeta_personaje in carpetas_personajes:
-        ruta_animation_data = carpeta_personaje / "AnimationData"
-        if not ruta_animation_data.is_dir():
+    for character_folder in character_folders:
+        animation_data_path = character_folder / "AnimationData"
+        if not animation_data_path.is_dir():
             continue
-        
-        nombres_animaciones = {f.name for f in ruta_animation_data.rglob('*.json')}
-        if nombres_animaciones:
-            animaciones_por_personaje[carpeta_personaje.name] = nombres_animaciones
-            print(f"-> Personaje '{carpeta_personaje.name}' encontrado con {len(nombres_animaciones)} animaciones.")
+
+        animation_names = {f.name for f in animation_data_path.rglob('*.json')}
+        if animation_names:
+            animations_by_character[character_folder.name] = animation_names
+            print(f"-> Character '{character_folder.name}' found with {len(animation_names)} animations.")
         else:
-             animaciones_por_personaje[carpeta_personaje.name] = set()
+            animations_by_character[character_folder.name] = set()
 
-    if not animaciones_por_personaje:
-        print("\nNo se encontraron personajes con carpetas 'AnimationData' válidas.")
+    if not animations_by_character:
+        print("\nNo characters with valid 'AnimationData' folders were found.")
         return
 
-    lista_de_conjuntos = list(animaciones_por_personaje.values())
-    animaciones_comunes = lista_de_conjuntos[0].copy()
-    for siguiente_conjunto in lista_de_conjuntos[1:]:
-        animaciones_comunes.intersection_update(siguiente_conjunto)
+    set_list = list(animations_by_character.values())
+    common_animations = set_list[0].copy()
+    for next_set in set_list[1:]:
+        common_animations.intersection_update(next_set)
 
-    if not animaciones_comunes:
-        print("\n❌ No se encontró ninguna animación .json que sea común a todos los personajes. Proceso finalizado.")
+    if not common_animations:
+        print("\n❌ No .json animation was found to be common to all characters. Process finished.")
         return
-        
+
     print("\n-----------------------------------------------------")
-    print("✅ Animaciones .json comunes encontradas:")
-    for nombre_archivo in sorted(list(animaciones_comunes)):
-        print(f"   - {nombre_archivo}")
+    print("✅ Common .json animations found:")
+    for file_name in sorted(list(common_animations)):
+        print(f"   - {file_name}")
     print("-----------------------------------------------------\n")
 
-    # --- PARTE 2: Crear la estructura de salida y copiar los archivos ---
+    # --- PART 2: Create the output structure and copy the files ---
 
-    print("Iniciando proceso de exportación...")
-    
-    # Crear o limpiar la carpeta de salida 'output'
-    output_dir = carpeta_principal / "output"
+    print("Starting export process...")
+
+    # Create or clean the 'output' folder
+    output_dir = main_path / "output"
     if output_dir.exists():
-        print(f"Borrando carpeta 'output' existente para una exportación limpia...")
+        print(f"Deleting existing 'output' folder for a clean export...")
         shutil.rmtree(output_dir)
     output_dir.mkdir()
 
-    # Iterar sobre cada personaje para procesar sus archivos
-    for carpeta_personaje in carpetas_personajes:
-        nombre_personaje = carpeta_personaje.name
-        print(f"\n--- Procesando personaje: {nombre_personaje} ---")
+    # Iterate over each character to process their files
+    for character_folder in character_folders:
+        character_name = character_folder.name
+        print(f"\n--- Processing character: {character_name} ---")
 
-        ruta_animation_data_origen = carpeta_personaje / "AnimationData"
-        if not ruta_animation_data_origen.is_dir():
-            print(f"Advertencia: El personaje '{nombre_personaje}' no tiene 'AnimationData'. Se omite.")
+        source_animation_data_path = character_folder / "AnimationData"
+        if not source_animation_data_path.is_dir():
+            print(f"Warning: Character '{character_name}' has no 'AnimationData'. Skipping.")
             continue
 
-        # Crear carpetas de destino para este personaje
-        output_personaje_dir = output_dir / nombre_personaje
-        output_personaje_dir.mkdir()
-        output_sprites_dir = output_personaje_dir / "Sprites"
+        # Create destination folders for this character
+        output_character_dir = output_dir / character_name
+        output_character_dir.mkdir()
+        output_sprites_dir = output_character_dir / "Sprites"
         output_sprites_dir.mkdir()
-        
-        # Conjunto para llevar el registro de los PNGs ya copiados y evitar duplicados
-        nombres_png_copiados = set()
 
-        # Iterar sobre cada JSON común para copiarlo y buscar sus sprites
-        for nombre_json in sorted(list(animaciones_comunes)):
-            # 1. Copiar el archivo JSON
+        # Set to keep track of already copied PNGs to avoid duplicates
+        copied_png_names = set()
+
+        # Iterate over each common JSON to copy it and find its sprites
+        for json_name in sorted(list(common_animations)):
+            # 1. Copy the JSON file
             try:
-                # Buscamos la ruta completa del json original
-                ruta_json_origen = next(ruta_animation_data_origen.rglob(nombre_json))
-                ruta_json_destino = output_personaje_dir / nombre_json
-                shutil.copy2(ruta_json_origen, ruta_json_destino)
-                print(f"  ✅ Copiado JSON: {nombre_json}")
+                # Find the full path of the original json
+                source_json_path = next(source_animation_data_path.rglob(json_name))
+                dest_json_path = output_character_dir / json_name
+                shutil.copy2(source_json_path, dest_json_path)
+                print(f"  ✅ Copied JSON: {json_name}")
             except StopIteration:
-                print(f"  ❌ Error: No se pudo encontrar el archivo '{nombre_json}' para '{nombre_personaje}'.")
+                print(f"  ❌ Error: Could not find the file '{json_name}' for '{character_name}'.")
                 continue
 
-            # 2. Derivar nombre de animación y copiar los sprites PNG
-            nombre_animacion = nombre_json.removesuffix("-AnimData.json")
-            ruta_sprites_origen = ruta_animation_data_origen / nombre_animacion
-            
-            if not ruta_sprites_origen.is_dir():
-                print(f"  - Advertencia: No se encontró la carpeta de sprites '{nombre_animacion}' para este JSON.")
+            # 2. Derive animation name and copy the PNG sprites
+            animation_name = json_name.removesuffix("-AnimData.json")
+            source_sprites_path = source_animation_data_path / animation_name
+
+            if not source_sprites_path.is_dir():
+                print(f"  - Warning: Sprite folder '{animation_name}' for this JSON was not found.")
                 continue
 
-            print(f"  - Buscando sprites en: '{ruta_sprites_origen.relative_to(carpeta_principal)}'")
-            pngs_encontrados = list(ruta_sprites_origen.glob('*.png'))
-            
-            if not pngs_encontrados:
-                print("    - No se encontraron archivos .png en esta carpeta.")
+            print(f"  - Searching for sprites in: '{source_sprites_path.relative_to(main_path)}'")
+            found_pngs = list(source_sprites_path.glob('*.png'))
+
+            if not found_pngs:
+                print("    - No .png files were found in this folder.")
                 continue
 
-            for png_origen in pngs_encontrados:
-                if png_origen.name not in nombres_png_copiados:
-                    # Si el nombre del archivo no ha sido copiado antes, lo copiamos
-                    shutil.copy2(png_origen, output_sprites_dir)
-                    nombres_png_copiados.add(png_origen.name)
+            for source_png in found_pngs:
+                if source_png.name not in copied_png_names:
+                    # If the file name has not been copied before, copy it
+                    shutil.copy2(source_png, output_sprites_dir)
+                    copied_png_names.add(source_png.name)
                 else:
-                    # Si ya existe, lo omitimos
-                    print(f"    - Omitiendo (nombre de archivo duplicado): {png_origen.name}")
+                    # If it already exists, skip it
+                    print(f"    - Skipping (duplicate file name): {source_png.name}")
 
     print("\n-----------------------------------------------------")
-    print(f"✅ Proceso completado. Los archivos se han generado en la carpeta: {output_dir}")
+    print(f"✅ Process completed. Files have been generated in the folder: {output_dir}")
     print("-----------------------------------------------------")
 
+
 if __name__ == "__main__":
-    procesar_y_exportar_animaciones()
+    main_folder_path = get_main_folder()
+    if main_folder_path:
+        process_and_export_animations(main_folder_path)
+    else:
+        print("Operation cancelled. Exiting.")
