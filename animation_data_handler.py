@@ -23,31 +23,74 @@ class AnimationDataHandler:
         tree = ET.parse(anim_data_path)
         return self._process_xml(tree)
 
+    def _get_source_anim_info(self, anim_name, xml_anims_map, visited=None):
+        """Recursively finds the base properties and source name for an animation, avoiding cycles."""
+        if visited is None:
+            visited = set()
+        
+        if anim_name in visited:
+            print(f"Warning: Circular dependency detected in CopyOf for animation '{anim_name}'.")
+            return None
+        
+        if anim_name not in xml_anims_map:
+            return None
+
+        visited.add(anim_name)
+        anim_xml = xml_anims_map[anim_name]
+        copy_of_tag = anim_xml.find('CopyOf')
+
+        if copy_of_tag is not None:
+            source_name = copy_of_tag.text
+            return self._get_source_anim_info(source_name, xml_anims_map, visited)
+
+        fw_tag = anim_xml.find("FrameWidth")
+        fh_tag = anim_xml.find("FrameHeight")
+        if fw_tag is not None and fh_tag is not None:
+            return {
+                "source_name": anim_name,
+                "properties": {
+                    "frame_width": int(fw_tag.text),
+                    "frame_height": int(fh_tag.text),
+                    "durations": [int(d.text) for d in anim_xml.findall("Durations/Duration")]
+                }
+            }
+        
+        return None
+
     def _process_xml(self, tree):
         animations = []
         anims_root = tree.getroot().find("Anims")
         if not anims_root: return []
+
         xml_anims_map = {anim.find('Name').text: anim for anim in anims_root.findall('Anim')}
-        for anim_name, anim_xml in xml_anims_map.items():
-            copy_of_tag = anim_xml.find('CopyOf')
-            anim_data = {}
+        
+        for anim_name in xml_anims_map:
             try:
-                if copy_of_tag is not None:
-                    source_name = copy_of_tag.text
-                    if source_name not in xml_anims_map: continue
-                    source_anim_xml = xml_anims_map[source_name]
-                    anim_data = {"name": anim_name, "frame_width": int(source_anim_xml.find("FrameWidth").text), "frame_height": int(source_anim_xml.find("FrameHeight").text), "durations": [int(d.text) for d in source_anim_xml.findall("Durations/Duration")], "image_path": os.path.join(self.animations_folder, f"{anim_name}-Anim.png")}
-                else:
-                    fw_tag, fh_tag = anim_xml.find("FrameWidth"), anim_xml.find("FrameHeight")
-                    if fw_tag is None or fh_tag is None: continue
-                    anim_data = {"name": anim_name, "frame_width": int(fw_tag.text), "frame_height": int(fh_tag.text), "durations": [int(d.text) for d in anim_xml.findall("Durations/Duration")], "image_path": os.path.join(self.animations_folder, f"{anim_name}-Anim.png")}
-                if not os.path.exists(anim_data["image_path"]): continue
+                source_info = self._get_source_anim_info(anim_name, xml_anims_map)
+
+                if source_info is None:
+                    continue
+                
+                image_source_name = source_info["source_name"]
+                base_properties = source_info["properties"]
+                
+                anim_data = {
+                    "name": anim_name,
+                    **base_properties,
+                    "image_path": os.path.join(self.animations_folder, f"{image_source_name}-Anim.png")
+                }
+
+                if not os.path.exists(anim_data["image_path"]):
+                    continue
+
                 with Image.open(anim_data["image_path"]) as img:
                     anim_data["total_groups"] = img.height // anim_data["frame_height"]
                     anim_data["frames_per_group"] = img.width // anim_data["frame_width"]
+
                 animations.append(anim_data)
             except Exception as e:
                 print(f"Error processing XML for animation '{anim_name}': {e}. Skipping.")
+        
         return animations
 
     def _load_animation_assets(self, anim):

@@ -51,8 +51,13 @@ class AnimationViewer:
         ui_compatible_json_data = self.load_and_convert_optimized_json(anim["name"])
         run_ai_automatically = ui_compatible_json_data is None
 
-        Label(self.scroll_frame, text=f"Animation: {anim['name']}", font=('Arial', 14, 'bold')).pack(pady=10)
+        header_frame = Frame(self.scroll_frame)
+        header_frame.pack(fill='x', pady=10)
         
+        Label(header_frame, text=f"Animation: {anim['name']}", font=('Arial', 14, 'bold')).pack(side='left', padx=10)
+        count_text = f"({self.current_anim_index + 1} of {len(self.anim_data)})"
+        Label(header_frame, text=count_text, font=('Arial', 12, 'italic')).pack(side='left', padx=10)
+
         for group_idx in range(anim["total_groups"]):
             start, end = group_idx * anim["frames_per_group"], (group_idx + 1) * anim["frames_per_group"]
             
