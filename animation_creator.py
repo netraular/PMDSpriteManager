@@ -123,7 +123,11 @@ class AnimationCreator:
             handler = SpriteSheetHandler(self.image_path, remove_first_row=True, remove_first_col=False)
             self.sprites, _, _ = handler.split_sprites(size, size)
             self.sprites = self.sprites[:sprite_number]
-            for idx, sprite in enumerate(self.sprites): sprite.save(os.path.join(self.output_folder, f"sprite_{idx + 1}.png"))
+            for idx, sprite in enumerate(self.sprites):
+                bbox = sprite.getbbox()
+                if bbox:
+                    sprite = sprite.crop(bbox)
+                sprite.save(os.path.join(self.output_folder, f"sprite_{idx + 1}.png"))
             
             messagebox.showinfo("Success", f"{len(self.sprites)} sprites saved in:\n{self.output_folder}")
             self.show_json_upload_view()

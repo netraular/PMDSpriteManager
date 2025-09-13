@@ -175,6 +175,9 @@ class BatchResizer:
             sprites, _, _ = handler.split_sprites(size, size)
             if not sprites: raise Exception("Splitting the spritesheet yielded no sprites.")
             for idx, sprite in enumerate(sprites):
+                bbox = sprite.getbbox()
+                if bbox:
+                    sprite = sprite.crop(bbox)
                 sprite.save(os.path.join(output_folder, f"sprite_{idx + 1}.png"))
         except Exception as e:
             messagebox.showerror("Processing Error", f"An error occurred while processing the spritesheet: {e}")
