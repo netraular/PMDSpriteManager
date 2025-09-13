@@ -6,6 +6,7 @@ import xml.etree.ElementTree as ET
 from PIL import Image, ImageOps
 from sprite_sheet_handler import SpriteSheetHandler
 from sprite_matcher import SpriteMatcher
+import shutil
 
 class AnimationDataHandler:
     def __init__(self, project_path):
@@ -173,7 +174,11 @@ class AnimationDataHandler:
             
             anim_name = json_data['name']
             sprites_subfolder = os.path.join(output_folder, anim_name)
-            os.makedirs(sprites_subfolder, exist_ok=True)
+
+            # Unconditionally clear and recreate the specific animation's sprite folder
+            if os.path.exists(sprites_subfolder):
+                shutil.rmtree(sprites_subfolder)
+            os.makedirs(sprites_subfolder)
 
             processed_sprites = set()
             simplified_json = {k: json_data[k] for k in ["name", "framewidth", "frameheight", "durations"] if k in json_data}

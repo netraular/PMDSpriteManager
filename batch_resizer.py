@@ -166,11 +166,11 @@ class BatchResizer:
             messagebox.showerror("Invalid Input", "Please enter a valid positive number for the size."); return
         try:
             output_folder = os.path.join(self.current_project_path, "Sprites")
-            if os.path.exists(output_folder) and os.listdir(output_folder):
-                msg = f"The 'Sprites' folder in '{os.path.basename(self.current_project_path)}' will be overwritten. Continue?"
-                if not messagebox.askyesno("Confirmation", msg): self.process_next_folder(); return
+            # Unconditionally clear and create the output folder
             os.makedirs(output_folder, exist_ok=True)
-            for file in os.listdir(output_folder): os.unlink(os.path.join(output_folder, file))
+            for file in os.listdir(output_folder): 
+                os.unlink(os.path.join(output_folder, file))
+            
             handler = SpriteSheetHandler(self.current_spritesheet_path, remove_first_row=True, remove_first_col=False)
             sprites, _, _ = handler.split_sprites(size, size)
             if not sprites: raise Exception("Splitting the spritesheet yielded no sprites.")
