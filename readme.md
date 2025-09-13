@@ -91,6 +91,7 @@ A pre-built executable is available in the **Releases** section of the repositor
 2.  **Choose Your Workflow**: The application starts with a choice between a single project or batch processing.
 
     ![Workflow Selection](readme/images/01_workflow_select.png)
+
     *The initial screen where you choose to work on a single project or batch process multiple folders.*
 
 ---
@@ -110,6 +111,7 @@ Select a single character folder (e.g., `PikachuProject`) to access the main men
 Select a parent folder containing multiple character project folders.
 
 ![Batch Processor Menu](readme/images/02_batch_menu.png)
+
 *The task selection menu for batch operations.*
 
 -   **Generate Sprites**: A guided tool that iterates through each project folder, displays its spritesheet, and prompts you for the grid size to process them all efficiently.
@@ -117,6 +119,7 @@ Select a parent folder containing multiple character project folders.
 -   **Preview Optimized Animations**: A selection screen to quickly browse all characters and launch a preview of their final animations.
 
 ![Batch Previewer Selection](readme/images/03_batch_previewer.png)
+
 *Quickly select any project in the batch to preview its final animations.*
 
 ---
@@ -128,24 +131,29 @@ Select a parent folder containing multiple character project folders.
 The tool simplifies the conversion of raw assets into an organized, game-ready structure.
 
 ![Master Spritesheet](readme/images/06_spritesheet.png)
+
 *1. The process starts with the master spritesheet from PMD Collab, containing all character sprites in a single image.*
 
 ![Sprites Folder](readme/images/07_sprites_folder.png)
+
 *2. After processing, the tool generates a clean `Sprites/` folder with each sprite as an individual, numbered PNG file, forming your asset library.*
 
 ![AnimationData Folder](readme/images/08_animationdata_folder.png)
+
 *3. The final output is the `AnimationData` folder. It contains the optimized JSON files and sub-folders with only the necessary 8-bit PNG sprites required for each animation.*
 
 ### The Animation Editor
 This is the core of the single-project workflow. It provides all the tools and visual feedback needed to build animations.
 
 ![Animation Editor UI](readme/images/04_animation_editor.png)
+
 *The main Animation Editor, showing (from left to right): original animation, offset/corrected previews, and the detailed frame-by-frame inputs.*
 
 ### Final Animation Preview
 Whether in single or batch mode, the final previewer provides a clean, large view of the generated animation, running smoothly with all corrections applied.
 
 ![Final Animation Preview](readme/images/05_final_preview.png)
+
 *The final preview screen, which plays the optimized animation as it would appear in-game.*
 
 ---
