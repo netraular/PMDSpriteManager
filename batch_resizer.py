@@ -10,6 +10,7 @@ from PIL import Image, ImageTk
 from sprite_sheet_handler import SpriteSheetHandler
 from animation_data_handler import AnimationDataHandler
 from animation_creator import AnimationCreator
+from isometric_animation_previewer import IsometricAnimationPreviewer # <--- NUEVA IMPORTACIÓN
 import threading
 import queue
 
@@ -23,6 +24,7 @@ class BatchResizer:
         self.current_folder_index = 0
         self.cancel_operation = False
         self.animation_creator = None
+        self.isometric_previewer = None # <--- NUEVO ATRIBUTO
         self.sprite_previews = [] # To hold image references
 
         self.main_frame = Frame(self.parent_frame)
@@ -59,12 +61,14 @@ class BatchResizer:
         Label(content_frame, text=f"Folder: {os.path.basename(self.parent_folder)}", font=('Arial', 10)).pack(pady=(0, 10))
         Label(content_frame, text=f"Found {len(self.project_folders)} project subfolders.", font=('Arial', 10)).pack(pady=(0, 20))
         Label(content_frame, text="Choose a batch operation to perform:", font=('Arial', 14)).pack(pady=20)
-        Button(content_frame, text="Generate Assets", command=self.show_asset_generation_view, font=('Arial', 12), width=30).pack(pady=10)
-        Button(content_frame, text="Generate Sprites", command=self.start_sprite_generation, font=('Arial', 12), width=30).pack(pady=10)
-        Button(content_frame, text="Generate Optimized Animations", command=self.start_animation_generation, font=('Arial', 12), width=30).pack(pady=10)
-        Button(content_frame, text="Preview Optimized Animations", command=self.show_pokemon_selection_view, font=('Arial', 12), width=30).pack(pady=10)
-        Button(content_frame, text="Export Final Assets", command=self.show_export_assets_view, font=('Arial', 12), width=30, bg="lightgreen").pack(pady=10)
-        Button(content_frame, text="Export Final Assets (x2)", command=self.show_export_assets_x2_view, font=('Arial', 12), width=30, bg="lightblue").pack(pady=10)
+        
+        # --- BOTONES REORDENADOS ---
+        Button(content_frame, text="Generate Assets", command=self.show_asset_generation_view, font=('Arial', 12), width=35).pack(pady=10)
+        Button(content_frame, text="Generate Sprites", command=self.start_sprite_generation, font=('Arial', 12), width=35).pack(pady=10)
+        Button(content_frame, text="Generate Optimized Animations", command=self.start_animation_generation, font=('Arial', 12), width=35).pack(pady=10)
+        Button(content_frame, text="Export Final Assets", command=self.show_export_assets_view, font=('Arial', 12), width=35, bg="lightgreen").pack(pady=10)
+        Button(content_frame, text="Export Final Assets (x2)", command=self.show_export_assets_x2_view, font=('Arial', 12), width=35, bg="lightblue").pack(pady=10)
+        Button(content_frame, text="Preview Optimized Animations", command=self.show_isometric_previewer, font=('Arial', 12), width=35).pack(pady=10) # <--- CAMBIADO Y MOVIDO
 
     def show_asset_generation_view(self):
         self.clear_frame()
@@ -218,6 +222,7 @@ class BatchResizer:
         Button(popup, text="Close", command=popup.destroy).pack(pady=10)
         popup.transient(self.parent_frame); popup.grab_set(); self.parent_frame.wait_window(popup)
 
+    # --- MÉTODO OBSOLETO (se mantiene por si se quiere reutilizar) ---
     def show_pokemon_selection_view(self):
         self.clear_frame()
         self.sprite_previews.clear()
@@ -243,6 +248,11 @@ class BatchResizer:
         self.clear_frame()
         project_path = os.path.join(self.parent_folder, folder_name)
         self.animation_creator = AnimationCreator(self.main_frame, project_path, self.show_pokemon_selection_view, start_in_preview_mode=True)
+
+    # --- NUEVO MÉTODO PARA LANZAR EL PREVISUALIZADOR ISOMÉTRICO ---
+    def show_isometric_previewer(self):
+        self.clear_frame()
+        self.isometric_previewer = IsometricAnimationPreviewer(self.main_frame, self.parent_folder, self.show_task_selection_view)
 
     def start_sprite_generation(self):
         self.current_folder_index = 0
@@ -621,4 +631,7 @@ class BatchResizer:
     def clear_frame(self):
         self.cancel_operation = True
         self.sprite_previews.clear()
+        if self.isometric_previewer: # <--- LIMPIEZA ADICIONAL
+            self.isometric_previewer.clear_frame()
+            self.isometric_previewer = None
         for widget in self.main_frame.winfo_children(): widget.destroy()
