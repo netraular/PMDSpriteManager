@@ -19,11 +19,8 @@ class IsometricAnimationPreviewer:
         self.after_ids = []
         self.is_paused = False
 
-        # --- Variables para los menús desplegables ---
         self.selected_char_var = StringVar()
         self.selected_anim_var = StringVar()
-        
-        # --- INICIALIZAR trace_id AQUÍ ---
         self.trace_id = None 
 
         self.setup_ui()
@@ -38,11 +35,9 @@ class IsometricAnimationPreviewer:
         self._setup_main_ui()
 
     def _setup_main_ui(self):
-        # --- Frame de Controles Superiores ---
         control_frame = Frame(self.main_frame); control_frame.pack(fill='x', padx=10, pady=5)
         Button(control_frame, text="Back to Tasks", command=self.return_to_main).pack(side='left', padx=(0, 20))
 
-        # --- Menú de Personajes ---
         Label(control_frame, text="Character:").pack(side='left', padx=(10, 5))
         characters = sorted([d for d in os.listdir(self.output_folder_1x) if os.path.isdir(os.path.join(self.output_folder_1x, d))])
         if not characters:
@@ -52,45 +47,33 @@ class IsometricAnimationPreviewer:
         self.char_dropdown = OptionMenu(control_frame, self.selected_char_var, *characters, command=self._on_character_selected)
         self.char_dropdown.pack(side='left')
 
-        # --- Menú de Animaciones ---
         Label(control_frame, text="Animation:").pack(side='left', padx=(20, 5))
-        # El trace se añade aquí una sola vez y se gestiona su estado.
         self.trace_id = self.selected_anim_var.trace_add("write", self._on_animation_selected)
         self.anim_dropdown = OptionMenu(control_frame, self.selected_anim_var, "None")
         self.anim_dropdown.pack(side='left')
 
-        # --- Botón de Pausa/Reanudar ---
         self.pause_button = Button(control_frame, text="Pause", command=self.toggle_pause)
         self.pause_button.pack(side='left', padx=20)
 
-        # --- Contenedor de Previsualización ---
         preview_container = Frame(self.main_frame); preview_container.pack(fill='both', expand=True, pady=10)
         preview_container.grid_columnconfigure(0, weight=1); preview_container.grid_columnconfigure(1, weight=1)
 
-        # --- Preview 1x ---
         frame_1x = Frame(preview_container); frame_1x.grid(row=0, column=0, padx=10, sticky="nsew")
         Label(frame_1x, text="1x Scale (output)", font=('Arial', 12, 'bold')).pack()
         self.label_1x = Label(frame_1x); self.label_1x.pack(expand=True)
         
-        # --- Preview 2x ---
         frame_2x = Frame(preview_container); frame_2x.grid(row=0, column=1, padx=10, sticky="nsew")
         Label(frame_2x, text="2x Scale (output x2)", font=('Arial', 12, 'bold')).pack()
         self.label_2x = Label(frame_2x); self.label_2x.pack(expand=True)
 
-        # --- Carga Inicial ---
         self.selected_char_var.set(characters[0])
         self._on_character_selected(characters[0])
 
     def toggle_pause(self):
         self.is_paused = not self.is_paused
-        if self.is_paused:
-            self.pause_button.config(text="Resume")
-        else:
-            self.pause_button.config(text="Pause")
+        self.pause_button.config(text="Resume" if self.is_paused else "Pause")
 
     def _on_character_selected(self, char_name):
-        """Callback que se ejecuta al cambiar de personaje. Actualiza la lista de animaciones."""
-        # Desvincular temporalmente el trace para evitar que se dispare al cambiar la lista
         if self.trace_id:
             self.selected_anim_var.trace_remove("write", self.trace_id)
 
@@ -103,26 +86,20 @@ class IsometricAnimationPreviewer:
 
         if anim_names:
             for name in anim_names:
-                # Usar una función lambda para establecer el valor, que luego será detectado por el trace
                 menu.add_command(label=name, command=lambda value=name: self.selected_anim_var.set(value))
-            self.selected_anim_var.set(anim_names[0]) # Esto disparará el trace_add de abajo
+            self.selected_anim_var.set(anim_names[0])
         else:
             self.selected_anim_var.set("None")
             self.clear_animations()
 
-        # Volver a vincular el trace. La animación se cargará a través de este callback.
         self.trace_id = self.selected_anim_var.trace_add("write", self._on_animation_selected)
-        # Si se estableció un nuevo valor, el trace ya se habrá disparado. Si no, llamamos manualmente.
         if not anim_names:
              self._load_and_display_animation()
 
-
     def _on_animation_selected(self, *args):
-        """Callback que se ejecuta al cambiar de animación. Recarga la previsualización."""
         self._load_and_display_animation()
 
     def _load_and_display_animation(self):
-        """Función principal que carga los datos y lanza las animaciones."""
         self.clear_animations()
         self.is_paused = False
         self.pause_button.config(text="Pause")
@@ -139,15 +116,17 @@ class IsometricAnimationPreviewer:
             anim_data_1x, sprites_1x = self._load_animation_data(self.output_folder_1x, char_name, anim_filename)
             anim_data_2x, sprites_2x = self._load_animation_data(self.output_folder_2x, char_name, anim_filename)
             
-            tile_constants = {'WIDTH': 64, 'HEIGHT': 32, 'WIDTH_HALF': 32, 'HEIGHT_HALF': 16}
+            # --- AHORA CADA VISTA TIENE SUS PROPIAS CONSTANTES DE TILE ---
+            tile_constants_1x = {'WIDTH': 32, 'HEIGHT': 16, 'WIDTH_HALF': 16, 'HEIGHT_HALF': 8}
+            tile_constants_2x = {'WIDTH': 64, 'HEIGHT': 32, 'WIDTH_HALF': 32, 'HEIGHT_HALF': 16}
 
             if anim_data_1x:
-                self._start_animation_loop(self.label_1x, anim_data_1x, tile_constants, sprites_1x)
+                self._start_animation_loop(self.label_1x, anim_data_1x, tile_constants_1x, sprites_1x)
             else:
                 self.label_1x.config(image='', text="Failed to load 1x data", fg="red")
 
             if anim_data_2x:
-                self._start_animation_loop(self.label_2x, anim_data_2x, tile_constants, sprites_2x)
+                self._start_animation_loop(self.label_2x, anim_data_2x, tile_constants_2x, sprites_2x)
             else:
                 self.label_2x.config(image='', text="Failed to load 2x data", fg="red")
 
@@ -155,7 +134,6 @@ class IsometricAnimationPreviewer:
             messagebox.showerror("Error", f"Failed to start preview: {e}")
 
     def _load_animation_data(self, base_folder, character_name, anim_filename):
-        """Carga el JSON y los sprites asociados, devolviendo ambos."""
         json_path = os.path.join(base_folder, character_name, anim_filename)
         if not os.path.exists(json_path): return None, None
         
@@ -259,14 +237,12 @@ class IsometricAnimationPreviewer:
         update()
 
     def clear_animations(self):
-        """Detiene solo los bucles de animación sin destruir la UI."""
         for aid in self.after_ids: self.parent_frame.after_cancel(aid)
         self.after_ids.clear()
         if hasattr(self, 'label_1x'): self.label_1x.config(image='')
         if hasattr(self, 'label_2x'): self.label_2x.config(image='')
 
     def clear_frame(self):
-        """Limpia todo el frame, incluyendo bucles y widgets."""
         self.clear_animations()
         if self.trace_id:
             try:
