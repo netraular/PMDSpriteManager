@@ -2,7 +2,7 @@
 
 import os
 import json
-from tkinter import Frame, Label, Canvas, Scrollbar, messagebox, Toplevel, Button
+from tkinter import Frame, Label, Canvas, Scrollbar, messagebox, Toplevel, Button, OptionMenu, StringVar
 from PIL import Image, ImageTk, ImageOps
 import math
 from animation_group_ui import AnimationGroupUI
@@ -20,6 +20,8 @@ class AnimationViewer:
         self.current_anim_index = 0
         self.group_ui_instances = []
         
+        self.selected_anim_var = StringVar()
+
         self.setup_interface()
         self.show_animation()
 
@@ -38,6 +40,17 @@ class AnimationViewer:
         self.main_canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar.pack(side="right", fill="y")
 
+    def on_animation_selected(self, selected_name):
+        new_index = -1
+        for i, anim in enumerate(self.anim_data):
+            if anim['name'] == selected_name:
+                new_index = i
+                break
+        
+        if new_index != -1 and new_index != self.current_anim_index:
+            self.current_anim_index = new_index
+            self.show_animation()
+
     def show_animation(self):
         self.clear_animations()
         for widget in self.scroll_frame.winfo_children(): widget.destroy()
@@ -54,7 +67,13 @@ class AnimationViewer:
         header_frame = Frame(self.scroll_frame)
         header_frame.pack(fill='x', pady=10)
         
-        Label(header_frame, text=f"Animation: {anim['name']}", font=('Arial', 14, 'bold')).pack(side='left', padx=10)
+        Label(header_frame, text="Animation:", font=('Arial', 14, 'bold')).pack(side='left', padx=(10, 5))
+        anim_names = [a['name'] for a in self.anim_data]
+        self.selected_anim_var.set(anim['name'])
+        anim_dropdown = OptionMenu(header_frame, self.selected_anim_var, *anim_names, command=self.on_animation_selected)
+        anim_dropdown.config(font=('Arial', 12))
+        anim_dropdown.pack(side='left', padx=5)
+
         count_text = f"({self.current_anim_index + 1} of {len(self.anim_data)})"
         Label(header_frame, text=count_text, font=('Arial', 12, 'italic')).pack(side='left', padx=10)
 
@@ -93,11 +112,6 @@ class AnimationViewer:
             instance.cleanup()
         self.group_ui_instances.clear()
 
-    def prev_animation(self):
-        if self.anim_data: self.current_anim_index = (self.current_anim_index - 1) % len(self.anim_data); self.show_animation()
-    def next_animation(self):
-        if self.anim_data: self.current_anim_index = (self.current_anim_index + 1) % len(self.anim_data); self.show_animation()
-    
     def view_sprites(self):
         if not os.path.exists(self.sprite_folder): messagebox.showwarning("Warning", "No 'Sprites' folder found"); return
         sprite_files = sorted([f for f in os.listdir(self.sprite_folder) if f.lower().endswith('.png')], key=lambda x: int(x.split('_')[-1].split('.')[0]))

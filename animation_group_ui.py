@@ -65,6 +65,8 @@ class AnimationGroupUI:
         result_preview_frame.pack(side='left', fill='y', padx=(5, 0))
         Label(result_preview_frame, text="Corrected Preview", font=('Arial', 8, 'bold')).pack(pady=(5,0))
         self.result_label = Label(result_preview_frame); self.result_label.pack(pady=5, padx=5, expand=True)
+        self.corrected_offset_label = Label(result_preview_frame, text="Offset: (N/A)", font=('Arial', 8))
+        self.corrected_offset_label.pack(pady=(0, 5))
         
         durations = self.anim_data["durations"] * (len(self.group_frames) // len(self.anim_data["durations"]) + 1)
         
@@ -248,6 +250,9 @@ class AnimationGroupUI:
         custom_frames = self._generate_custom_frames(apply_correction=True)
         if not custom_frames: return
 
+        final_offsets = self._calculate_all_corrected_offsets()
+        offset_texts = [f"Offset: {offset}" for offset in final_offsets]
+
         canvas_width, canvas_height = self.anim_data["frame_width"] * 2, self.anim_data["frame_height"] * 2
         final_frames = []
         for frame in custom_frames:
@@ -261,7 +266,14 @@ class AnimationGroupUI:
             final_frames.append(final_frame)
 
         durations = self.anim_data["durations"] * (len(final_frames) // len(self.anim_data["durations"]) + 1)
-        self._start_animation_loop(self.result_label, final_frames, durations[:len(final_frames)], self.result_after_ids)
+        self._start_animation_loop(
+            image_label=self.result_label, 
+            frames=final_frames, 
+            durations=durations[:len(final_frames)], 
+            id_storage_list=self.result_after_ids,
+            text_label=self.corrected_offset_label,
+            text_data=offset_texts
+        )
 
     def _tint_image(self, image, color):
         image = image.convert('RGBA')
@@ -319,18 +331,28 @@ class AnimationGroupUI:
 
     def get_data(self):
         group_entry = {"name": self.name_entry.get().strip()}
-        frame_width, frame_height = self.anim_data["frame_width"], self.anim_data["frame_height"]
 
         values_list = []
-        corrected_offsets = []
-
         for i, sv in enumerate(self.string_vars):
             sprite_id = int(sv.get()) if sv.get().isdigit() else 0
             is_mirrored = self.mirror_vars[i].get()
             values_list.append({"id": sprite_id, "mirrored": is_mirrored})
 
-            # --- Calculate the corrected offset for this frame ---
-            original_anchor = self.group_metadata[i]['anchors']['black']
+        corrected_offsets = self._calculate_all_corrected_offsets()
+
+        group_entry["values"] = values_list
+        group_entry["offsets"] = corrected_offsets
+        return group_entry
+
+    def _calculate_all_corrected_offsets(self):
+        corrected_offsets = []
+        frame_width, frame_height = self.anim_data["frame_width"], self.anim_data["frame_height"]
+
+        for i, sv in enumerate(self.string_vars):
+            sprite_id = int(sv.get()) if sv.get().isdigit() else 0
+            is_mirrored = self.mirror_vars[i].get()
+
+            original_anchor = self.group_metadata[i]['anchors'].get('black')
             if not original_anchor:
                 corrected_offsets.append((0,0))
                 continue
@@ -368,10 +390,8 @@ class AnimationGroupUI:
                 corrected_offsets.append((corrected_anchor_x, corrected_anchor_y))
             else:
                 corrected_offsets.append(original_anchor)
-
-        group_entry["values"] = values_list
-        group_entry["offsets"] = corrected_offsets
-        return group_entry
+        
+        return corrected_offsets
 
     def cleanup(self):
         for aid in self.after_ids: self.parent.after_cancel(aid)

@@ -30,7 +30,7 @@ class MainApplication:
         self.clear_frame()
         Label(self.current_frame, text="Welcome to the PMD Sprite Manager", font=('Arial', 16, 'bold')).pack(pady=(50, 10))
         Label(self.current_frame, text="Please choose your workflow:", font=('Arial', 12)).pack(pady=(10, 30))
-        Button(self.current_frame, text="Select Pokemon Folder", command=self.select_project_folder, font=('Arial', 12), width=25, height=2).pack(pady=10)
+        Button(self.current_frame, text="Manage individual character", command=self.select_project_folder, font=('Arial', 12), width=25, height=2).pack(pady=10)
         Button(self.current_frame, text="Batch Process Spritesheets", command=self.launch_batch_resizer, font=('Arial', 12), width=25, height=2).pack(pady=10)
 
     def select_project_folder(self):
@@ -43,7 +43,7 @@ class MainApplication:
         self.clear_frame()
         Label(self.current_frame, text=f"Selected folder:\n{self.folder}", font=('Arial', 12)).pack(pady=20)
         Button(self.current_frame, text="Process Spritesheet", command=self.show_animation_creator, width=25).pack(pady=10)
-        Button(self.current_frame, text="View/Edit Animations", command=self.show_animation_viewer, width=25).pack(pady=10)
+        Button(self.current_frame, text="Edit Animations", command=self.show_animation_viewer, width=25).pack(pady=10)
         Button(self.current_frame, text="Preview Optimized Animations", command=self.show_json_previewer, width=25).pack(pady=10)
         Button(self.current_frame, text="Back to Workflow Selection", command=self.show_folder_selection).pack(pady=20)
 
@@ -51,8 +51,6 @@ class MainApplication:
         self.clear_frame()
         control_frame = Frame(self.current_frame); control_frame.pack(fill='x', padx=10, pady=5)
         Button(control_frame, text="Main Menu", command=self.show_main_menu).pack(side='left')
-        Button(control_frame, text="Previous", command=lambda: self.animation_viewer.prev_animation()).pack(side='left', padx=5)
-        Button(control_frame, text="Next", command=lambda: self.animation_viewer.next_animation()).pack(side='left', padx=5)
         Button(control_frame, text="Generate JSON", command=lambda: self.animation_viewer.generate_json()).pack(side='left', padx=5)
         Button(control_frame, text="View Sprites", command=lambda: self.animation_viewer.view_sprites()).pack(side='left', padx=5)
         Button(control_frame, text="Save All Animations", command=lambda: self.animation_viewer.save_all_animations(), bg="lightblue").pack(side='left', padx=5)

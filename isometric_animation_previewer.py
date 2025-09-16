@@ -2,7 +2,7 @@
 
 import os
 import json
-from tkinter import Frame, Label, Button, Canvas, messagebox, OptionMenu, StringVar
+from tkinter import Frame, Label, Button, Canvas, messagebox, OptionMenu, StringVar, Entry
 
 from PIL import Image, ImageTk, ImageDraw
 
@@ -23,37 +23,52 @@ class IsometricAnimationPreviewer:
         self.selected_anim_var = StringVar()
         self.trace_id = None 
 
+        self.offset_x_var = StringVar(value="0")
+        self.offset_y_var = StringVar(value="0")
+        self.offset_x_adj = 0
+        self.offset_y_adj = 0
+
         self.setup_ui()
 
     def setup_ui(self):
         self.clear_frame()
         if not os.path.exists(self.output_folder_1x) or not os.path.exists(self.output_folder_2x):
-            messagebox.showerror("Error", "Las carpetas 'output' y 'output x2' deben existir.\nPor favor, ejecute las tareas de exportación primero.")
+            messagebox.showerror("Error", "The 'output' and 'output x2' folders must exist.\nPlease run the export tasks first.")
             self.return_to_main()
             return
         
         self._setup_main_ui()
 
     def _setup_main_ui(self):
-        control_frame = Frame(self.main_frame); control_frame.pack(fill='x', padx=10, pady=5)
-        Button(control_frame, text="Back to Tasks", command=self.return_to_main).pack(side='left', padx=(0, 20))
+        top_control_frame = Frame(self.main_frame); top_control_frame.pack(fill='x', padx=10, pady=5)
+        Button(top_control_frame, text="Back to Tasks", command=self.return_to_main).pack(side='left', padx=(0, 20))
 
-        Label(control_frame, text="Character:").pack(side='left', padx=(10, 5))
+        Label(top_control_frame, text="Character:").pack(side='left', padx=(10, 5))
         characters = sorted([d for d in os.listdir(self.output_folder_1x) if os.path.isdir(os.path.join(self.output_folder_1x, d))])
         if not characters:
             Label(self.main_frame, text="No characters found in 'output' folder.", fg="red").pack(pady=50)
             return
         
-        self.char_dropdown = OptionMenu(control_frame, self.selected_char_var, *characters, command=self._on_character_selected)
+        self.char_dropdown = OptionMenu(top_control_frame, self.selected_char_var, *characters, command=self._on_character_selected)
         self.char_dropdown.pack(side='left')
 
-        Label(control_frame, text="Animation:").pack(side='left', padx=(20, 5))
+        Label(top_control_frame, text="Animation:").pack(side='left', padx=(20, 5))
         self.trace_id = self.selected_anim_var.trace_add("write", self._on_animation_selected)
-        self.anim_dropdown = OptionMenu(control_frame, self.selected_anim_var, "None")
+        self.anim_dropdown = OptionMenu(top_control_frame, self.selected_anim_var, "None")
         self.anim_dropdown.pack(side='left')
 
-        self.pause_button = Button(control_frame, text="Pause", command=self.toggle_pause)
+        self.pause_button = Button(top_control_frame, text="Pause", command=self.toggle_pause)
         self.pause_button.pack(side='left', padx=20)
+
+        offset_control_frame = Frame(self.main_frame); offset_control_frame.pack(fill='x', padx=10, pady=(0, 5))
+        Label(offset_control_frame, text="Offset Adjust (for 2x):").pack(side='left', padx=(10, 5))
+        Label(offset_control_frame, text="X:").pack(side='left')
+        self.offset_x_entry = Entry(offset_control_frame, textvariable=self.offset_x_var, width=5)
+        self.offset_x_entry.pack(side='left')
+        Label(offset_control_frame, text="Y:").pack(side='left', padx=(10, 0))
+        self.offset_y_entry = Entry(offset_control_frame, textvariable=self.offset_y_var, width=5)
+        self.offset_y_entry.pack(side='left')
+        Button(offset_control_frame, text="Apply Offset", command=self._apply_offset).pack(side='left', padx=10)
 
         preview_container = Frame(self.main_frame); preview_container.pack(fill='both', expand=True, pady=10)
         preview_container.grid_columnconfigure(0, weight=1); preview_container.grid_columnconfigure(1, weight=1)
@@ -68,6 +83,14 @@ class IsometricAnimationPreviewer:
 
         self.selected_char_var.set(characters[0])
         self._on_character_selected(characters[0])
+
+    def _apply_offset(self):
+        try:
+            self.offset_x_adj = int(self.offset_x_var.get())
+            self.offset_y_adj = int(self.offset_y_var.get())
+            self._load_and_display_animation(preserve_pause_state=True)
+        except ValueError:
+            messagebox.showerror("Invalid Input", "Offset values must be integers.")
 
     def toggle_pause(self):
         self.is_paused = not self.is_paused
@@ -99,10 +122,11 @@ class IsometricAnimationPreviewer:
     def _on_animation_selected(self, *args):
         self._load_and_display_animation()
 
-    def _load_and_display_animation(self):
+    def _load_and_display_animation(self, preserve_pause_state=False):
         self.clear_animations()
-        self.is_paused = False
-        self.pause_button.config(text="Pause")
+        if not preserve_pause_state:
+            self.is_paused = False
+            self.pause_button.config(text="Pause")
 
         char_name = self.selected_char_var.get()
         anim_name = self.selected_anim_var.get()
@@ -116,7 +140,6 @@ class IsometricAnimationPreviewer:
             anim_data_1x, sprites_1x = self._load_animation_data(self.output_folder_1x, char_name, anim_filename)
             anim_data_2x, sprites_2x = self._load_animation_data(self.output_folder_2x, char_name, anim_filename)
             
-            # --- AHORA CADA VISTA TIENE SUS PROPIAS CONSTANTES DE TILE ---
             tile_constants_1x = {'WIDTH': 32, 'HEIGHT': 16, 'WIDTH_HALF': 16, 'HEIGHT_HALF': 8}
             tile_constants_2x = {'WIDTH': 64, 'HEIGHT': 32, 'WIDTH_HALF': 32, 'HEIGHT_HALF': 16}
 
@@ -175,18 +198,17 @@ class IsometricAnimationPreviewer:
                 draw.polygon([top, right, bottom, left], fill=fill_color, outline=outline_color)
 
     def _start_animation_loop(self, label, anim_data, tile_consts, sprite_map):
-        all_frames = []
+        all_frames_info = []
         for group_id in sorted(anim_data['sprites'].keys(), key=int):
-            all_frames.extend(anim_data['sprites'][group_id]['frames'])
+            all_frames_info.extend(anim_data['sprites'][group_id]['frames'])
         
-        if not all_frames:
+        if not all_frames_info:
             label.config(image='', text="No frames in animation", fg="red")
             return
 
         canvas_width = tile_consts['WIDTH'] * 4
         canvas_height = tile_consts['HEIGHT'] * 4
-        grid_origin = (canvas_width / 2 - tile_consts['WIDTH_HALF'], canvas_height / 2 - tile_consts['HEIGHT'])
-
+        
         current_frame_idx = [0]
         
         def update():
@@ -196,33 +218,48 @@ class IsometricAnimationPreviewer:
                 self.after_ids.append(self.parent_frame.after(100, update))
                 return
 
-            frame_info = all_frames[current_frame_idx[0] % len(all_frames)]
+            frame_info = all_frames_info[current_frame_idx[0] % len(all_frames_info)]
             
             canvas = Image.new('RGBA', (canvas_width, canvas_height), (255, 255, 255, 0))
-            self._draw_iso_grid(canvas, grid_origin, tile_consts)
+            
+            # The logical frame is centered in the canvas, just like in AnimationCreator
+            fw, fh = anim_data['framewidth'], anim_data['frameheight']
+            frame_origin_x = (canvas_width - fw) // 2
+            frame_origin_y = (canvas_height - fh) // 2
+
+            # We draw the isometric grid behind this logical center
+            # Adjust grid origin so the center tile's anchor aligns with the logical frame's center
+            grid_anchor_x = frame_origin_x + (fw // 2)
+            grid_anchor_y = frame_origin_y + (fh // 2) + 10 # Adjust for visual alignment
+            
+            center_tile_screen_x = grid_anchor_x - tile_consts['WIDTH_HALF']
+            center_tile_screen_y = grid_anchor_y - tile_consts['HEIGHT_HALF']
+            
+            center_tile_grid_x = 1
+            center_tile_grid_y = 1
+            
+            grid_origin_x = center_tile_screen_x - (center_tile_grid_x - center_tile_grid_y) * tile_consts['WIDTH_HALF']
+            grid_origin_y = center_tile_screen_y - (center_tile_grid_x + center_tile_grid_y) * tile_consts['HEIGHT_HALF']
+
+            self._draw_iso_grid(canvas, (grid_origin_x, grid_origin_y), tile_consts)
             
             sprite_id = frame_info.get('id', '0')
             sprite_img = sprite_map.get(sprite_id)
 
             if sprite_img:
-                offset_x, offset_y = frame_info.get('offset', [0, 0])
-                frame_w, frame_h = anim_data['framewidth'], anim_data['frameheight']
                 sprite_w, sprite_h = sprite_img.size
+                offset_x, offset_y = frame_info.get('offset', [0, 0])
 
-                center_tile_top = self._grid_to_screen(1, 1, grid_origin, tile_consts['WIDTH_HALF'], tile_consts['HEIGHT_HALF'])
-                center_tile_center_x = center_tile_top[0] + tile_consts['WIDTH_HALF']
-                center_tile_center_y = center_tile_top[1] + tile_consts['HEIGHT_HALF']
+                # This logic is now identical to AnimationCreator's _apply_offsets_to_frames
+                paste_x = frame_origin_x + offset_x - (sprite_w // 2)
+                paste_y = frame_origin_y + offset_y - (sprite_h // 2)
                 
-                container_x = center_tile_center_x - (frame_w / 2)
-                container_y = center_tile_center_y - (frame_h / 2) - 10
+                # Apply user adjustments
+                scale_factor = 2 if tile_consts['WIDTH'] == 64 else 1
+                paste_x += (self.offset_x_adj * scale_factor) // 2
+                paste_y += (self.offset_y_adj * scale_factor) // 2
                 
-                paste_x_in_frame = offset_x - (sprite_w / 2)
-                paste_y_in_frame = offset_y - (sprite_h / 2)
-                
-                final_paste_x = container_x + paste_x_in_frame
-                final_paste_y = container_y + paste_y_in_frame
-                
-                canvas.paste(sprite_img, (int(final_paste_x), int(final_paste_y)), sprite_img)
+                canvas.paste(sprite_img, (paste_x, paste_y), sprite_img)
 
             img_tk = ImageTk.PhotoImage(canvas)
             label.config(image=img_tk)
