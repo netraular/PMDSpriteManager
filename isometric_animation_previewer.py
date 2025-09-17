@@ -211,8 +211,8 @@ class IsometricAnimationPreviewer:
             label.config(image='', text="No frames in animation", fg="red")
             return
 
-        canvas_width = tile_consts['WIDTH'] * 4
-        canvas_height = tile_consts['HEIGHT'] * 4
+        canvas_width = tile_consts['WIDTH'] * 5
+        canvas_height = tile_consts['HEIGHT'] * 5
         
         current_frame_idx = [0]
         
@@ -230,27 +230,34 @@ class IsometricAnimationPreviewer:
             canvas = Image.new('RGBA', (canvas_width, canvas_height), (255, 255, 255, 0))
             draw = ImageDraw.Draw(canvas)
             
+            # --- Static Grid Calculation ---
+            # The center of the canvas is our static "world anchor".
+            world_anchor_x = canvas_width // 2
+            world_anchor_y = canvas_height // 2
+
+            # The center tile (1,1) of our 3x3 grid will be visually centered on this anchor.
+            # First, find the screen position of the top corner of this center tile.
+            center_tile_top_corner_x = world_anchor_x - tile_consts['WIDTH_HALF']
+            center_tile_top_corner_y = world_anchor_y - tile_consts['HEIGHT_HALF']
+
+            # From the screen position of tile (1,1)'s top corner, we can calculate the origin
+            # needed by _grid_to_screen to draw the entire grid, starting from (0,0).
+            # screen_y = origin_y + (grid_x + grid_y) * TILE_HEIGHT_HALF
+            # center_tile_top_corner_y = origin_y + (1 + 1) * TILE_HEIGHT_HALF
+            # So, origin_y = center_tile_top_corner_y - 2 * TILE_HEIGHT_HALF
+            static_grid_origin_x = center_tile_top_corner_x
+            static_grid_origin_y = center_tile_top_corner_y - 2 * tile_consts['HEIGHT_HALF']
+            
+            self._draw_iso_grid(canvas, (static_grid_origin_x, static_grid_origin_y), tile_consts)
+            
+            # --- Dynamic Sprite and Bounding Box Calculation ---
             fw = group_data['framewidth']
             fh = group_data['frameheight']
-            offset_x, offset_y = frame_info.get('offset', [0, 0])
+            relative_paste_x, relative_paste_y = frame_info.get('offset', [0, 0])
             
-            frame_origin_x = (canvas_width - fw) // 2
-            frame_origin_y = (canvas_height - fh) // 2
-            
-            # The grid anchor is now based on the sprite's actual anchor point, not the bounding box center
-            grid_anchor_x = frame_origin_x + offset_x
-            grid_anchor_y = frame_origin_y + offset_y + (tile_consts['HEIGHT'] // 2)
-            
-            center_tile_screen_x = grid_anchor_x - tile_consts['WIDTH_HALF']
-            center_tile_screen_y = grid_anchor_y - tile_consts['HEIGHT_HALF']
-            
-            center_tile_grid_x = 1
-            center_tile_grid_y = 1
-            
-            grid_origin_x = center_tile_screen_x - (center_tile_grid_x - center_tile_grid_y) * tile_consts['WIDTH_HALF']
-            grid_origin_y = center_tile_screen_y - (center_tile_grid_x + center_tile_grid_y) * tile_consts['HEIGHT_HALF']
-
-            self._draw_iso_grid(canvas, (grid_origin_x, grid_origin_y), tile_consts)
+            # The animation's bounding box is also centered on the world anchor.
+            frame_origin_x = world_anchor_x - (fw // 2)
+            frame_origin_y = world_anchor_y - (fh // 2)
             
             box_x0 = frame_origin_x
             box_y0 = frame_origin_y
@@ -262,10 +269,9 @@ class IsometricAnimationPreviewer:
             sprite_img = sprite_map.get(sprite_id)
 
             if sprite_img:
-                sprite_w, sprite_h = sprite_img.size
-
-                paste_x = frame_origin_x + offset_x - (sprite_w // 2)
-                paste_y = frame_origin_y + offset_y - (sprite_h // 2)
+                # The sprite is pasted relative to the top-left of its bounding box.
+                paste_x = frame_origin_x + relative_paste_x
+                paste_y = frame_origin_y + relative_paste_y
                 
                 if tile_consts['WIDTH'] == 64: # This identifies the 2x canvas
                     paste_x += self.offset_x_adj

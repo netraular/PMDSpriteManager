@@ -144,14 +144,11 @@ class AnimationDataHandler:
             return anim_name.lower()
         return f"group{group_idx + 1}"
 
-    def calculate_corrected_offsets(self, frame_width, frame_height, original_frames, group_metadata, values_list):
-        corrected_offsets = []
+    def _get_corrected_frame_render_data(self, frame_width, frame_height, original_frames, group_metadata, values_list):
+        render_data = []
         for i, value_dict in enumerate(values_list):
             sprite_id = value_dict["id"]
             is_mirrored = value_dict["mirrored"]
-            original_anchor = group_metadata[i]['anchors']['black']
-            if not original_anchor:
-                corrected_offsets.append((0, 0)); continue
             
             sprite_to_paste = None
             if sprite_id > 0:
@@ -162,7 +159,11 @@ class AnimationDataHandler:
             
             if sprite_to_paste:
                 if is_mirrored: sprite_to_paste = ImageOps.mirror(sprite_to_paste)
-                anchor_x, anchor_y = original_anchor
+                
+                all_anchors = group_metadata[i]['anchors']
+                sprite_center_target = all_anchors.get("green") or all_anchors.get("black")
+                anchor_x, anchor_y = sprite_center_target
+                
                 sprite_w, sprite_h = sprite_to_paste.size
                 initial_paste_x = anchor_x - sprite_w // 2
                 initial_paste_y = anchor_y - sprite_h // 2
@@ -178,10 +179,12 @@ class AnimationDataHandler:
                     correction_x = center_orig[0] - center_temp[0]
                     correction_y = center_orig[1] - center_temp[1]
 
-                corrected_offsets.append((anchor_x + int(round(correction_x)), anchor_y + int(round(correction_y))))
+                final_paste_x = initial_paste_x + int(round(correction_x))
+                final_paste_y = initial_paste_y + int(round(correction_y))
+                render_data.append({"image": sprite_to_paste, "pos": (final_paste_x, final_paste_y)})
             else:
-                corrected_offsets.append(original_anchor)
-        return corrected_offsets
+                render_data.append({"image": None, "pos": (0, 0)})
+        return render_data
 
     def generate_animation_data(self, index):
         anim = self.anim_data[index]
@@ -201,17 +204,44 @@ class AnimationDataHandler:
                 else:
                     values = [{"id": 0, "mirrored": False}] * anim["frames_per_group"]
                 
-                corrected_offsets = self.calculate_corrected_offsets(
+                render_data = self._get_corrected_frame_render_data(
                     anim["frame_width"], anim["frame_height"], group_frames, group_metadata, values
                 )
+
+                min_x, min_y, max_x, max_y = float('inf'), float('inf'), float('-inf'), float('-inf')
+                has_visible_sprites = False
+                for data in render_data:
+                    if data["image"]:
+                        has_visible_sprites = True
+                        px, py = data["pos"]
+                        pw, ph = data["image"].size
+                        min_x, min_y = min(min_x, px), min(min_y, py)
+                        max_x, max_y = max(max_x, px + pw), max(max_y, py + ph)
                 
+                if not has_visible_sprites:
+                    min_x, min_y, max_x, max_y = 0, 0, anim["frame_width"], anim["frame_height"]
+
+                relative_offsets = []
+                for data in render_data:
+                    if data["image"]:
+                        abs_px, abs_py = data["pos"]
+                        relative_offsets.append([round(abs_px - min_x), round(abs_py - min_y)])
+                    else:
+                        relative_offsets.append([0, 0])
+
                 group_name = self._get_default_group_name(anim["name"], anim["total_groups"], group_idx)
-                grouped_sprites[str(group_idx + 1)] = {"name": group_name, "values": values, "offsets": corrected_offsets}
+                grouped_sprites[str(group_idx + 1)] = {
+                    "name": group_name, 
+                    "values": values, 
+                    "offsets": relative_offsets,
+                    "framewidth": math.ceil(max_x - min_x),
+                    "frameheight": math.ceil(max_y - min_y)
+                }
         except Exception as e:
             print(f"Could not auto-generate data for '{anim['name']}': {e}")
             return None
             
-        return {"index": index, "name": anim["name"], "framewidth": anim["frame_width"], "frameheight": anim["frame_height"], "sprites": grouped_sprites, "durations": anim["durations"]}
+        return {"index": index, "name": anim["name"], "sprites": grouped_sprites, "durations": anim["durations"]}
 
     def export_optimized_animation(self, json_data):
         if not json_data: return None, "No JSON data provided."

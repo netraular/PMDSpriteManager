@@ -281,9 +281,12 @@ class AnimationGroupUI:
         if not custom_frames_data: return
 
         final_offsets = []
-        corrected_absolute_offsets = self._calculate_all_corrected_offsets()
-        for abs_offset in corrected_absolute_offsets:
-            final_offsets.append( (round(abs_offset[0] - min_x), round(abs_offset[1] - min_y)) )
+        for frame_data in custom_frames_data:
+            if frame_data["image"]:
+                abs_paste_x, abs_paste_y = frame_data["pos"]
+                final_offsets.append( (round(abs_paste_x - min_x), round(abs_paste_y - min_y)) )
+            else:
+                final_offsets.append( (0,0) )
         
         offset_texts = [f"Offset: {offset}" for offset in final_offsets]
 
@@ -304,14 +307,12 @@ class AnimationGroupUI:
             sprite_img = frame_data["image"]
             if sprite_img:
                 abs_paste_x, abs_paste_y = frame_data["pos"]
-                sprite_w, sprite_h = sprite_img.size
-
+                
                 relative_paste_x = abs_paste_x - min_x
+                relative_paste_y = abs_paste_y - min_y
+                
                 final_paste_x_in_box = box_x0 + int(round(relative_paste_x))
-
-                sprite_bottom_abs = abs_paste_y + sprite_h
-                gap_from_floor = max_y - sprite_bottom_abs
-                final_paste_y_in_box = box_y1 - sprite_h - int(round(gap_from_floor))
+                final_paste_y_in_box = box_y0 + int(round(relative_paste_y))
                 
                 final_paste_pos = (final_paste_x_in_box, final_paste_y_in_box)
                 final_frame.paste(sprite_img, final_paste_pos, sprite_img)
@@ -402,17 +403,21 @@ class AnimationGroupUI:
             is_mirrored = self.mirror_vars[i].get()
             values_list.append({"id": sprite_id, "mirrored": is_mirrored})
 
-        absolute_offsets = self._calculate_all_corrected_offsets()
         min_x, min_y, max_x, max_y = self._get_group_bounds()
         
         group_entry["framewidth"] = math.ceil(max_x - min_x)
         group_entry["frameheight"] = math.ceil(max_y - min_y)
 
+        frame_data_list = self._get_generated_frame_data(apply_correction=True)
         relative_offsets = []
-        for abs_offset in absolute_offsets:
-            relative_offsets.append(
-                [round(abs_offset[0] - min_x), round(abs_offset[1] - min_y)]
-            )
+        for frame_data in frame_data_list:
+            if frame_data["image"]:
+                abs_paste_x, abs_paste_y = frame_data["pos"]
+                relative_paste_x = abs_paste_x - min_x
+                relative_paste_y = abs_paste_y - min_y
+                relative_offsets.append([round(relative_paste_x), round(relative_paste_y)])
+            else:
+                relative_offsets.append([0, 0])
 
         group_entry["values"] = values_list
         group_entry["offsets"] = relative_offsets

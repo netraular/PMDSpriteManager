@@ -247,11 +247,13 @@ class AnimationCreator:
         for i, sprite_img in enumerate(frames):
             if i >= len(offsets) or not sprite_img: continue
             composite = Image.new('RGBA', (cw, ch), (0, 0, 0, 0))
-            anchor_x, anchor_y = offsets[i]
-            sprite_w, sprite_h = sprite_img.size
+            
+            relative_paste_x, relative_paste_y = offsets[i]
             frame_origin_x, frame_origin_y = (cw - fw) // 2, (ch - fh) // 2
-            paste_x = frame_origin_x + anchor_x - (sprite_w // 2)
-            paste_y = frame_origin_y + anchor_y - (sprite_h // 2)
+            
+            paste_x = frame_origin_x + relative_paste_x
+            paste_y = frame_origin_y + relative_paste_y
+            
             composite.paste(sprite_img, (paste_x, paste_y), sprite_img)
             
             draw = ImageDraw.Draw(composite)
