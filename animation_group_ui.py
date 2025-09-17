@@ -3,10 +3,12 @@
 import os
 from tkinter import Frame, Label, Button, Entry, BooleanVar, Checkbutton, StringVar, messagebox
 from PIL import Image, ImageTk, ImageDraw, ImageOps
+import math
 
 class AnimationGroupUI:
-    def __init__(self, parent, group_idx, anim_data, group_frames, group_offsets_frames, group_metadata, sprite_folder, json_group_data, ai_callback):
+    def __init__(self, parent, viewer, group_idx, anim_data, group_frames, group_offsets_frames, group_metadata, sprite_folder, json_group_data, ai_callback):
         self.parent = parent
+        self.viewer = viewer
         self.group_idx = group_idx
         self.anim_data = anim_data
         self.group_frames = group_frames
@@ -189,13 +191,12 @@ class AnimationGroupUI:
         bottom_y = bbox[3]
         return (center_x, bottom_y)
 
-    def _generate_custom_frames(self, apply_correction):
+    def _get_generated_frame_data(self, apply_correction):
         sprite_numbers = [int(sv.get()) if sv.get().isdigit() else 0 for sv in self.string_vars]
-        result_frames = []
+        result_data = []
         frame_width, frame_height = self.anim_data["frame_width"], self.anim_data["frame_height"]
 
         for i, num in enumerate(sprite_numbers):
-            composite_frame = Image.new('RGBA', (frame_width, frame_height), (0, 0, 0, 0))
             sprite_to_paste = None
             if num > 0:
                 sprite_path = os.path.join(self.sprite_folder, f"sprite_{num}.png")
@@ -234,10 +235,10 @@ class AnimationGroupUI:
                     final_paste_x += int(round(correction_x))
                     final_paste_y += int(round(correction_y))
                 
-                composite_frame.paste(sprite_to_paste, (final_paste_x, final_paste_y), sprite_to_paste)
-
-            result_frames.append(composite_frame)
-        return result_frames
+                result_data.append({"image": sprite_to_paste, "pos": (final_paste_x, final_paste_y)})
+            else:
+                result_data.append({"image": None, "pos": (0, 0)})
+        return result_data
 
     def refresh_all_previews(self):
         self.load_corrected_result_animation()
@@ -247,22 +248,50 @@ class AnimationGroupUI:
         for aid in self.result_after_ids: self.parent.after_cancel(aid)
         self.result_after_ids.clear()
 
-        custom_frames = self._generate_custom_frames(apply_correction=True)
-        if not custom_frames: return
+        min_x, min_y, max_x, max_y = self.viewer.get_animation_bounds()
+        
+        new_framewidth = math.ceil(max_x - min_x)
+        new_frameheight = math.ceil(max_y - min_y)
 
-        final_offsets = self._calculate_all_corrected_offsets()
+        custom_frames_data = self._get_generated_frame_data(apply_correction=True)
+        if not custom_frames_data: return
+
+        final_offsets = []
+        corrected_absolute_offsets = self._calculate_all_corrected_offsets()
+        for abs_offset in corrected_absolute_offsets:
+            final_offsets.append( (round(abs_offset[0] - min_x), round(abs_offset[1] - min_y)) )
+        
         offset_texts = [f"Offset: {offset}" for offset in final_offsets]
 
-        canvas_width, canvas_height = self.anim_data["frame_width"] * 2, self.anim_data["frame_height"] * 2
+        preview_canvas_width = new_framewidth + 20
+        preview_canvas_height = new_frameheight + 20
+
         final_frames = []
-        for frame in custom_frames:
-            final_frame = Image.new('RGBA', (canvas_width, canvas_height), (211, 211, 211, 255))
+        for frame_data in custom_frames_data:
+            final_frame = Image.new('RGBA', (preview_canvas_width, preview_canvas_height), (211, 211, 211, 255))
             draw = ImageDraw.Draw(final_frame)
-            box_x0, box_y0 = self.anim_data["frame_width"] // 2, self.anim_data["frame_height"] // 2
-            box_x1, box_y1 = box_x0 + self.anim_data["frame_width"], box_y0 + self.anim_data["frame_height"]
+
+            box_x0 = (preview_canvas_width - new_framewidth) // 2
+            box_y0 = (preview_canvas_height - new_frameheight) // 2
+            box_x1 = box_x0 + new_framewidth
+            box_y1 = box_y0 + new_frameheight
             draw.rectangle([box_x0, box_y0, box_x1, box_y1], fill=None, outline="grey")
             
-            final_frame.paste(frame, (box_x0, box_y0), frame)
+            sprite_img = frame_data["image"]
+            if sprite_img:
+                abs_paste_x, abs_paste_y = frame_data["pos"]
+                sprite_w, sprite_h = sprite_img.size
+
+                relative_paste_x = abs_paste_x - min_x
+                final_paste_x_in_box = box_x0 + int(round(relative_paste_x))
+
+                sprite_bottom_abs = abs_paste_y + sprite_h
+                gap_from_floor = max_y - sprite_bottom_abs
+                final_paste_y_in_box = box_y1 - sprite_h - int(round(gap_from_floor))
+                
+                final_paste_pos = (final_paste_x_in_box, final_paste_y_in_box)
+                final_frame.paste(sprite_img, final_paste_pos, sprite_img)
+
             final_frames.append(final_frame)
 
         durations = self.anim_data["durations"] * (len(final_frames) // len(self.anim_data["durations"]) + 1)
@@ -287,8 +316,19 @@ class AnimationGroupUI:
         for aid in self.overlay_after_ids: self.parent.after_cancel(aid)
         self.overlay_after_ids.clear()
 
-        uncorrected_frames = self._generate_custom_frames(apply_correction=False)
-        if not uncorrected_frames or len(self.group_frames) != len(uncorrected_frames): return
+        uncorrected_frames_data = self._get_generated_frame_data(apply_correction=False)
+        if not uncorrected_frames_data: return
+
+        uncorrected_frames = []
+        frame_width, frame_height = self.anim_data["frame_width"], self.anim_data["frame_height"]
+        for frame_data in uncorrected_frames_data:
+            composite = Image.new('RGBA', (frame_width, frame_height), (0,0,0,0))
+            if frame_data["image"]:
+                paste_pos = (int(round(frame_data["pos"][0])), int(round(frame_data["pos"][1])))
+                composite.paste(frame_data["image"], paste_pos, frame_data["image"])
+            uncorrected_frames.append(composite)
+
+        if len(self.group_frames) != len(uncorrected_frames): return
             
         canvas_width, canvas_height = self.anim_data["frame_width"] * 2, self.anim_data["frame_height"] * 2
         overlay_frames = []

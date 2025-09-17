@@ -7,6 +7,7 @@ from PIL import Image, ImageOps
 from sprite_sheet_handler import SpriteSheetHandler
 from sprite_matcher import SpriteMatcher
 import shutil
+import math
 
 class AnimationDataHandler:
     def __init__(self, project_path):
@@ -219,10 +220,71 @@ class AnimationDataHandler:
             output_folder = os.path.join(self.project_path, base_folder_name)
             os.makedirs(output_folder, exist_ok=True)
             
+            all_frames_data = []
+            for group_data in json_data.get('sprites', {}).values():
+                offsets = group_data.get('offsets', [])
+                for i, value in enumerate(group_data.get('values', [])):
+                    if i < len(offsets):
+                        all_frames_data.append({
+                            "id": value.get('id', 0),
+                            "mirrored": value.get('mirrored', False),
+                            "offset": offsets[i]
+                        })
+
+            if all_frames_data:
+                min_x, min_y, max_x, max_y = float('inf'), float('inf'), float('-inf'), float('-inf')
+                
+                has_visible_sprites = False
+                for frame_data in all_frames_data:
+                    sprite_id = frame_data["id"]
+                    if sprite_id == 0:
+                        continue
+
+                    try:
+                        source_path = os.path.join(self.sprite_folder, f"sprite_{sprite_id}.png")
+                        with Image.open(source_path) as img:
+                            sprite_w, sprite_h = img.size
+                        
+                        has_visible_sprites = True
+                        ox, oy = frame_data["offset"]
+                        
+                        x0 = ox - sprite_w / 2
+                        y0 = oy - sprite_h / 2
+                        x1 = ox + sprite_w / 2
+                        y1 = oy + sprite_h / 2
+                        
+                        min_x = min(min_x, x0)
+                        min_y = min(min_y, y0)
+                        max_x = max(max_x, x1)
+                        max_y = max(max_y, y1)
+
+                    except FileNotFoundError:
+                        print(f"Warning: sprite_{sprite_id}.png not found during bounding box calculation.")
+                        continue
+
+                if has_visible_sprites:
+                    new_framewidth = math.ceil(max_x - min_x) if min_x != float('inf') else json_data['framewidth']
+                    new_frameheight = math.ceil(max_y - min_y) if min_y != float('inf') else json_data['frameheight']
+
+                    json_data['framewidth'] = new_framewidth
+                    json_data['frameheight'] = new_frameheight
+
+                    for group_data in json_data.get('sprites', {}).values():
+                        new_offsets = []
+                        original_offsets = group_data.get('offsets', [])
+                        for i in range(len(group_data.get('values', []))):
+                            if i < len(original_offsets):
+                                ox, oy = original_offsets[i]
+                                new_ox = ox - min_x
+                                new_oy = oy - min_y
+                                new_offsets.append([round(new_ox), round(new_oy)])
+                            else:
+                                new_offsets.append([0, 0])
+                        group_data['offsets'] = new_offsets
+
             anim_name = json_data['name']
             sprites_subfolder = os.path.join(output_folder, anim_name)
 
-            # Unconditionally clear and recreate the specific animation's sprite folder
             if os.path.exists(sprites_subfolder):
                 shutil.rmtree(sprites_subfolder)
             os.makedirs(sprites_subfolder)

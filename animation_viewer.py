@@ -82,6 +82,7 @@ class AnimationViewer:
             
             group_ui = AnimationGroupUI(
                 parent=self.scroll_frame,
+                viewer=self,
                 group_idx=group_idx,
                 anim_data=anim,
                 group_frames=all_frames[start:end],
@@ -95,6 +96,54 @@ class AnimationViewer:
 
             if run_ai_automatically:
                 self.identify_group_sprites(group_ui)
+
+    def get_animation_bounds(self):
+        min_x, min_y, max_x, max_y = float('inf'), float('inf'), float('-inf'), float('-inf')
+        has_visible_sprites = False
+
+        all_frames_data = []
+        for instance in self.group_ui_instances:
+            group_data = instance.get_data()
+            offsets = group_data.get('offsets', [])
+            for i, value in enumerate(group_data.get('values', [])):
+                if i < len(offsets):
+                    all_frames_data.append({
+                        "id": value.get('id', 0),
+                        "offset": offsets[i]
+                    })
+
+        for frame_data in all_frames_data:
+            sprite_id = frame_data["id"]
+            if sprite_id == 0:
+                continue
+
+            try:
+                source_path = os.path.join(self.sprite_folder, f"sprite_{sprite_id}.png")
+                with Image.open(source_path) as img:
+                    sprite_w, sprite_h = img.size
+                
+                has_visible_sprites = True
+                ox, oy = frame_data["offset"]
+                
+                x0 = ox - sprite_w / 2
+                y0 = oy - sprite_h / 2
+                x1 = ox + sprite_w / 2
+                y1 = oy + sprite_h / 2
+                
+                min_x = min(min_x, x0)
+                min_y = min(min_y, y0)
+                max_x = max(max_x, x1)
+                max_y = max(max_y, y1)
+
+            except FileNotFoundError:
+                continue
+        
+        if not has_visible_sprites:
+            anim = self.anim_data[self.current_anim_index]
+            w, h = anim["frame_width"], anim["frame_height"]
+            return (0, 0, w, h)
+
+        return (min_x, min_y, max_x, max_y)
 
     def identify_group_sprites(self, group_ui_instance):
         try:
