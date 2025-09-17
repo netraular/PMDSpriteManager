@@ -126,10 +126,14 @@ class AnimationDataHandler:
             found_anchors["black"] = (width // 2, height // 2 - 1)
         return {"anchors": found_anchors}
 
-    def _get_image_center_of_mass(self, image):
+    def _get_image_bottom_center(self, image):
+        """Calculates the bottom-center of the visible pixels in an image."""
         bbox = image.getbbox()
-        if not bbox: return None
-        return ((bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2)
+        if not bbox:
+            return None
+        center_x = (bbox[0] + bbox[2]) / 2
+        bottom_y = bbox[3]
+        return (center_x, bottom_y)
     
     def _get_default_group_name(self, anim_name, total_groups, group_idx):
         DIRECTIONAL_NAMES_8 = ("down", "down-right", "right", "up-right", "up", "up-left", "left", "down-left")
@@ -165,8 +169,8 @@ class AnimationDataHandler:
                 temp_frame = Image.new('RGBA', (frame_width, frame_height), (0, 0, 0, 0))
                 temp_frame.paste(sprite_to_paste, (initial_paste_x, initial_paste_y), sprite_to_paste)
 
-                center_orig = self._get_image_center_of_mass(original_frames[i])
-                center_temp = self._get_image_center_of_mass(temp_frame)
+                center_orig = self._get_image_bottom_center(original_frames[i])
+                center_temp = self._get_image_bottom_center(temp_frame)
 
                 correction_x, correction_y = (0, 0)
                 if center_orig and center_temp:

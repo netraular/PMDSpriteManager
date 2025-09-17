@@ -218,12 +218,23 @@ class AnimationCreator:
         Label(header_frame, text=group_name, font=('Arial', 12, 'bold')).pack(side='left')
         content_frame = Frame(group_frame); content_frame.pack(fill="x")
         raw_frames = self.get_group_frames(group_data)
-        offsets = [frame.get('offset', [0, 0]) for frame in group_data.get('frames', [])]
+        
+        # --- MODIFICATION START ---
+        frame_data = group_data.get('frames', [])
+        offsets = [frame.get('offset', [0, 0]) for frame in frame_data]
+        offset_texts = [f"Offset: {offset}" for offset in offsets]
+        # --- MODIFICATION END ---
+        
         final_frames = self._apply_offsets_to_frames(raw_frames, offsets) if offsets and self.json_data.get("framewidth") else raw_frames
         durations = self.json_data["durations"]
         anim_panel = Frame(content_frame); anim_panel.pack(side="left", padx=10)
         anim_label = Label(anim_panel); anim_label.pack()
-        self.start_animation(anim_label, final_frames, durations)
+        
+        # --- MODIFICATION START ---
+        offset_label = Label(anim_panel, text="Offset: [N/A]", font=('Arial', 8)); offset_label.pack(pady=(5,0))
+        self.start_animation(anim_label, final_frames, durations, text_label=offset_label, text_data=offset_texts)
+        # --- MODIFICATION END ---
+        
         sprite_panel = Frame(content_frame); sprite_panel.pack(side="right", fill="x", expand=True)
         for idx, frame in enumerate(raw_frames):
             if frame:
@@ -244,6 +255,16 @@ class AnimationCreator:
             paste_x = frame_origin_x + anchor_x - (sprite_w // 2)
             paste_y = frame_origin_y + anchor_y - (sprite_h // 2)
             composite.paste(sprite_img, (paste_x, paste_y), sprite_img)
+            
+            # --- MODIFICATION START: Draw the frame border ---
+            draw = ImageDraw.Draw(composite)
+            box_x0 = frame_origin_x
+            box_y0 = frame_origin_y
+            box_x1 = box_x0 + fw
+            box_y1 = box_y0 + fh
+            draw.rectangle([box_x0, box_y0, box_x1, box_y1], outline="grey")
+            # --- MODIFICATION END ---
+            
             positioned_frames.append(composite)
         return positioned_frames
 
@@ -263,7 +284,8 @@ class AnimationCreator:
             draw = ImageDraw.Draw(placeholder); draw.text((5, 10), f"?{sprite_id_str}?", fill="red")
             return placeholder
 
-    def start_animation(self, label, frames, durations):
+    # --- MODIFICATION START: Update function signature and logic ---
+    def start_animation(self, label, frames, durations, text_label=None, text_data=None):
         valid_frames = [f for f in frames if f]
         if not valid_frames:
             label.config(image=None, text="[No valid frames]"); return
@@ -271,12 +293,18 @@ class AnimationCreator:
         def update():
             if not label.winfo_exists(): return
             frame_index = current_frame[0] % len(valid_frames)
+            
             frame = valid_frames[frame_index]; frame.thumbnail((200, 200)); img = ImageTk.PhotoImage(frame)
             label.config(image=img); label.image = img
+            
+            if text_label and text_data:
+                text_label.config(text=text_data[frame_index % len(text_data)])
+
             delay = durations[frame_index % len(durations)] * 33
             current_frame[0] += 1
             self.after_ids.append(self.parent_frame.after(delay, update))
         update()
+    # --- MODIFICATION END ---
             
     def clear_frame(self):
         for aid in self.after_ids: self.parent_frame.after_cancel(aid)
