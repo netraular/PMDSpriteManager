@@ -244,11 +244,35 @@ class AnimationGroupUI:
         self.load_corrected_result_animation()
         self.load_uncorrected_overlay_animation()
 
+    def _get_group_bounds(self):
+        min_x, min_y, max_x, max_y = float('inf'), float('inf'), float('-inf'), float('-inf')
+        has_visible_sprites = False
+
+        frame_data_list = self._get_generated_frame_data(apply_correction=True)
+
+        for frame_data in frame_data_list:
+            sprite_img = frame_data["image"]
+            if sprite_img:
+                has_visible_sprites = True
+                paste_x, paste_y = frame_data["pos"]
+                sprite_w, sprite_h = sprite_img.size
+                
+                min_x = min(min_x, paste_x)
+                min_y = min(min_y, paste_y)
+                max_x = max(max_x, paste_x + sprite_w)
+                max_y = max(max_y, paste_y + sprite_h)
+        
+        if not has_visible_sprites:
+            w, h = self.anim_data["frame_width"], self.anim_data["frame_height"]
+            return (0, 0, w, h)
+
+        return (min_x, min_y, max_x, max_y)
+
     def load_corrected_result_animation(self):
         for aid in self.result_after_ids: self.parent.after_cancel(aid)
         self.result_after_ids.clear()
 
-        min_x, min_y, max_x, max_y = self.viewer.get_animation_bounds()
+        min_x, min_y, max_x, max_y = self._get_group_bounds()
         
         new_framewidth = math.ceil(max_x - min_x)
         new_frameheight = math.ceil(max_y - min_y)
@@ -378,10 +402,20 @@ class AnimationGroupUI:
             is_mirrored = self.mirror_vars[i].get()
             values_list.append({"id": sprite_id, "mirrored": is_mirrored})
 
-        corrected_offsets = self._calculate_all_corrected_offsets()
+        absolute_offsets = self._calculate_all_corrected_offsets()
+        min_x, min_y, max_x, max_y = self._get_group_bounds()
+        
+        group_entry["framewidth"] = math.ceil(max_x - min_x)
+        group_entry["frameheight"] = math.ceil(max_y - min_y)
+
+        relative_offsets = []
+        for abs_offset in absolute_offsets:
+            relative_offsets.append(
+                [round(abs_offset[0] - min_x), round(abs_offset[1] - min_y)]
+            )
 
         group_entry["values"] = values_list
-        group_entry["offsets"] = corrected_offsets
+        group_entry["offsets"] = relative_offsets
         return group_entry
 
     def _calculate_all_corrected_offsets(self):

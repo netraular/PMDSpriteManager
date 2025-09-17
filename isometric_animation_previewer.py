@@ -198,11 +198,16 @@ class IsometricAnimationPreviewer:
                 draw.polygon([top, right, bottom, left], fill=fill_color, outline=outline_color)
 
     def _start_animation_loop(self, label, anim_data, tile_consts, sprite_map):
-        all_frames_info = []
+        all_frames_with_context = []
         for group_id in sorted(anim_data['sprites'].keys(), key=int):
-            all_frames_info.extend(anim_data['sprites'][group_id]['frames'])
+            group_data = anim_data['sprites'][group_id]
+            for frame_info in group_data['frames']:
+                all_frames_with_context.append({
+                    "frame_info": frame_info,
+                    "group_data": group_data
+                })
         
-        if not all_frames_info:
+        if not all_frames_with_context:
             label.config(image='', text="No frames in animation", fg="red")
             return
 
@@ -218,17 +223,23 @@ class IsometricAnimationPreviewer:
                 self.after_ids.append(self.parent_frame.after(100, update))
                 return
 
-            frame_info = all_frames_info[current_frame_idx[0] % len(all_frames_info)]
+            context = all_frames_with_context[current_frame_idx[0] % len(all_frames_with_context)]
+            frame_info = context["frame_info"]
+            group_data = context["group_data"]
             
             canvas = Image.new('RGBA', (canvas_width, canvas_height), (255, 255, 255, 0))
             draw = ImageDraw.Draw(canvas)
             
-            fw, fh = anim_data['framewidth'], anim_data['frameheight']
+            fw = group_data['framewidth']
+            fh = group_data['frameheight']
+            offset_x, offset_y = frame_info.get('offset', [0, 0])
+            
             frame_origin_x = (canvas_width - fw) // 2
             frame_origin_y = (canvas_height - fh) // 2
             
-            grid_anchor_x = frame_origin_x + (fw // 2)
-            grid_anchor_y = frame_origin_y + (fh // 2) + (tile_consts['HEIGHT'] // 2)
+            # The grid anchor is now based on the sprite's actual anchor point, not the bounding box center
+            grid_anchor_x = frame_origin_x + offset_x
+            grid_anchor_y = frame_origin_y + offset_y + (tile_consts['HEIGHT'] // 2)
             
             center_tile_screen_x = grid_anchor_x - tile_consts['WIDTH_HALF']
             center_tile_screen_y = grid_anchor_y - tile_consts['HEIGHT_HALF']
@@ -252,7 +263,6 @@ class IsometricAnimationPreviewer:
 
             if sprite_img:
                 sprite_w, sprite_h = sprite_img.size
-                offset_x, offset_y = frame_info.get('offset', [0, 0])
 
                 paste_x = frame_origin_x + offset_x - (sprite_w // 2)
                 paste_y = frame_origin_y + offset_y - (sprite_h // 2)

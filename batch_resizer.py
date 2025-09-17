@@ -606,9 +606,9 @@ class BatchResizer:
                     with open(json_file, 'r') as f:
                         data = json.load(f)
                     
-                    data['framewidth'] *= 2
-                    data['frameheight'] *= 2
                     for group in data.get('sprites', {}).values():
+                        group['framewidth'] *= 2
+                        group['frameheight'] *= 2
                         for frame in group.get('frames', []):
                             if 'offset' in frame and len(frame['offset']) == 2:
                                 sprite_id_str = frame.get('id', '0')
