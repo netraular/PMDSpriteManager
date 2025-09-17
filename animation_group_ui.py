@@ -180,14 +180,14 @@ class AnimationGroupUI:
             label_to_update.config(image=img_tk)
             label_to_update.image = img_tk
 
-    def _get_image_center_of_mass(self, image):
-        """Calculates the center of the visible pixels in an image."""
+    def _get_image_bottom_center(self, image):
+        """Calculates the bottom-center of the visible pixels in an image."""
         bbox = image.getbbox()
         if not bbox:
             return None
         center_x = (bbox[0] + bbox[2]) / 2
-        center_y = (bbox[1] + bbox[3]) / 2
-        return (center_x, center_y)
+        bottom_y = bbox[3]
+        return (center_x, bottom_y)
 
     def _generate_custom_frames(self, apply_correction):
         sprite_numbers = [int(sv.get()) if sv.get().isdigit() else 0 for sv in self.string_vars]
@@ -223,8 +223,8 @@ class AnimationGroupUI:
                     temp_frame = Image.new('RGBA', (frame_width, frame_height), (0, 0, 0, 0))
                     temp_frame.paste(sprite_to_paste, (initial_paste_x, initial_paste_y), sprite_to_paste)
 
-                    center_orig = self._get_image_center_of_mass(original_frame)
-                    center_temp = self._get_image_center_of_mass(temp_frame)
+                    center_orig = self._get_image_bottom_center(original_frame)
+                    center_temp = self._get_image_bottom_center(temp_frame)
                     
                     correction_x, correction_y = 0, 0
                     if center_orig and center_temp:
@@ -303,8 +303,8 @@ class AnimationGroupUI:
             composite.paste(tinted_custom, paste_pos, tinted_custom)
             overlay_frames.append(composite)
 
-            center_orig = self._get_image_center_of_mass(self.group_frames[i])
-            center_custom = self._get_image_center_of_mass(uncorrected_frames[i])
+            center_orig = self._get_image_bottom_center(self.group_frames[i])
+            center_custom = self._get_image_bottom_center(uncorrected_frames[i])
 
             if center_orig and center_custom:
                 dx = center_custom[0] - center_orig[0]
@@ -377,8 +377,8 @@ class AnimationGroupUI:
                 temp_frame = Image.new('RGBA', (frame_width, frame_height), (0, 0, 0, 0))
                 temp_frame.paste(sprite_to_paste, (initial_paste_x, initial_paste_y), sprite_to_paste)
 
-                center_orig = self._get_image_center_of_mass(self.group_frames[i])
-                center_temp = self._get_image_center_of_mass(temp_frame)
+                center_orig = self._get_image_bottom_center(self.group_frames[i])
+                center_temp = self._get_image_bottom_center(temp_frame)
 
                 correction_x, correction_y = 0, 0
                 if center_orig and center_temp:
