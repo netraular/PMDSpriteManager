@@ -570,8 +570,19 @@ class BatchResizer:
 
             dest_char_dir = dest_dir / char_name; dest_char_dir.mkdir()
 
-            # Process Sprites
+            # Pre-load all 1x sprite heights for this character
             source_sprites_dir = char_folder / "Sprites"
+            sprite_heights_1x = {}
+            if source_sprites_dir.is_dir():
+                for sprite_file in source_sprites_dir.glob("*.png"):
+                    try:
+                        sprite_id_from_filename = sprite_file.stem.replace('sprite_', '')
+                        with Image.open(sprite_file) as img:
+                            sprite_heights_1x[sprite_id_from_filename] = img.height
+                    except Exception as e:
+                        q.put(f"    - Warning: Could not read height for {sprite_file.name}: {e}")
+
+            # Process Sprites
             dest_sprites_dir = dest_char_dir / "Sprites"
             if source_sprites_dir.is_dir():
                 dest_sprites_dir.mkdir()
@@ -600,8 +611,15 @@ class BatchResizer:
                     for group in data.get('sprites', {}).values():
                         for frame in group.get('frames', []):
                             if 'offset' in frame and len(frame['offset']) == 2:
+                                sprite_id_str = frame.get('id', '0')
+                                
                                 frame['offset'][0] *= 2
                                 frame['offset'][1] *= 2
+                                
+                                if sprite_id_str != '0' and sprite_id_str in sprite_heights_1x:
+                                    h_1x = sprite_heights_1x[sprite_id_str]
+                                    if h_1x % 2 != 0: # If original height was odd, add 1 to Y offset
+                                        frame['offset'][1] += 1
                     
                     with open(dest_char_dir / json_file.name, 'w') as f:
                         json.dump(data, f, indent=4)

@@ -221,16 +221,14 @@ class IsometricAnimationPreviewer:
             frame_info = all_frames_info[current_frame_idx[0] % len(all_frames_info)]
             
             canvas = Image.new('RGBA', (canvas_width, canvas_height), (255, 255, 255, 0))
+            draw = ImageDraw.Draw(canvas)
             
-            # The logical frame is centered in the canvas, just like in AnimationCreator
             fw, fh = anim_data['framewidth'], anim_data['frameheight']
             frame_origin_x = (canvas_width - fw) // 2
             frame_origin_y = (canvas_height - fh) // 2
-
-            # We draw the isometric grid behind this logical center
-            # Adjust grid origin so the center tile's anchor aligns with the logical frame's center
+            
             grid_anchor_x = frame_origin_x + (fw // 2)
-            grid_anchor_y = frame_origin_y + (fh // 2) + 10 # Adjust for visual alignment
+            grid_anchor_y = frame_origin_y + (fh // 2) + (tile_consts['HEIGHT'] // 2)
             
             center_tile_screen_x = grid_anchor_x - tile_consts['WIDTH_HALF']
             center_tile_screen_y = grid_anchor_y - tile_consts['HEIGHT_HALF']
@@ -243,6 +241,12 @@ class IsometricAnimationPreviewer:
 
             self._draw_iso_grid(canvas, (grid_origin_x, grid_origin_y), tile_consts)
             
+            box_x0 = frame_origin_x
+            box_y0 = frame_origin_y
+            box_x1 = box_x0 + fw
+            box_y1 = box_y0 + fh
+            draw.rectangle([box_x0, box_y0, box_x1, box_y1], outline="grey")
+            
             sprite_id = frame_info.get('id', '0')
             sprite_img = sprite_map.get(sprite_id)
 
@@ -250,14 +254,12 @@ class IsometricAnimationPreviewer:
                 sprite_w, sprite_h = sprite_img.size
                 offset_x, offset_y = frame_info.get('offset', [0, 0])
 
-                # This logic is now identical to AnimationCreator's _apply_offsets_to_frames
                 paste_x = frame_origin_x + offset_x - (sprite_w // 2)
                 paste_y = frame_origin_y + offset_y - (sprite_h // 2)
                 
-                # Apply user adjustments
-                scale_factor = 2 if tile_consts['WIDTH'] == 64 else 1
-                paste_x += (self.offset_x_adj * scale_factor) // 2
-                paste_y += (self.offset_y_adj * scale_factor) // 2
+                if tile_consts['WIDTH'] == 64: # This identifies the 2x canvas
+                    paste_x += self.offset_x_adj
+                    paste_y += self.offset_y_adj
                 
                 canvas.paste(sprite_img, (paste_x, paste_y), sprite_img)
 
