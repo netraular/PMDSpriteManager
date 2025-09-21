@@ -7,11 +7,13 @@ from tkinter import Frame, Label, Button, Canvas, messagebox, OptionMenu, String
 from PIL import Image, ImageTk, ImageDraw
 
 class IsometricAnimationPreviewer:
-    def __init__(self, parent_frame, parent_folder, return_to_main_callback):
+    def __init__(self, parent_frame, parent_folder, return_to_main_callback, update_breadcrumbs_callback=None, base_path=None):
         self.parent_frame = parent_frame
         self.output_folder_1x = os.path.join(parent_folder, "output")
         self.output_folder_2x = os.path.join(parent_folder, "output x2")
         self.return_to_main = return_to_main_callback
+        self.update_breadcrumbs = update_breadcrumbs_callback
+        self.base_path = base_path if base_path is not None else []
         
         self.main_frame = Frame(self.parent_frame)
         self.main_frame.pack(fill='both', expand=True)
@@ -31,6 +33,10 @@ class IsometricAnimationPreviewer:
         self.setup_ui()
 
     def setup_ui(self):
+        if self.update_breadcrumbs:
+            path = self.base_path + [("Isometric Preview", self.setup_ui)]
+            self.update_breadcrumbs(path)
+
         self.clear_frame()
         if not os.path.exists(self.output_folder_1x) or not os.path.exists(self.output_folder_2x):
             messagebox.showerror("Error", "The 'output' and 'output x2' folders must exist.\nPlease run the export tasks first.")
@@ -292,4 +298,5 @@ class IsometricAnimationPreviewer:
                 self.selected_anim_var.trace_remove("write", self.trace_id)
             except Exception:
                 pass
-      
+        for widget in self.main_frame.winfo_children():
+            widget.destroy()

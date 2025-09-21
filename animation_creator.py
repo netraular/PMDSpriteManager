@@ -8,10 +8,12 @@ import json
 import math
 
 class AnimationCreator:
-    def __init__(self, parent_frame, folder, return_to_main_callback, start_directly_at_json_upload=False, start_in_preview_mode=False):
+    def __init__(self, parent_frame, folder, return_to_main_callback, update_breadcrumbs_callback=None, base_path=None, start_directly_at_json_upload=False, start_in_preview_mode=False):
         self.parent_frame = parent_frame
         self.folder = folder
         self.return_to_main = return_to_main_callback
+        self.update_breadcrumbs = update_breadcrumbs_callback
+        self.base_path = base_path if base_path is not None else []
         self.start_directly_at_json_upload = start_directly_at_json_upload
         self.start_in_preview_mode = start_in_preview_mode
         
@@ -48,6 +50,9 @@ class AnimationCreator:
             self.show_process_sheet_view()
 
     def show_animation_selector_view(self):
+        if self.update_breadcrumbs:
+            path = self.base_path + [("Preview Animations", self.show_animation_selector_view)]
+            self.update_breadcrumbs(path)
         self.clear_frame()
         selector_frame = Frame(self.main_frame)
         selector_frame.pack(pady=20)
@@ -91,6 +96,9 @@ class AnimationCreator:
         self._load_json_from_path(file_path)
 
     def show_process_sheet_view(self):
+        if self.update_breadcrumbs:
+            path = self.base_path + [("Process Spritesheet", self.show_process_sheet_view)]
+            self.update_breadcrumbs(path)
         self.clear_frame()
         self.process_frame = Frame(self.main_frame); self.process_frame.pack(pady=20)
         Label(self.process_frame, text="Step 1: Process Spritesheet", font=('Arial', 14)).pack(pady=10)
@@ -135,6 +143,15 @@ class AnimationCreator:
         except Exception as e: messagebox.showerror("Error", f"Processing error: {str(e)}")
 
     def show_json_upload_view(self):
+        if self.update_breadcrumbs:
+            if self.start_directly_at_json_upload:
+                path = self.base_path + [("JSON Upload", self.show_json_upload_view)]
+            else:
+                path = self.base_path + [
+                    ("Process Spritesheet", self.show_process_sheet_view),
+                    ("JSON Upload", self.show_json_upload_view)
+                ]
+            self.update_breadcrumbs(path)
         self.clear_frame()
         json_frame = Frame(self.main_frame); json_frame.pack(pady=20, fill='both', expand=True)
         button_frame = Frame(json_frame); button_frame.pack(fill='x', pady=10)
@@ -193,6 +210,19 @@ class AnimationCreator:
             messagebox.showerror("Error", f"Failed to load or process JSON file: {e}")
 
     def show_animation_preview(self):
+        if self.update_breadcrumbs:
+            if self.start_in_preview_mode:
+                path = self.base_path + [
+                    ("Preview Animations", self.show_animation_selector_view),
+                    ("Preview", self.show_animation_preview)
+                ]
+            else:
+                path = self.base_path + [
+                    ("Process Spritesheet", self.show_process_sheet_view),
+                    ("JSON Upload", self.show_json_upload_view),
+                    ("Preview", self.show_animation_preview)
+                ]
+            self.update_breadcrumbs(path)
         self.clear_frame()
         self.animation_frame = Frame(self.main_frame); self.animation_frame.pack(fill='both', expand=True)
         self.canvas = Canvas(self.animation_frame)

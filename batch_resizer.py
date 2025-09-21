@@ -15,9 +15,11 @@ import threading
 import queue
 
 class BatchResizer:
-    def __init__(self, parent_frame, return_to_main_callback):
+    def __init__(self, parent_frame, return_to_main_callback, update_breadcrumbs_callback=None, base_path=None):
         self.parent_frame = parent_frame
         self.return_to_main = return_to_main_callback
+        self.update_breadcrumbs = update_breadcrumbs_callback
+        self.base_path = base_path if base_path is not None else []
         
         self.parent_folder = None
         self.project_folders = []
@@ -50,6 +52,9 @@ class BatchResizer:
         self.show_task_selection_view()
 
     def show_task_selection_view(self):
+        if self.update_breadcrumbs:
+            path = self.base_path + [("Batch Tasks", self.show_task_selection_view)]
+            self.update_breadcrumbs(path)
         self.clear_frame()
         self.cancel_operation = False
         if self.parent_folder:
@@ -70,6 +75,12 @@ class BatchResizer:
         Button(content_frame, text="Preview Optimized Animations", command=self.show_isometric_previewer, font=('Arial', 12), width=35).pack(pady=10)
 
     def show_asset_generation_view(self):
+        if self.update_breadcrumbs:
+            path = self.base_path + [
+                ("Batch Tasks", self.show_task_selection_view),
+                ("Generate Assets", self.show_asset_generation_view)
+            ]
+            self.update_breadcrumbs(path)
         self.clear_frame()
         top_frame = Frame(self.main_frame); top_frame.pack(fill='x', padx=10, pady=5)
         Button(top_frame, text="Back to Tasks", command=self.show_task_selection_view).pack(side='left')
@@ -249,9 +260,16 @@ class BatchResizer:
 
     def show_isometric_previewer(self):
         self.clear_frame()
-        self.isometric_previewer = IsometricAnimationPreviewer(self.main_frame, self.parent_folder, self.show_task_selection_view)
+        new_base_path = self.base_path + [("Batch Tasks", self.show_task_selection_view)]
+        self.isometric_previewer = IsometricAnimationPreviewer(self.main_frame, self.parent_folder, self.show_task_selection_view, self.update_breadcrumbs, new_base_path)
 
     def start_sprite_generation(self):
+        if self.update_breadcrumbs:
+            path = self.base_path + [
+                ("Batch Tasks", self.show_task_selection_view),
+                ("Generate Sprites", self.start_sprite_generation)
+            ]
+            self.update_breadcrumbs(path)
         self.current_folder_index = 0
         self.show_sprite_generation_view()
 
@@ -316,6 +334,12 @@ class BatchResizer:
         self.show_sprite_generation_view()
 
     def start_animation_generation(self):
+        if self.update_breadcrumbs:
+            path = self.base_path + [
+                ("Batch Tasks", self.show_task_selection_view),
+                ("Generate Animations", self.start_animation_generation)
+            ]
+            self.update_breadcrumbs(path)
         self.clear_frame(); self.cancel_operation = False
         top_frame = Frame(self.main_frame); top_frame.pack(fill='x', padx=10, pady=5)
         self.back_button = Button(top_frame, text="Back to Task Selection", command=self.show_task_selection_view)
@@ -368,6 +392,12 @@ class BatchResizer:
             self.parent_frame.after(100, self.check_progress_queue)
 
     def show_export_assets_view(self):
+        if self.update_breadcrumbs:
+            path = self.base_path + [
+                ("Batch Tasks", self.show_task_selection_view),
+                ("Export Assets", self.show_export_assets_view)
+            ]
+            self.update_breadcrumbs(path)
         self.clear_frame()
         top_frame = Frame(self.main_frame); top_frame.pack(fill='x', padx=10, pady=5)
         Button(top_frame, text="Back to Tasks", command=self.show_task_selection_view).pack(side='left')
@@ -512,6 +542,12 @@ class BatchResizer:
             self.parent_frame.after(100, self._check_export_progress_queue)
 
     def show_export_assets_x2_view(self):
+        if self.update_breadcrumbs:
+            path = self.base_path + [
+                ("Batch Tasks", self.show_task_selection_view),
+                ("Export Assets x2", self.show_export_assets_x2_view)
+            ]
+            self.update_breadcrumbs(path)
         self.clear_frame()
         top_frame = Frame(self.main_frame); top_frame.pack(fill='x', padx=10, pady=5)
         Button(top_frame, text="Back to Tasks", command=self.show_task_selection_view).pack(side='left')
