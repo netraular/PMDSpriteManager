@@ -85,4 +85,9 @@ class MainApplication:
 if __name__ == "__main__":
     root = Tk()
     app = MainApplication(root)
-    root.mainloop()
+    try:
+        root.mainloop()
+    except KeyboardInterrupt:
+        # This block catches the Ctrl+C signal and allows the program to exit gracefully.
+        print("\nApplication closed by user.")
+        root.destroy()
