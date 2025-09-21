@@ -25,6 +25,21 @@ class AnimationViewer:
         self.setup_interface()
         self.show_animation()
 
+    def _on_mousewheel(self, event):
+        if event.num == 4:
+            self.main_canvas.yview_scroll(-1, "units")
+        elif event.num == 5:
+            self.main_canvas.yview_scroll(1, "units")
+        else:
+            self.main_canvas.yview_scroll(-1 * (event.delta // 120), "units")
+
+    def _bind_mousewheel_recursively(self, widget):
+        widget.bind("<MouseWheel>", self._on_mousewheel)
+        widget.bind("<Button-4>", self._on_mousewheel)
+        widget.bind("<Button-5>", self._on_mousewheel)
+        for child in widget.winfo_children():
+            self._bind_mousewheel_recursively(child)
+
     def setup_interface(self):
         self.main_canvas = Canvas(self.parent_frame)
         self.scrollbar = Scrollbar(self.parent_frame, orient="vertical", command=self.main_canvas.yview)
@@ -37,6 +52,10 @@ class AnimationViewer:
         self.main_canvas.create_window((0, 0), window=self.scroll_frame, anchor="nw")
         self.main_canvas.configure(yscrollcommand=self.scrollbar.set)
         
+        self.main_canvas.bind("<MouseWheel>", self._on_mousewheel)
+        self.main_canvas.bind("<Button-4>", self._on_mousewheel)
+        self.main_canvas.bind("<Button-5>", self._on_mousewheel)
+
         self.main_canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar.pack(side="right", fill="y")
 
@@ -96,6 +115,8 @@ class AnimationViewer:
 
             if run_ai_automatically:
                 self.identify_group_sprites(group_ui)
+        
+        self._bind_mousewheel_recursively(self.scroll_frame)
 
     def identify_group_sprites(self, group_ui_instance):
         try:
@@ -122,6 +143,19 @@ class AnimationViewer:
         canvas = Canvas(sprite_window); scrollbar = Scrollbar(sprite_window, orient="vertical", command=canvas.yview)
         scroll_frame = Frame(canvas); scroll_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.create_window((0, 0), window=scroll_frame, anchor="nw"); canvas.configure(yscrollcommand=scrollbar.set)
+        
+        def _on_sprite_mousewheel(event):
+            if event.num == 4:
+                canvas.yview_scroll(-1, "units")
+            elif event.num == 5:
+                canvas.yview_scroll(1, "units")
+            else:
+                canvas.yview_scroll(-1 * (event.delta // 120), "units")
+
+        canvas.bind("<MouseWheel>", _on_sprite_mousewheel)
+        canvas.bind("<Button-4>", _on_sprite_mousewheel)
+        canvas.bind("<Button-5>", _on_sprite_mousewheel)
+
         canvas.pack(side="left", fill="both", expand=True); scrollbar.pack(side="right", fill="y")
         for idx, file in enumerate(sprite_files):
             try:
@@ -131,6 +165,15 @@ class AnimationViewer:
                 frame = Frame(scroll_frame); frame.grid(row=row, column=col, padx=5, pady=5)
                 Label(frame, image=photo).pack(); Label(frame, text=file, font=('Arial', 8)).pack(); frame.photo = photo
             except Exception as e: print(f"Error loading {file}: {str(e)}")
+
+        def bind_recursively(widget):
+            widget.bind("<MouseWheel>", _on_sprite_mousewheel)
+            widget.bind("<Button-4>", _on_sprite_mousewheel)
+            widget.bind("<Button-5>", _on_sprite_mousewheel)
+            for child in widget.winfo_children():
+                bind_recursively(child)
+        
+        bind_recursively(scroll_frame)
 
     def _get_data_from_current_view(self):
         try:

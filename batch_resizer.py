@@ -241,6 +241,19 @@ class BatchResizer:
         canvas = Canvas(self.main_frame); scrollbar = Scrollbar(self.main_frame, orient="vertical", command=canvas.yview)
         scroll_frame = Frame(canvas); scroll_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.create_window((0, 0), window=scroll_frame, anchor="nw"); canvas.configure(yscrollcommand=scrollbar.set)
+        
+        def _on_mousewheel(event):
+            if event.num == 4:
+                canvas.yview_scroll(-1, "units")
+            elif event.num == 5:
+                canvas.yview_scroll(1, "units")
+            else:
+                canvas.yview_scroll(-1 * (event.delta // 120), "units")
+
+        canvas.bind("<MouseWheel>", _on_mousewheel)
+        canvas.bind("<Button-4>", _on_mousewheel)
+        canvas.bind("<Button-5>", _on_mousewheel)
+
         canvas.pack(side="left", fill="both", expand=True); scrollbar.pack(side="right", fill="y")
         for folder_name in self.project_folders:
             sprite_path = os.path.join(self.parent_folder, folder_name, "Sprites", "sprite_1.png")
@@ -252,6 +265,15 @@ class BatchResizer:
             except Exception as e:
                 print(f"Could not load preview for {folder_name}: {e}")
                 Button(scroll_frame, text=folder_name, command=lambda f=folder_name: self.launch_previewer(f), width=40).pack(padx=20, pady=5, anchor='w')
+
+        def bind_recursively(widget):
+            widget.bind("<MouseWheel>", _on_mousewheel)
+            widget.bind("<Button-4>", _on_mousewheel)
+            widget.bind("<Button-5>", _on_mousewheel)
+            for child in widget.winfo_children():
+                bind_recursively(child)
+        
+        bind_recursively(scroll_frame)
 
     def launch_previewer(self, folder_name):
         self.clear_frame()

@@ -22,6 +22,7 @@ class AnimationCreator:
         self.output_folder = None
         self.json_data = None
         self.after_ids = []
+        self.canvas = None
         
         self.main_frame = Frame(self.parent_frame)
         self.main_frame.pack(fill='both', expand=True)
@@ -209,6 +210,22 @@ class AnimationCreator:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load or process JSON file: {e}")
 
+    def _on_mousewheel(self, event):
+        if self.canvas:
+            if event.num == 4:
+                self.canvas.yview_scroll(-1, "units")
+            elif event.num == 5:
+                self.canvas.yview_scroll(1, "units")
+            else:
+                self.canvas.yview_scroll(-1 * (event.delta // 120), "units")
+
+    def _bind_mousewheel_recursively(self, widget):
+        widget.bind("<MouseWheel>", self._on_mousewheel)
+        widget.bind("<Button-4>", self._on_mousewheel)
+        widget.bind("<Button-5>", self._on_mousewheel)
+        for child in widget.winfo_children():
+            self._bind_mousewheel_recursively(child)
+
     def show_animation_preview(self):
         if self.update_breadcrumbs:
             if self.start_in_preview_mode:
@@ -231,6 +248,11 @@ class AnimationCreator:
         self.scroll_frame.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
         self.canvas.create_window((0, 0), window=self.scroll_frame, anchor="nw")
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        
+        self.canvas.bind("<MouseWheel>", self._on_mousewheel)
+        self.canvas.bind("<Button-4>", self._on_mousewheel)
+        self.canvas.bind("<Button-5>", self._on_mousewheel)
+
         self.canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar.pack(side="right", fill="y")
         
@@ -240,6 +262,8 @@ class AnimationCreator:
         Label(self.scroll_frame, text="Animation Preview", font=('Arial', 16)).pack(pady=10)
         for group_id, group_data in self.json_data["sprites"].items():
             self.create_group_preview(group_id, group_data)
+        
+        self._bind_mousewheel_recursively(self.scroll_frame)
 
     def create_group_preview(self, group_id, group_data):
         group_frame = Frame(self.scroll_frame, bd=2, relief="groove"); group_frame.pack(fill="x", padx=5, pady=5)

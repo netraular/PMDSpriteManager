@@ -87,6 +87,15 @@ class SpritesheetViewer:
             messagebox.showerror("Error", f"Error: {str(e)}")
             self.return_to_main()
 
+    def _on_mousewheel(self, event):
+        if self.canvas:
+            if event.num == 4:
+                self.canvas.yview_scroll(-1, "units")
+            elif event.num == 5:
+                self.canvas.yview_scroll(1, "units")
+            else:
+                self.canvas.yview_scroll(-1 * (event.delta // 120), "units")
+
     def show_result_view(self):
         """Show the result view with the sprites"""
         # Clear input frame
@@ -117,6 +126,10 @@ class SpritesheetViewer:
         self.canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
         
+        self.canvas.bind("<MouseWheel>", self._on_mousewheel)
+        self.canvas.bind("<Button-4>", self._on_mousewheel)
+        self.canvas.bind("<Button-5>", self._on_mousewheel)
+
         self.canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar.pack(side="right", fill="y")
         
@@ -133,6 +146,15 @@ class SpritesheetViewer:
             lbl = Label(scroll_frame, image=img)
             lbl.image = img
             lbl.grid(row=row, column=col, padx=2, pady=2)
+
+        def bind_recursively(widget):
+            widget.bind("<MouseWheel>", self._on_mousewheel)
+            widget.bind("<Button-4>", self._on_mousewheel)
+            widget.bind("<Button-5>", self._on_mousewheel)
+            for child in widget.winfo_children():
+                bind_recursively(child)
+        
+        bind_recursively(scroll_frame)
 
     def process_spritesheet(self):
         """Process the spritesheet and show the results"""
