@@ -23,6 +23,7 @@ class AnimationGroupUI:
         self.result_after_ids = []
         self.overlay_after_ids = []
         self.iso_after_ids = []
+        self.iso_shadow_after_ids = []
         
         self.string_vars = []
         self.mirror_vars = []
@@ -79,6 +80,17 @@ class AnimationGroupUI:
         Label(iso_preview_frame, text="Isometric Preview", font=('Arial', 8, 'bold')).pack(pady=(5,0))
         self.iso_label = Label(iso_preview_frame)
         self.iso_label.pack(pady=5, padx=5, expand=True)
+        self.iso_offset_label = Label(iso_preview_frame, text="Offset: (N/A)", font=('Arial', 8))
+        self.iso_offset_label.pack(pady=(0, 5))
+
+        # --- Isometric Shadow Preview (Far Right) ---
+        iso_shadow_preview_frame = Frame(previews_container, bd=1, relief="sunken")
+        iso_shadow_preview_frame.pack(side='left', fill='y', padx=(5, 0))
+        Label(iso_shadow_preview_frame, text="Isometric Shadow", font=('Arial', 8, 'bold')).pack(pady=(5,0))
+        self.iso_shadow_label = Label(iso_shadow_preview_frame)
+        self.iso_shadow_label.pack(pady=5, padx=5, expand=True)
+        self.iso_shadow_offset_label = Label(iso_shadow_preview_frame, text="Offset: (N/A)", font=('Arial', 8))
+        self.iso_shadow_offset_label.pack(pady=(0, 5))
         
         durations = self.anim_data["durations"] * (len(self.group_frames) // len(self.anim_data["durations"]) + 1)
         
@@ -205,6 +217,15 @@ class AnimationGroupUI:
         bottom_y = bbox[3]
         return (center_x, bottom_y)
 
+    def _get_image_center(self, image):
+        """Calculates the geometric center of the visible pixels in an image."""
+        bbox = image.getbbox()
+        if not bbox:
+            return None
+        center_x = (bbox[0] + bbox[2]) / 2
+        center_y = (bbox[1] + bbox[3]) / 2
+        return (center_x, center_y)
+
     def _get_generated_frame_data(self, apply_correction):
         sprite_numbers = [int(sv.get()) if sv.get().isdigit() else 0 for sv in self.string_vars]
         result_data = []
@@ -258,6 +279,7 @@ class AnimationGroupUI:
         self.load_corrected_result_animation()
         self.load_uncorrected_overlay_animation()
         self.load_isometric_preview_animation()
+        self.load_isometric_shadow_animation()
 
     def _get_group_bounds(self):
         min_x, min_y, max_x, max_y = float('inf'), float('inf'), float('-inf'), float('-inf')
@@ -433,19 +455,12 @@ class AnimationGroupUI:
         group_fw = math.ceil(max_x - min_x)
         group_fh = math.ceil(max_y - min_y)
 
-        base_sprite_img = None
-        try:
-            sprite_base_path = os.path.join(self.viewer.anim_folder, "sprite_base.png")
-            if os.path.exists(sprite_base_path):
-                base_sprite_img = Image.open(sprite_base_path).convert('RGBA')
-        except Exception as e:
-            print(f"Could not load sprite_base.png for preview: {e}")
-
         tile_consts = {'WIDTH': 32, 'HEIGHT': 16, 'WIDTH_HALF': 16, 'HEIGHT_HALF': 8}
         canvas_width = tile_consts['WIDTH'] * 5
         canvas_height = tile_consts['HEIGHT'] * 5
 
         iso_frames = []
+        offset_texts = []
         for frame_data in custom_frames_data:
             canvas = Image.new('RGBA', (canvas_width, canvas_height), (255, 255, 255, 0))
             draw = ImageDraw.Draw(canvas)
@@ -461,13 +476,6 @@ class AnimationGroupUI:
             
             self._draw_iso_grid(canvas, (static_grid_origin_x, static_grid_origin_y), tile_consts)
             
-            if base_sprite_img:
-                shadow_w, shadow_h = base_sprite_img.size
-                # Center the base sprite on the center of the middle tile
-                shadow_paste_x = world_anchor_x - shadow_w // 2
-                shadow_paste_y = (world_anchor_y + tile_consts['HEIGHT_HALF']) - shadow_h // 2
-                canvas.paste(base_sprite_img, (shadow_paste_x, shadow_paste_y), base_sprite_img)
-
             frame_origin_x = world_anchor_x - (group_fw // 2)
             center_tile_bottom_y = world_anchor_y + tile_consts['HEIGHT_HALF']
             frame_origin_y = center_tile_bottom_y - group_fh
@@ -488,8 +496,14 @@ class AnimationGroupUI:
                 paste_y = frame_origin_y + int(round(relative_paste_y))
                 
                 canvas.paste(sprite_img, (paste_x, paste_y), sprite_img)
+                offset_texts.append(f"Offset: ({round(relative_paste_x)}, {round(relative_paste_y)})")
+            else:
+                offset_texts.append("Offset: (N/A)")
 
-            # Zoom the final canvas for better visibility
+            cross_size = 3
+            draw.line((world_anchor_x - cross_size, world_anchor_y, world_anchor_x + cross_size, world_anchor_y), fill="red", width=1)
+            draw.line((world_anchor_x, world_anchor_y - cross_size, world_anchor_x, world_anchor_y + cross_size), fill="red", width=1)
+
             canvas = canvas.resize((canvas.width * 2, canvas.height * 2), Image.NEAREST)
             iso_frames.append(canvas)
 
@@ -499,6 +513,81 @@ class AnimationGroupUI:
             frames=iso_frames, 
             durations=durations[:len(iso_frames)], 
             id_storage_list=self.iso_after_ids,
+            text_label=self.iso_offset_label,
+            text_data=offset_texts,
+            thumbnail_size=(400, 400)
+        )
+
+    def load_isometric_shadow_animation(self):
+        for aid in self.iso_shadow_after_ids: self.parent.after_cancel(aid)
+        self.iso_shadow_after_ids.clear()
+
+        base_sprite_img = None
+        try:
+            sprite_base_path = os.path.join(self.viewer.anim_folder, "sprite_base.png")
+            if os.path.exists(sprite_base_path):
+                base_sprite_img = Image.open(sprite_base_path).convert('RGBA')
+        except Exception as e:
+            print(f"Could not load sprite_base.png for shadow preview: {e}")
+
+        tile_consts = {'WIDTH': 32, 'HEIGHT': 16, 'WIDTH_HALF': 16, 'HEIGHT_HALF': 8}
+        canvas_width = tile_consts['WIDTH'] * 5
+        canvas_height = tile_consts['HEIGHT'] * 5
+
+        shadow_positions = [self._get_image_center(f) for f in self.group_shadow_frames]
+        reference_pos = shadow_positions[0] if shadow_positions and shadow_positions[0] is not None else None
+
+        iso_shadow_frames = []
+        offset_texts = []
+
+        for i in range(len(self.group_frames)):
+            canvas = Image.new('RGBA', (canvas_width, canvas_height), (255, 255, 255, 0))
+            draw = ImageDraw.Draw(canvas)
+            
+            world_anchor_x = canvas_width // 2
+            world_anchor_y = canvas_height // 2
+            center_tile_top_corner_x = world_anchor_x - tile_consts['WIDTH_HALF']
+            center_tile_top_corner_y = world_anchor_y - tile_consts['HEIGHT_HALF']
+            static_grid_origin_x = center_tile_top_corner_x
+            static_grid_origin_y = center_tile_top_corner_y - 2 * tile_consts['HEIGHT_HALF']
+            self._draw_iso_grid(canvas, (static_grid_origin_x, static_grid_origin_y), tile_consts)
+
+            current_shadow_anchor = shadow_positions[i] if i < len(shadow_positions) else None
+
+            if base_sprite_img and current_shadow_anchor:
+                movement_x, movement_y = 0, 0
+                if reference_pos:
+                    movement_x = current_shadow_anchor[0] - reference_pos[0]
+                    movement_y = current_shadow_anchor[1] - reference_pos[1]
+
+                target_center_x = world_anchor_x + movement_x
+                target_center_y = world_anchor_y + movement_y
+
+                shadow_w, shadow_h = base_sprite_img.size
+                paste_x = int(round(target_center_x - (shadow_w / 2)))
+                paste_y = int(round(target_center_y - (shadow_h / 2)))
+                
+                canvas.paste(base_sprite_img, (paste_x, paste_y), base_sprite_img)
+
+                offset_texts.append(f"Offset: ({movement_x:.1f}, {movement_y:.1f})")
+            else:
+                offset_texts.append("Offset: (N/A)")
+
+            cross_size = 3
+            draw.line((world_anchor_x - cross_size, world_anchor_y, world_anchor_x + cross_size, world_anchor_y), fill="red", width=1)
+            draw.line((world_anchor_x, world_anchor_y - cross_size, world_anchor_x, world_anchor_y + cross_size), fill="red", width=1)
+
+            canvas = canvas.resize((canvas.width * 2, canvas.height * 2), Image.NEAREST)
+            iso_shadow_frames.append(canvas)
+
+        durations = self.anim_data["durations"] * (len(iso_shadow_frames) // len(self.anim_data["durations"]) + 1)
+        self._start_animation_loop(
+            image_label=self.iso_shadow_label, 
+            frames=iso_shadow_frames, 
+            durations=durations[:len(iso_shadow_frames)], 
+            id_storage_list=self.iso_shadow_after_ids,
+            text_label=self.iso_shadow_offset_label,
+            text_data=offset_texts,
             thumbnail_size=(400, 400)
         )
 
@@ -591,10 +680,12 @@ class AnimationGroupUI:
         for aid in self.result_after_ids: self.parent.after_cancel(aid)
         for aid in self.overlay_after_ids: self.parent.after_cancel(aid)
         for aid in self.iso_after_ids: self.parent.after_cancel(aid)
+        for aid in self.iso_shadow_after_ids: self.parent.after_cancel(aid)
         self.after_ids.clear()
         self.result_after_ids.clear()
         self.overlay_after_ids.clear()
         self.iso_after_ids.clear()
+        self.iso_shadow_after_ids.clear()
 
     def _start_animation_loop(self, image_label, frames, durations, id_storage_list, text_label=None, text_data=None, thumbnail_size=(200, 200)):
         current_frame = [0]
