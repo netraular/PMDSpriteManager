@@ -6,13 +6,14 @@ from PIL import Image, ImageTk, ImageDraw, ImageOps
 import math
 
 class AnimationGroupUI:
-    def __init__(self, parent, viewer, group_idx, anim_data, group_frames, group_offsets_frames, group_metadata, sprite_folder, json_group_data, ai_callback):
+    def __init__(self, parent, viewer, group_idx, anim_data, group_frames, group_offsets_frames, group_shadow_frames, group_metadata, sprite_folder, json_group_data, ai_callback):
         self.parent = parent
         self.viewer = viewer
         self.group_idx = group_idx
         self.anim_data = anim_data
         self.group_frames = group_frames
         self.group_offsets_frames = group_offsets_frames
+        self.group_shadow_frames = group_shadow_frames
         self.group_metadata = group_metadata
         self.sprite_folder = sprite_folder
         self.json_group_data = json_group_data or {}
@@ -48,6 +49,7 @@ class AnimationGroupUI:
         animation_previews_container = Frame(content_frame); animation_previews_container.pack(side="left", padx=10)
         anim_panel = Frame(animation_previews_container); anim_panel.pack(side="left", padx=5)
         anim_panel_copy = Frame(animation_previews_container); anim_panel_copy.pack(side="left", padx=5)
+        shadow_panel = Frame(animation_previews_container); shadow_panel.pack(side="left", padx=5)
         frames_panel = Frame(content_frame); frames_panel.pack(side="left", fill="x", expand=True)
         
         # --- Previews Container ---
@@ -86,6 +88,10 @@ class AnimationGroupUI:
         if self.group_offsets_frames:
             anim_label_copy = Label(anim_panel_copy, bg="lightgrey"); anim_label_copy.pack()
             self._start_animation_loop(anim_label_copy, [f.copy() for f in self.group_offsets_frames], durations[:len(self.group_offsets_frames)], self.after_ids)
+
+        if self.group_shadow_frames:
+            shadow_label = Label(shadow_panel, bg="lightgrey"); shadow_label.pack()
+            self._start_animation_loop(shadow_label, [f.copy() for f in self.group_shadow_frames], durations[:len(self.group_shadow_frames)], self.after_ids)
 
         for idx, frame in enumerate(self.group_frames):
             frame_container = Frame(frames_panel); frame_container.grid(row=0, column=idx, padx=2, pady=2)
@@ -427,6 +433,14 @@ class AnimationGroupUI:
         group_fw = math.ceil(max_x - min_x)
         group_fh = math.ceil(max_y - min_y)
 
+        base_sprite_img = None
+        try:
+            sprite_base_path = os.path.join(self.viewer.anim_folder, "sprite_base.png")
+            if os.path.exists(sprite_base_path):
+                base_sprite_img = Image.open(sprite_base_path).convert('RGBA')
+        except Exception as e:
+            print(f"Could not load sprite_base.png for preview: {e}")
+
         tile_consts = {'WIDTH': 32, 'HEIGHT': 16, 'WIDTH_HALF': 16, 'HEIGHT_HALF': 8}
         canvas_width = tile_consts['WIDTH'] * 5
         canvas_height = tile_consts['HEIGHT'] * 5
@@ -447,6 +461,13 @@ class AnimationGroupUI:
             
             self._draw_iso_grid(canvas, (static_grid_origin_x, static_grid_origin_y), tile_consts)
             
+            if base_sprite_img:
+                shadow_w, shadow_h = base_sprite_img.size
+                # Center the base sprite on the center of the middle tile
+                shadow_paste_x = world_anchor_x - shadow_w // 2
+                shadow_paste_y = (world_anchor_y + tile_consts['HEIGHT_HALF']) - shadow_h // 2
+                canvas.paste(base_sprite_img, (shadow_paste_x, shadow_paste_y), base_sprite_img)
+
             frame_origin_x = world_anchor_x - (group_fw // 2)
             center_tile_bottom_y = world_anchor_y + tile_consts['HEIGHT_HALF']
             frame_origin_y = center_tile_bottom_y - group_fh

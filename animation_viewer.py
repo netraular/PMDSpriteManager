@@ -78,7 +78,7 @@ class AnimationViewer:
         
         anim = self.anim_data[self.current_anim_index]
         
-        all_frames, all_offsets_frames, all_metadata = self.data_handler._load_animation_assets(anim)
+        all_frames, all_offsets_frames, all_shadow_frames, all_metadata = self.data_handler._load_animation_assets(anim)
         
         ui_compatible_json_data = self.load_and_convert_optimized_json(anim["name"])
         run_ai_automatically = ui_compatible_json_data is None
@@ -106,6 +106,7 @@ class AnimationViewer:
                 anim_data=anim,
                 group_frames=all_frames[start:end],
                 group_offsets_frames=all_offsets_frames[start:end] if all_offsets_frames else [],
+                group_shadow_frames=all_shadow_frames[start:end] if all_shadow_frames else [],
                 group_metadata=all_metadata[start:end],
                 sprite_folder=self.sprite_folder,
                 json_group_data=ui_compatible_json_data["sprites"].get(str(group_idx + 1)) if ui_compatible_json_data else None,

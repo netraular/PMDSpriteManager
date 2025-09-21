@@ -99,7 +99,9 @@ class AnimationDataHandler:
         all_frames = handler.split_animation_frames(anim["frame_width"], anim["frame_height"])
         
         all_offsets_frames = []
+        all_shadow_frames = []
         all_metadata = []
+
         offsets_image_path = anim["image_path"].replace("-Anim.png", "-Offsets.png")
         if os.path.exists(offsets_image_path):
             offsets_handler = SpriteSheetHandler(offsets_image_path)
@@ -109,8 +111,25 @@ class AnimationDataHandler:
             default_anchor = (anim["frame_width"] // 2, anim["frame_height"] // 2 - 1)
             num_frames = anim["total_groups"] * anim["frames_per_group"]
             all_metadata = [{"anchors": {"black": default_anchor}}] * num_frames
+        
+        shadow_image_path = anim["image_path"].replace("-Anim.png", "-Shadow.png")
+        if os.path.exists(shadow_image_path):
+            shadow_handler = SpriteSheetHandler(shadow_image_path)
+            all_shadow_frames = shadow_handler.split_animation_frames(anim["frame_width"], anim["frame_height"])
             
-        return all_frames, all_offsets_frames, all_metadata
+            sprite_base_path = os.path.join(self.project_path, "sprite_base.png")
+            if not os.path.exists(sprite_base_path) and all_shadow_frames:
+                try:
+                    first_shadow_frame = next((f for f in all_shadow_frames if f.getbbox()), None)
+                    if first_shadow_frame:
+                        bbox = first_shadow_frame.getbbox()
+                        base_sprite = first_shadow_frame.crop(bbox)
+                        base_sprite.save(sprite_base_path)
+                        print(f"Saved base shadow sprite to {sprite_base_path}")
+                except Exception as e:
+                    print(f"Could not extract and save base shadow sprite: {e}")
+            
+        return all_frames, all_offsets_frames, all_shadow_frames, all_metadata
 
     def _get_frame_metadata(self, frame_image):
         if frame_image.mode != 'RGBA': frame_image = frame_image.convert('RGBA')
@@ -188,7 +207,7 @@ class AnimationDataHandler:
 
     def generate_animation_data(self, index):
         anim = self.anim_data[index]
-        all_frames, _, all_metadata = self._load_animation_assets(anim)
+        all_frames, _, _, all_metadata = self._load_animation_assets(anim)
         grouped_sprites = {}
         try:
             matcher = SpriteMatcher(self.sprite_folder) if os.path.exists(self.sprite_folder) else None
