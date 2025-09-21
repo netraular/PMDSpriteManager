@@ -21,6 +21,7 @@ class AnimationGroupUI:
         self.after_ids = []
         self.result_after_ids = []
         self.overlay_after_ids = []
+        self.iso_after_ids = []
         
         self.string_vars = []
         self.mirror_vars = []
@@ -62,13 +63,20 @@ class AnimationGroupUI:
         self.overlay_label = Label(overlay_preview_frame); self.overlay_label.pack(pady=5, padx=5, expand=True)
         self.offset_label = Label(overlay_preview_frame, text="Offset: (N/A)", font=('Arial', 8)); self.offset_label.pack(pady=(0, 5))
 
-        # --- Corrected Result Preview (Right) ---
+        # --- Corrected Result Preview (Middle) ---
         result_preview_frame = Frame(previews_container, bd=1, relief="sunken")
         result_preview_frame.pack(side='left', fill='y', padx=(5, 0))
         Label(result_preview_frame, text="Corrected Preview", font=('Arial', 8, 'bold')).pack(pady=(5,0))
         self.result_label = Label(result_preview_frame); self.result_label.pack(pady=5, padx=5, expand=True)
         self.corrected_offset_label = Label(result_preview_frame, text="Offset: (N/A)", font=('Arial', 8))
         self.corrected_offset_label.pack(pady=(0, 5))
+        
+        # --- Isometric Preview (Right) ---
+        iso_preview_frame = Frame(previews_container, bd=1, relief="sunken")
+        iso_preview_frame.pack(side='left', fill='y', padx=(5, 0))
+        Label(iso_preview_frame, text="Isometric Preview", font=('Arial', 8, 'bold')).pack(pady=(5,0))
+        self.iso_label = Label(iso_preview_frame)
+        self.iso_label.pack(pady=5, padx=5, expand=True)
         
         durations = self.anim_data["durations"] * (len(self.group_frames) // len(self.anim_data["durations"]) + 1)
         
@@ -243,6 +251,7 @@ class AnimationGroupUI:
     def refresh_all_previews(self):
         self.load_corrected_result_animation()
         self.load_uncorrected_overlay_animation()
+        self.load_isometric_preview_animation()
 
     def _get_group_bounds(self):
         min_x, min_y, max_x, max_y = float('inf'), float('inf'), float('-inf'), float('-inf')
@@ -388,6 +397,90 @@ class AnimationGroupUI:
             text_data=offset_texts
         )
 
+    def _grid_to_screen(self, grid_x, grid_y, origin, TILE_WIDTH_HALF, TILE_HEIGHT_HALF):
+        screen_x = origin[0] + (grid_x - grid_y) * TILE_WIDTH_HALF
+        screen_y = origin[1] + (grid_x + grid_y) * TILE_HEIGHT_HALF
+        return int(screen_x), int(screen_y)
+
+    def _draw_iso_grid(self, image, origin, consts):
+        draw = ImageDraw.Draw(image)
+        fill_color = (200, 200, 200, 255)
+        outline_color = (150, 150, 150, 255)
+        
+        for y in range(3):
+            for x in range(3):
+                pos = self._grid_to_screen(x, y, origin, consts['WIDTH_HALF'], consts['HEIGHT_HALF'])
+                top = (pos[0] + consts['WIDTH_HALF'], pos[1])
+                right = (pos[0] + consts['WIDTH'], pos[1] + consts['HEIGHT_HALF'])
+                bottom = (pos[0] + consts['WIDTH_HALF'], pos[1] + consts['HEIGHT'])
+                left = (pos[0], pos[1] + consts['HEIGHT_HALF'])
+                draw.polygon([top, right, bottom, left], fill=fill_color, outline=outline_color)
+
+    def load_isometric_preview_animation(self):
+        for aid in self.iso_after_ids: self.parent.after_cancel(aid)
+        self.iso_after_ids.clear()
+
+        custom_frames_data = self._get_generated_frame_data(apply_correction=True)
+        if not custom_frames_data: return
+
+        min_x, min_y, max_x, max_y = self._get_group_bounds()
+        group_fw = math.ceil(max_x - min_x)
+        group_fh = math.ceil(max_y - min_y)
+
+        tile_consts = {'WIDTH': 32, 'HEIGHT': 16, 'WIDTH_HALF': 16, 'HEIGHT_HALF': 8}
+        canvas_width = tile_consts['WIDTH'] * 5
+        canvas_height = tile_consts['HEIGHT'] * 5
+
+        iso_frames = []
+        for frame_data in custom_frames_data:
+            canvas = Image.new('RGBA', (canvas_width, canvas_height), (255, 255, 255, 0))
+            draw = ImageDraw.Draw(canvas)
+            
+            world_anchor_x = canvas_width // 2
+            world_anchor_y = canvas_height // 2
+
+            center_tile_top_corner_x = world_anchor_x - tile_consts['WIDTH_HALF']
+            center_tile_top_corner_y = world_anchor_y - tile_consts['HEIGHT_HALF']
+
+            static_grid_origin_x = center_tile_top_corner_x
+            static_grid_origin_y = center_tile_top_corner_y - 2 * tile_consts['HEIGHT_HALF']
+            
+            self._draw_iso_grid(canvas, (static_grid_origin_x, static_grid_origin_y), tile_consts)
+            
+            frame_origin_x = world_anchor_x - (group_fw // 2)
+            center_tile_bottom_y = world_anchor_y + tile_consts['HEIGHT_HALF']
+            frame_origin_y = center_tile_bottom_y - group_fh
+
+            box_x0 = frame_origin_x
+            box_y0 = frame_origin_y
+            box_x1 = box_x0 + group_fw
+            box_y1 = box_y0 + group_fh
+            draw.rectangle([box_x0, box_y0, box_x1, box_y1], outline="grey")
+
+            sprite_img = frame_data["image"]
+            if sprite_img:
+                abs_paste_x, abs_paste_y = frame_data["pos"]
+                relative_paste_x = abs_paste_x - min_x
+                relative_paste_y = abs_paste_y - min_y
+
+                paste_x = frame_origin_x + int(round(relative_paste_x))
+                paste_y = frame_origin_y + int(round(relative_paste_y))
+                
+                canvas.paste(sprite_img, (paste_x, paste_y), sprite_img)
+
+            # Zoom the final canvas for better visibility
+            canvas = canvas.resize((canvas.width * 2, canvas.height * 2), Image.NEAREST)
+            iso_frames.append(canvas)
+
+        durations = self.anim_data["durations"] * (len(iso_frames) // len(self.anim_data["durations"]) + 1)
+        self._start_animation_loop(
+            image_label=self.iso_label, 
+            frames=iso_frames, 
+            durations=durations[:len(iso_frames)], 
+            id_storage_list=self.iso_after_ids,
+            thumbnail_size=(400, 400)
+        )
+
     def set_sprite_values(self, sprite_numbers, mirror_flags):
         for idx, sprite_number in enumerate(sprite_numbers):
             if sprite_number > 0:
@@ -476,18 +569,20 @@ class AnimationGroupUI:
         for aid in self.after_ids: self.parent.after_cancel(aid)
         for aid in self.result_after_ids: self.parent.after_cancel(aid)
         for aid in self.overlay_after_ids: self.parent.after_cancel(aid)
+        for aid in self.iso_after_ids: self.parent.after_cancel(aid)
         self.after_ids.clear()
         self.result_after_ids.clear()
         self.overlay_after_ids.clear()
+        self.iso_after_ids.clear()
 
-    def _start_animation_loop(self, image_label, frames, durations, id_storage_list, text_label=None, text_data=None):
+    def _start_animation_loop(self, image_label, frames, durations, id_storage_list, text_label=None, text_data=None, thumbnail_size=(200, 200)):
         current_frame = [0]
         def update():
             if not image_label.winfo_exists() or not frames: return
             idx = current_frame[0] % len(frames)
             
             frame = frames[idx]
-            frame.thumbnail((200, 200)); img = ImageTk.PhotoImage(frame)
+            frame.thumbnail(thumbnail_size); img = ImageTk.PhotoImage(frame)
             image_label.config(image=img); image_label.image = img
             
             if text_label and text_data:
