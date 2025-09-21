@@ -251,8 +251,12 @@ class IsometricAnimationPreviewer:
             fh = group_data['frameheight']
             relative_paste_x, relative_paste_y = frame_info.get('offset', [0, 0])
             
+            # Center the animation frame horizontally with the world anchor
             frame_origin_x = world_anchor_x - (fw // 2)
-            frame_origin_y = world_anchor_y - (fh // 2)
+            
+            # Align the bottom of the animation frame with the bottom of the center tile
+            center_tile_bottom_y = world_anchor_y + tile_consts['HEIGHT_HALF']
+            frame_origin_y = center_tile_bottom_y - fh
             
             if tile_consts['WIDTH'] == 64: # This identifies the 2x canvas
                 frame_origin_x += self.offset_x_adj
