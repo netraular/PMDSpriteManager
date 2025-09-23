@@ -203,5 +203,3 @@ MIT License. See the `LICENSE` file for details.
 -   All sprite and animation assets are provided by the incredible team at [PMD Collab](https://sprites.pmdcollab.org/).
 -   Pokémon Mystery Dungeon © Nintendo/Creatures Inc./GAME FREAK inc.
 -   This tool was developed by fans, for fans.
-
-:)
