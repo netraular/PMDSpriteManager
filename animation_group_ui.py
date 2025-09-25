@@ -45,47 +45,59 @@ class AnimationGroupUI:
         self.refresh_all_previews()
 
     def _setup_ui(self):
-        container = Frame(self.parent); container.pack(fill='x', padx=5, pady=5)
-        
-        group_frame = Frame(container, bd=2, relief="groove"); group_frame.pack(side='left', fill='both', expand=True, padx=(0, 5))
-        h_frame = Frame(group_frame); h_frame.pack(fill='x', pady=5, padx=5)
-        Label(h_frame, text=f"Group {self.group_idx + 1}", font=('Arial', 12, 'bold')).pack(side='left')
-        self.name_entry = Entry(h_frame, width=20); self.name_entry.pack(side='left', padx=10)
-        Button(h_frame, text="AI Identify Sprites", command=lambda: self.ai_callback(self)).pack(side='left', padx=10)
-        
-        content = Frame(group_frame); content.pack(fill="both", expand=True)
-        orig_previews = Frame(content); orig_previews.pack(side="left", padx=10)
-        
-        self.players["original"] = AnimationPlayer(self.parent, Label(orig_previews, bg="lightgrey"))
+        # Main container for the entire group UI
+        main_container = Frame(self.parent, bd=2, relief="groove")
+        main_container.pack(fill='x', padx=5, pady=5)
+
+        # --- Column 1: Original Animation Previews ---
+        self.col1_frame = Frame(main_container)
+
+        # Header for Column 1
+        col1_header = Frame(self.col1_frame)
+        col1_header.pack(fill='x', pady=(0, 5))
+        Label(col1_header, text=f"Group {self.group_idx + 1}", font=('Arial', 12, 'bold')).pack(side='left')
+        self.name_entry = Entry(col1_header, width=20)
+        self.name_entry.pack(side='left', padx=10)
+
+        # Content for Column 1
+        col1_content = Frame(self.col1_frame)
+        col1_content.pack(fill='both', expand=True)
+        self.players["original"] = AnimationPlayer(self.parent, Label(col1_content, bg="lightgrey"))
         self.players["original"].image_label.pack(side="left", padx=5)
-        self.players["offsets"] = AnimationPlayer(self.parent, Label(orig_previews, bg="lightgrey"))
+        self.players["offsets"] = AnimationPlayer(self.parent, Label(col1_content, bg="lightgrey"))
         self.players["offsets"].image_label.pack(side="left", padx=5)
-        self.players["shadow"] = AnimationPlayer(self.parent, Label(orig_previews, bg="lightgrey"))
+        self.players["shadow"] = AnimationPlayer(self.parent, Label(col1_content, bg="lightgrey"))
         self.players["shadow"].image_label.pack(side="left", padx=5)
 
-        frames_panel = Frame(content); frames_panel.pack(side="left", fill="x", expand=True)
-        
-        preview_container = Frame(container); preview_container.pack(side='left', fill='y')
-        Button(preview_container, text="Refresh Previews", command=self.refresh_all_previews).pack(pady=2, padx=2, fill='x')
+        # --- Column 2: Individual Sprite Editor ---
+        self.col2_frame = Frame(main_container)
 
-        self._create_preview_panel(preview_container, "overlay", "Uncorrected Overlay", "Offset: (N/A)")
-        self._create_preview_panel(preview_container, "corrected", "Corrected Preview", "Offset: (N/A)")
-        self._create_preview_panel(preview_container, "iso_shadow", "Isometric Shadow", "Offset: (N/A)")
-        self._create_preview_panel(preview_container, "iso_combined", "Isometric Combined", "Offset: (N/A)")
+        # Header for Column 2
+        col2_header = Frame(self.col2_frame)
+        col2_header.pack(fill='x', pady=(0, 5))
+        Button(col2_header, text="AI Identify Sprites", command=lambda: self.ai_callback(self)).pack()
+
+        # Content for Column 2 (the grid of frames)
+        col2_content = Frame(self.col2_frame)
+        col2_content.pack(fill='both', expand=True)
         
         durations = self.anim_data["durations"] * (len(self.group_frames) // len(self.anim_data["durations"]) + 1)
         for idx, frame in enumerate(self.group_frames):
-            frame_cont = Frame(frames_panel); frame_cont.grid(row=0, column=idx, padx=2, pady=2)
+            frame_cont = Frame(col2_content)
+            frame_cont.grid(row=0, column=idx, padx=2, pady=2)
             
             disp_frame = self._draw_anchors_on_frame(frame.copy(), idx)
             disp_frame.thumbnail((80, 80))
             img = ImageTk.PhotoImage(disp_frame)
-            Label(frame_cont, image=img, relief="sunken", bd=1).image = img; Label(frame_cont, image=img).pack()
+            Label(frame_cont, image=img, relief="sunken", bd=1).image = img
+            Label(frame_cont, image=img).pack()
             
-            custom_lbl = Label(frame_cont, relief="sunken", bd=1); custom_lbl.pack()
+            custom_lbl = Label(frame_cont, relief="sunken", bd=1)
+            custom_lbl.pack()
             self.custom_sprite_labels.append(custom_lbl)
 
-            input_frame = Frame(frame_cont); input_frame.pack()
+            input_frame = Frame(frame_cont)
+            input_frame.pack()
             sv = StringVar(value="0")
             Entry(input_frame, width=5, textvariable=sv).pack(side='left')
             mirror_var = BooleanVar()
@@ -99,6 +111,38 @@ class AnimationGroupUI:
             mirror_var.trace_add("write", callback)
 
             Label(frame_cont, text=f"Dur: {durations[idx]}", font=('Arial', 7)).pack()
+
+        # --- Column 3: Generated Previews ---
+        self.col3_frame = Frame(main_container)
+
+        # Header for Column 3
+        col3_header = Frame(self.col3_frame)
+        col3_header.pack(fill='x', pady=(0, 5))
+        Button(col3_header, text="Refresh Previews", command=self.refresh_all_previews).pack()
+
+        # Content for Column 3
+        col3_content = Frame(self.col3_frame)
+        col3_content.pack(fill='both', expand=True)
+        self._create_preview_panel(col3_content, "overlay", "Uncorrected Overlay", "Offset: (N/A)")
+        self._create_preview_panel(col3_content, "corrected", "Corrected Preview", "Offset: (N/A)")
+        self._create_preview_panel(col3_content, "iso_shadow", "Isometric Shadow", "Offset: (N/A)")
+        self._create_preview_panel(col3_content, "iso_combined", "Isometric Combined", "Offset: (N/A)")
+
+    def set_section_visibility(self, original_visible, editor_visible, previews_visible):
+        if original_visible:
+            self.col1_frame.pack(side='left', fill='y', padx=5, pady=5, anchor='n')
+        else:
+            self.col1_frame.pack_forget()
+
+        if editor_visible:
+            self.col2_frame.pack(side='left', fill='y', padx=5, pady=5, anchor='n')
+        else:
+            self.col2_frame.pack_forget()
+
+        if previews_visible:
+            self.col3_frame.pack(side='left', fill='y', padx=5, pady=5, anchor='n')
+        else:
+            self.col3_frame.pack_forget()
 
     def _create_preview_panel(self, parent, key, title, initial_text):
         frame = Frame(parent, bd=1, relief="sunken")

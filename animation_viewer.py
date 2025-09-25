@@ -2,7 +2,7 @@
 
 import os
 import json
-from tkinter import Frame, Label, Canvas, Scrollbar, messagebox, Toplevel, Button, OptionMenu, StringVar
+from tkinter import Frame, Label, Canvas, Scrollbar, messagebox, Toplevel, Button, OptionMenu, StringVar, BooleanVar
 from PIL import Image, ImageTk, ImageOps
 import math
 from animation_group_ui import AnimationGroupUI
@@ -21,6 +21,11 @@ class AnimationViewer:
         self.group_ui_instances = []
         
         self.selected_anim_var = StringVar()
+
+        # Visibility control variables
+        self.show_original_var = BooleanVar(value=True)
+        self.show_editor_var = BooleanVar(value=True)
+        self.show_previews_var = BooleanVar(value=True)
 
         self.setup_interface()
         self.show_animation()
@@ -96,6 +101,8 @@ class AnimationViewer:
         count_text = f"({self.current_anim_index + 1} of {len(self.anim_data)})"
         Label(header_frame, text=count_text, font=('Arial', 12, 'italic')).pack(side='left', padx=10)
 
+        Button(header_frame, text="View Options", command=self.open_view_options).pack(side='left', padx=10)
+
         for group_idx in range(anim["total_groups"]):
             start, end = group_idx * anim["frames_per_group"], (group_idx + 1) * anim["frames_per_group"]
             
@@ -114,11 +121,42 @@ class AnimationViewer:
                 ai_callback=self.identify_group_sprites
             )
             self.group_ui_instances.append(group_ui)
+            group_ui.set_section_visibility(
+                self.show_original_var.get(),
+                self.show_editor_var.get(),
+                self.show_previews_var.get()
+            )
 
             if run_ai_automatically:
                 self.identify_group_sprites(group_ui)
         
         self._bind_mousewheel_recursively(self.scroll_frame)
+
+    def open_view_options(self):
+        top = Toplevel(self.parent_frame)
+        top.title("View Options")
+        top.transient(self.parent_frame)
+        top.grab_set()
+
+        main_frame = Frame(top, padx=10, pady=10)
+        main_frame.pack()
+
+        Label(main_frame, text="Toggle section visibility:", font=('Arial', 10, 'bold')).pack(anchor='w', pady=(0, 5))
+
+        from tkinter import Checkbutton
+        Checkbutton(main_frame, text="Show Original Animations", variable=self.show_original_var, command=self._update_all_group_visibilities).pack(anchor='w')
+        Checkbutton(main_frame, text="Show Sprite Editor", variable=self.show_editor_var, command=self._update_all_group_visibilities).pack(anchor='w')
+        Checkbutton(main_frame, text="Show Generated Previews", variable=self.show_previews_var, command=self._update_all_group_visibilities).pack(anchor='w')
+
+        Button(main_frame, text="Close", command=top.destroy).pack(pady=10)
+
+    def _update_all_group_visibilities(self):
+        original_visible = self.show_original_var.get()
+        editor_visible = self.show_editor_var.get()
+        previews_visible = self.show_previews_var.get()
+
+        for group_ui in self.group_ui_instances:
+            group_ui.set_section_visibility(original_visible, editor_visible, previews_visible)
 
     def identify_group_sprites(self, group_ui_instance):
         try:
