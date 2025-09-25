@@ -34,12 +34,23 @@ class AnimationGroupUI:
         durations = self.anim_data["durations"]
         self.players["original"].set_animation([f.copy() for f in group_frames], durations)
         self.players["original"].play()
+
         if group_offsets_frames:
             self.players["offsets"].set_animation([f.copy() for f in group_offsets_frames], durations)
             self.players["offsets"].play()
+
         if group_shadow_frames:
             self.players["shadow"].set_animation([f.copy() for f in group_shadow_frames], durations)
             self.players["shadow"].play()
+
+        combined_frames = self._create_combined_original_frames(
+            group_frames,
+            group_shadow_frames,
+            group_offsets_frames
+        )
+        if combined_frames:
+            self.players["combined_original"].set_animation(combined_frames, durations)
+            self.players["combined_original"].play()
 
         self.refresh_all_custom_previews()
         self.refresh_all_previews()
@@ -62,12 +73,18 @@ class AnimationGroupUI:
         # Content for Column 1
         col1_content = Frame(self.col1_frame)
         col1_content.pack(fill='both', expand=True)
+        
+        # Top row
         self.players["original"] = AnimationPlayer(self.parent, Label(col1_content, bg="lightgrey"))
-        self.players["original"].image_label.pack(side="left", padx=5)
-        self.players["offsets"] = AnimationPlayer(self.parent, Label(col1_content, bg="lightgrey"))
-        self.players["offsets"].image_label.pack(side="left", padx=5)
+        self.players["original"].image_label.grid(row=0, column=0, padx=5, pady=5)
         self.players["shadow"] = AnimationPlayer(self.parent, Label(col1_content, bg="lightgrey"))
-        self.players["shadow"].image_label.pack(side="left", padx=5)
+        self.players["shadow"].image_label.grid(row=0, column=1, padx=5, pady=5)
+
+        # Bottom row
+        self.players["offsets"] = AnimationPlayer(self.parent, Label(col1_content, bg="lightgrey"))
+        self.players["offsets"].image_label.grid(row=1, column=0, padx=5, pady=5)
+        self.players["combined_original"] = AnimationPlayer(self.parent, Label(col1_content, bg="lightgrey"))
+        self.players["combined_original"].image_label.grid(row=1, column=1, padx=5, pady=5)
 
         # --- Column 2: Individual Sprite Editor ---
         self.col2_frame = Frame(main_container)
@@ -127,6 +144,36 @@ class AnimationGroupUI:
         self._create_preview_panel(col3_content, "corrected", "Corrected Preview", "Offset: (N/A)")
         self._create_preview_panel(col3_content, "iso_shadow", "Isometric Shadow", "Offset: (N/A)")
         self._create_preview_panel(col3_content, "iso_combined", "Isometric Combined", "Offset: (N/A)")
+
+    def _create_combined_original_frames(self, char_frames, shadow_frames, offset_frames):
+        combined = []
+        num_frames = len(char_frames)
+        w, h = self.anim_data["frame_width"], self.anim_data["frame_height"]
+
+        has_shadows = len(shadow_frames) == num_frames
+        has_offsets = len(offset_frames) == num_frames
+
+        for i in range(num_frames):
+            # Start with a transparent base or the shadow frame
+            if has_shadows:
+                base_frame = shadow_frames[i].copy()
+            else:
+                base_frame = Image.new('RGBA', (w, h), (0, 0, 0, 0))
+
+            # Paste character
+            char_frame = char_frames[i]
+            if char_frame.getbbox(): # Only paste if there's content
+                base_frame.paste(char_frame, (0, 0), char_frame)
+
+            # Paste offsets
+            if has_offsets:
+                offset_frame = offset_frames[i]
+                if offset_frame.getbbox():
+                    base_frame.paste(offset_frame, (0, 0), offset_frame)
+            
+            combined.append(base_frame)
+        
+        return combined
 
     def set_section_visibility(self, original_visible, editor_visible, previews_visible):
         if original_visible:
