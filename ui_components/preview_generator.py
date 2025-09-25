@@ -143,7 +143,7 @@ class PreviewGenerator:
         consts = {'WIDTH': 32, 'HEIGHT': 16, 'WIDTH_HALF': 16, 'HEIGHT_HALF': 8}
         canvas_w, canvas_h = consts['WIDTH'] * 5, consts['HEIGHT'] * 5
         
-        shadow_pos = [self._get_image_center(f) for f in self.group_shadow_frames]
+        shadow_pos = [self._find_white_pixel_anchor(f) for f in self.group_shadow_frames]
         ref_pos = shadow_pos[0] if shadow_pos and shadow_pos[0] else None
 
         min_x, min_y, max_x, max_y = (0,0,0,0)
@@ -154,7 +154,7 @@ class PreviewGenerator:
             min_x, min_y, max_x, max_y = self.get_group_bounds(corrected_frame_data)
             group_fw, group_fh = math.ceil(max_x - min_x), math.ceil(max_y - min_y)
             char_anchor_0 = self._get_image_center(self.group_frames[0])
-            shadow_anchor_0 = self._get_image_center(self.group_shadow_frames[0])
+            shadow_anchor_0 = self._find_white_pixel_anchor(self.group_shadow_frames[0])
             if char_anchor_0 and shadow_anchor_0:
                 static_offset = (char_anchor_0[0] - shadow_anchor_0[0], char_anchor_0[1] - shadow_anchor_0[1])
 
@@ -216,14 +216,27 @@ class PreviewGenerator:
         bbox = image.getbbox()
         return ((bbox[0] + bbox[2]) // 2, (bbox[1] + bbox[3]) // 2) if bbox else None
     
+    def _find_white_pixel_anchor(self, image):
+        if image.mode != 'RGBA':
+            image = image.convert('RGBA')
+        
+        width, height = image.size
+        pixels = image.load()
+        white_pixel_color = (255, 255, 255, 255)
+        
+        for y in range(height):
+            for x in range(width):
+                if pixels[x, y] == white_pixel_color:
+                    return (x, y)
+        
+        return self._get_image_center(image)
+
     def _tint_image(self, image, color):
         if image.mode != 'RGBA':
             image = image.convert('RGBA')
         
         tint_layer = Image.new('RGBA', image.size, color)
         
-        # We only want to apply the tint where the original image has alpha
-        # So we use the original image's alpha channel as a mask for the tint layer
         return Image.composite(tint_layer, image, image)
 
 
