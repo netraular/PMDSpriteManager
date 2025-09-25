@@ -133,8 +133,53 @@ class PreviewGenerator:
         
         return {"frames": overlay_frames, "text_data": offset_texts, "durations": self.anim_data["durations"]}
 
-    def generate_iso_shadow_preview(self):
-        return self._generate_iso_preview(render_character=False)
+    def generate_shadow_combined_preview(self):
+        if not self.group_shadow_frames or not self.base_sprite_img:
+            return {"frames": [], "text_data": [], "durations": self.anim_data["durations"]}
+
+        canvas_w, canvas_h = 100, 100
+        
+        shadow_pos = [self._find_white_pixel_anchor(f) for f in self.group_shadow_frames]
+        ref_pos = shadow_pos[0] if shadow_pos and shadow_pos[0] else None
+
+        if not ref_pos:
+            return {"frames": [], "text_data": ["Offset: (N/A)"] * len(self.group_shadow_frames), "durations": self.anim_data["durations"]}
+
+        frames, texts = [], []
+
+        for i in range(len(self.group_shadow_frames)):
+            canvas = Image.new('RGBA', (canvas_w, canvas_h), (211, 211, 211, 255))
+            draw = ImageDraw.Draw(canvas)
+            
+            world_anchor = (canvas_w // 2, canvas_h // 2)
+            
+            current_pos = shadow_pos[i]
+            
+            if current_pos:
+                move_x = current_pos[0] - ref_pos[0]
+                move_y = current_pos[1] - ref_pos[1]
+                
+                shadow_center = (world_anchor[0] + move_x, world_anchor[1] + move_y)
+                
+                paste_pos = (shadow_center[0] - self.base_sprite_img.width // 2, 
+                             shadow_center[1] - self.base_sprite_img.height // 2)
+                
+                canvas.paste(self.base_sprite_img, paste_pos, self.base_sprite_img)
+                texts.append(f"Offset: ({move_x}, {move_y})")
+            else:
+                paste_pos = (world_anchor[0] - self.base_sprite_img.width // 2, 
+                             world_anchor[1] - self.base_sprite_img.height // 2)
+                canvas.paste(self.base_sprite_img, paste_pos, self.base_sprite_img)
+                texts.append("Offset: (N/A)")
+
+            s = 3
+            draw.line((world_anchor[0]-s, world_anchor[1], world_anchor[0]+s, world_anchor[1]), fill="red")
+            draw.line((world_anchor[0], world_anchor[1]-s, world_anchor[0], world_anchor[1]+s), fill="red")
+            
+            canvas = canvas.resize((canvas.width * 2, canvas.height * 2), Image.NEAREST)
+            frames.append(canvas)
+        
+        return {"frames": frames, "text_data": texts, "durations": self.anim_data["durations"]}
 
     def generate_iso_combined_preview(self, corrected_frame_data):
         return self._generate_iso_preview(render_character=True, corrected_frame_data=corrected_frame_data)
