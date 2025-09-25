@@ -1,29 +1,28 @@
 # animation_group_ui.py
 
 import os
-from tkinter import Frame, Label, Button, Entry, BooleanVar, Checkbutton, StringVar, messagebox
+from tkinter import Frame, Label, Button, Entry, BooleanVar, Checkbutton, StringVar
 from PIL import Image, ImageTk, ImageDraw, ImageOps
 import math
+from ui_components.animation_player import AnimationPlayer
+from ui_components.preview_generator import PreviewGenerator
 
 class AnimationGroupUI:
-    def __init__(self, parent, viewer, group_idx, anim_data, group_frames, group_offsets_frames, group_shadow_frames, group_metadata, sprite_folder, json_group_data, ai_callback):
+    def __init__(self, parent, viewer, group_idx, anim_data, group_frames, group_offsets_frames, group_shadow_frames, group_metadata, sprite_folder, anim_folder, json_group_data, ai_callback):
         self.parent = parent
         self.viewer = viewer
         self.group_idx = group_idx
         self.anim_data = anim_data
         self.group_frames = group_frames
-        self.group_offsets_frames = group_offsets_frames
-        self.group_shadow_frames = group_shadow_frames
-        self.group_metadata = group_metadata
         self.sprite_folder = sprite_folder
+        self.group_metadata = group_metadata
         self.json_group_data = json_group_data or {}
         self.ai_callback = ai_callback
 
-        self.after_ids = []
-        self.result_after_ids = []
-        self.overlay_after_ids = []
-        self.iso_shadow_after_ids = []
-        self.iso_combined_after_ids = []
+        self.preview_generator = PreviewGenerator(
+            anim_data, group_frames, group_metadata, group_shadow_frames, sprite_folder, anim_folder
+        )
+        self.players = {}
         
         self.string_vars = []
         self.mirror_vars = []
@@ -31,94 +30,66 @@ class AnimationGroupUI:
 
         self._setup_ui()
         self._populate_initial_data()
+        
+        durations = self.anim_data["durations"]
+        self.players["original"].set_animation([f.copy() for f in group_frames], durations)
+        self.players["original"].play()
+        if group_offsets_frames:
+            self.players["offsets"].set_animation([f.copy() for f in group_offsets_frames], durations)
+            self.players["offsets"].play()
+        if group_shadow_frames:
+            self.players["shadow"].set_animation([f.copy() for f in group_shadow_frames], durations)
+            self.players["shadow"].play()
+
         self.refresh_all_custom_previews()
         self.refresh_all_previews()
 
     def _setup_ui(self):
-        row_container = Frame(self.parent); row_container.pack(fill='x', padx=5, pady=5)
+        container = Frame(self.parent); container.pack(fill='x', padx=5, pady=5)
         
-        group_frame = Frame(row_container, bd=2, relief="groove"); group_frame.pack(side='left', fill='both', expand=True, padx=(0, 5))
-        header_frame = Frame(group_frame); header_frame.pack(fill='x', pady=5, padx=5)
-        header_left = Frame(header_frame); header_left.pack(side='left', fill='x', expand=True)
+        group_frame = Frame(container, bd=2, relief="groove"); group_frame.pack(side='left', fill='both', expand=True, padx=(0, 5))
+        h_frame = Frame(group_frame); h_frame.pack(fill='x', pady=5, padx=5)
+        Label(h_frame, text=f"Group {self.group_idx + 1}", font=('Arial', 12, 'bold')).pack(side='left')
+        self.name_entry = Entry(h_frame, width=20); self.name_entry.pack(side='left', padx=10)
+        Button(h_frame, text="AI Identify Sprites", command=lambda: self.ai_callback(self)).pack(side='left', padx=10)
         
-        Label(header_left, text=f"Group {self.group_idx + 1}", font=('Arial', 12, 'bold')).pack(side='left')
-        self.name_entry = Entry(header_left, width=20); self.name_entry.pack(side='left', padx=10)
+        content = Frame(group_frame); content.pack(fill="both", expand=True)
+        orig_previews = Frame(content); orig_previews.pack(side="left", padx=10)
         
-        self.ai_button = Button(header_left, text="AI Identify Sprites", command=lambda: self.ai_callback(self)); self.ai_button.pack(side='left', padx=10)
-        
-        content_frame = Frame(group_frame); content_frame.pack(fill="both", expand=True)
-        animation_previews_container = Frame(content_frame); animation_previews_container.pack(side="left", padx=10)
-        anim_panel = Frame(animation_previews_container); anim_panel.pack(side="left", padx=5)
-        anim_panel_copy = Frame(animation_previews_container); anim_panel_copy.pack(side="left", padx=5)
-        shadow_panel = Frame(animation_previews_container); shadow_panel.pack(side="left", padx=5)
-        frames_panel = Frame(content_frame); frames_panel.pack(side="left", fill="x", expand=True)
-        
-        # --- Previews Container ---
-        previews_container = Frame(row_container)
-        previews_container.pack(side='left', fill='y')
-        
-        Button(previews_container, text="Refresh Previews", command=self.refresh_all_previews).pack(pady=2, padx=2, fill='x')
+        self.players["original"] = AnimationPlayer(self.parent, Label(orig_previews, bg="lightgrey"))
+        self.players["original"].image_label.pack(side="left", padx=5)
+        self.players["offsets"] = AnimationPlayer(self.parent, Label(orig_previews, bg="lightgrey"))
+        self.players["offsets"].image_label.pack(side="left", padx=5)
+        self.players["shadow"] = AnimationPlayer(self.parent, Label(orig_previews, bg="lightgrey"))
+        self.players["shadow"].image_label.pack(side="left", padx=5)
 
-        # --- Uncorrected Overlay Preview (Left) ---
-        overlay_preview_frame = Frame(previews_container, bd=1, relief="sunken")
-        overlay_preview_frame.pack(side='left', fill='y', padx=(5, 0))
-        Label(overlay_preview_frame, text="Uncorrected Overlay", font=('Arial', 8, 'bold')).pack(pady=(5,0))
-        self.overlay_label = Label(overlay_preview_frame); self.overlay_label.pack(pady=5, padx=5, expand=True)
-        self.offset_label = Label(overlay_preview_frame, text="Offset: (N/A)", font=('Arial', 8)); self.offset_label.pack(pady=(0, 5))
-
-        # --- Corrected Result Preview (Middle) ---
-        result_preview_frame = Frame(previews_container, bd=1, relief="sunken")
-        result_preview_frame.pack(side='left', fill='y', padx=(5, 0))
-        Label(result_preview_frame, text="Corrected Preview", font=('Arial', 8, 'bold')).pack(pady=(5,0))
-        self.result_label = Label(result_preview_frame); self.result_label.pack(pady=5, padx=5, expand=True)
-        self.corrected_offset_label = Label(result_preview_frame, text="Offset: (N/A)", font=('Arial', 8))
-        self.corrected_offset_label.pack(pady=(0, 5))
-
-        # --- Isometric Shadow Preview (Far Right) ---
-        iso_shadow_preview_frame = Frame(previews_container, bd=1, relief="sunken")
-        iso_shadow_preview_frame.pack(side='left', fill='y', padx=(5, 0))
-        Label(iso_shadow_preview_frame, text="Isometric Shadow", font=('Arial', 8, 'bold')).pack(pady=(5,0))
-        self.iso_shadow_label = Label(iso_shadow_preview_frame)
-        self.iso_shadow_label.pack(pady=5, padx=5, expand=True)
-        self.iso_shadow_offset_label = Label(iso_shadow_preview_frame, text="Offset: (N/A)", font=('Arial', 8))
-        self.iso_shadow_offset_label.pack(pady=(0, 5))
+        frames_panel = Frame(content); frames_panel.pack(side="left", fill="x", expand=True)
         
-        # --- Isometric Combined Preview (Far Far Right) ---
-        iso_combined_preview_frame = Frame(previews_container, bd=1, relief="sunken")
-        iso_combined_preview_frame.pack(side='left', fill='y', padx=(5, 0))
-        Label(iso_combined_preview_frame, text="Isometric Combined", font=('Arial', 8, 'bold')).pack(pady=(5,0))
-        self.iso_combined_label = Label(iso_combined_preview_frame)
-        self.iso_combined_label.pack(pady=5, padx=5, expand=True)
-        self.iso_combined_offset_label = Label(iso_combined_preview_frame, text="Offset: (N/A)", font=('Arial', 8))
-        self.iso_combined_offset_label.pack(pady=(0, 5))
+        preview_container = Frame(container); preview_container.pack(side='left', fill='y')
+        Button(preview_container, text="Refresh Previews", command=self.refresh_all_previews).pack(pady=2, padx=2, fill='x')
+
+        self._create_preview_panel(preview_container, "overlay", "Uncorrected Overlay", "Offset: (N/A)")
+        self._create_preview_panel(preview_container, "corrected", "Corrected Preview", "Offset: (N/A)")
+        self._create_preview_panel(preview_container, "iso_shadow", "Isometric Shadow", "Offset: (N/A)")
+        self._create_preview_panel(preview_container, "iso_combined", "Isometric Combined", "Offset: (N/A)")
         
         durations = self.anim_data["durations"] * (len(self.group_frames) // len(self.anim_data["durations"]) + 1)
-        
-        anim_label = Label(anim_panel); anim_label.pack()
-        self._start_animation_loop(anim_label, [f.copy() for f in self.group_frames], durations[:len(self.group_frames)], self.after_ids)
-        
-        if self.group_offsets_frames:
-            anim_label_copy = Label(anim_panel_copy, bg="lightgrey"); anim_label_copy.pack()
-            self._start_animation_loop(anim_label_copy, [f.copy() for f in self.group_offsets_frames], durations[:len(self.group_offsets_frames)], self.after_ids)
-
-        if self.group_shadow_frames:
-            shadow_label = Label(shadow_panel, bg="lightgrey"); shadow_label.pack()
-            self._start_animation_loop(shadow_label, [f.copy() for f in self.group_shadow_frames], durations[:len(self.group_shadow_frames)], self.after_ids)
-
         for idx, frame in enumerate(self.group_frames):
-            frame_container = Frame(frames_panel); frame_container.grid(row=0, column=idx, padx=2, pady=2)
+            frame_cont = Frame(frames_panel); frame_cont.grid(row=0, column=idx, padx=2, pady=2)
             
-            display_frame = self._draw_anchors_on_frame(frame.copy(), idx)
-            display_frame.thumbnail((80, 80))
-            img = ImageTk.PhotoImage(display_frame)
-            lbl = Label(frame_container, image=img, relief="sunken", bd=1); lbl.image = img; lbl.pack()
+            disp_frame = self._draw_anchors_on_frame(frame.copy(), idx)
+            disp_frame.thumbnail((80, 80))
+            img = ImageTk.PhotoImage(disp_frame)
+            Label(frame_cont, image=img, relief="sunken", bd=1).image = img; Label(frame_cont, image=img).pack()
             
-            custom_sprite_lbl = Label(frame_container, relief="sunken", bd=1); custom_sprite_lbl.pack()
-            self.custom_sprite_labels.append(custom_sprite_lbl)
+            custom_lbl = Label(frame_cont, relief="sunken", bd=1); custom_lbl.pack()
+            self.custom_sprite_labels.append(custom_lbl)
 
-            input_frame = Frame(frame_container); input_frame.pack()
-            sv = StringVar(); entry = Entry(input_frame, width=5, textvariable=sv); entry.insert(0, "0"); entry.pack(side='left')
-            mirror_var = BooleanVar(); cb = Checkbutton(input_frame, variable=mirror_var); cb.pack(side='left')
+            input_frame = Frame(frame_cont); input_frame.pack()
+            sv = StringVar(value="0")
+            Entry(input_frame, width=5, textvariable=sv).pack(side='left')
+            mirror_var = BooleanVar()
+            Checkbutton(input_frame, variable=mirror_var).pack(side='left')
 
             self.string_vars.append(sv)
             self.mirror_vars.append(mirror_var)
@@ -127,32 +98,39 @@ class AnimationGroupUI:
             sv.trace_add("write", callback)
             mirror_var.trace_add("write", callback)
 
-            Label(frame_container, text=f"Dur: {durations[idx]}", font=('Arial', 7)).pack()
+            Label(frame_cont, text=f"Dur: {durations[idx]}", font=('Arial', 7)).pack()
+
+    def _create_preview_panel(self, parent, key, title, initial_text):
+        frame = Frame(parent, bd=1, relief="sunken")
+        frame.pack(side='left', fill='y', padx=(5, 0))
+        Label(frame, text=title, font=('Arial', 8, 'bold')).pack(pady=(5,0))
+        img_label = Label(frame); img_label.pack(pady=5, padx=5, expand=True)
+        txt_label = Label(frame, text=initial_text, font=('Arial', 8)); txt_label.pack(pady=(0,5))
+        self.players[key] = AnimationPlayer(self.parent, img_label, txt_label)
 
     def _populate_initial_data(self):
         default_name = self._get_default_group_name()
         self.name_entry.insert(0, self.json_group_data.get("name", default_name))
         
-        sprite_values = self.json_group_data.get("values", [])
+        values = self.json_group_data.get("values", [])
         for idx, sv in enumerate(self.string_vars):
-            if idx < len(sprite_values):
-                frame_val = sprite_values[idx]
-                sprite_id = frame_val if isinstance(frame_val, int) else frame_val.get("id", 0)
-                per_sprite_mirror = False if isinstance(frame_val, int) else frame_val.get("mirrored", False)
+            if idx < len(values):
+                val = values[idx]
+                sprite_id = val.get("id", 0) if isinstance(val, dict) else val
+                mirrored = val.get("mirrored", False) if isinstance(val, dict) else False
                 sv.set(str(sprite_id))
-                self.mirror_vars[idx].set(per_sprite_mirror)
+                self.mirror_vars[idx].set(mirrored)
 
     def _draw_anchors_on_frame(self, frame, frame_idx):
         if frame_idx < len(self.group_metadata):
             metadata = self.group_metadata[frame_idx]
-            all_anchors = metadata.get('anchors', {})
             draw = ImageDraw.Draw(frame)
-            cross_size = 2
-            for color_name, coords in all_anchors.items():
+            s = 2
+            for color, coords in metadata.get('anchors', {}).items():
                 if coords:
                     x, y = coords
-                    draw.line((x - cross_size, y, x + cross_size, y), fill=color_name, width=1)
-                    draw.line((x, y - cross_size, x, y + cross_size), fill=color_name, width=1)
+                    draw.line((x-s, y, x+s, y), fill=color, width=1)
+                    draw.line((x, y-s, x, y+s), fill=color, width=1)
         return frame
 
     def refresh_all_custom_previews(self):
@@ -160,584 +138,83 @@ class AnimationGroupUI:
             self.update_custom_sprite_preview(i)
 
     def update_custom_sprite_preview(self, frame_idx):
-        sv = self.string_vars[frame_idx]
-        mirror_var = self.mirror_vars[frame_idx]
-        label_to_update = self.custom_sprite_labels[frame_idx]
-        
-        frame_width, frame_height = self.anim_data["frame_width"], self.anim_data["frame_height"]
-        composite_frame = Image.new('RGBA', (frame_width, frame_height), (0, 0, 0, 0))
-        
-        sprite_num_str = sv.get()
-        sprite_img = None
+        sv, mirror_var = self.string_vars[frame_idx], self.mirror_vars[frame_idx]
+        w, h = self.anim_data["frame_width"], self.anim_data["frame_height"]
+        comp = Image.new('RGBA', (w, h))
 
         try:
-            if sprite_num_str.isdigit() and int(sprite_num_str) > 0:
-                sprite_path = os.path.join(self.sprite_folder, f"sprite_{int(sprite_num_str)}.png")
-                try:
-                    sprite_img = Image.open(sprite_path).convert('RGBA')
-                except FileNotFoundError:
-                    draw_err = ImageDraw.Draw(composite_frame)
-                    draw_err.text((frame_width // 2, frame_height // 2), f"?{sprite_num_str}?", fill="red", anchor="mm")
-            
-            if frame_idx < len(self.group_metadata):
+            sprite_num = int(sv.get())
+            sprite_img = self.preview_generator._load_sprite(sprite_num, mirror_var.get())
+            if sprite_img:
                 metadata = self.group_metadata[frame_idx]
-                all_anchors = metadata.get('anchors', {})
-                green_anchor = all_anchors.get("green")
-                black_anchor = all_anchors.get("black")
-                sprite_center_target = green_anchor or black_anchor
-                
-                if sprite_img and sprite_center_target:
-                    if mirror_var.get():
-                        sprite_img = ImageOps.mirror(sprite_img)
-                    sprite_w, sprite_h = sprite_img.size
-                    paste_x = sprite_center_target[0] - sprite_w // 2
-                    paste_y = sprite_center_target[1] - sprite_h // 2
-                    composite_frame.paste(sprite_img, (paste_x, paste_y), sprite_img)
-                
-                composite_frame = self._draw_anchors_on_frame(composite_frame, frame_idx)
-            
-            elif sprite_img:
-                sprite_w, sprite_h = sprite_img.size
-                paste_x = (frame_width - sprite_w) // 2
-                paste_y = (frame_height - sprite_h) // 2
-                composite_frame.paste(sprite_img, (paste_x, paste_y), sprite_img)
+                anchors = metadata.get('anchors', {})
+                target = anchors.get("green") or anchors.get("black")
+                if target:
+                    paste_pos = (target[0] - sprite_img.width // 2, target[1] - sprite_img.height // 2)
+                    comp.paste(sprite_img, paste_pos, sprite_img)
+            elif sprite_num > 0:
+                draw = ImageDraw.Draw(comp)
+                draw.text((w // 2, h // 2), f"?{sprite_num}?", fill="red", anchor="mm")
 
+            comp = self._draw_anchors_on_frame(comp, frame_idx)
         finally:
-            composite_frame.thumbnail((80, 80))
-            img_tk = ImageTk.PhotoImage(composite_frame)
-            label_to_update.config(image=img_tk)
-            label_to_update.image = img_tk
-
-    def _get_image_bottom_center(self, image):
-        """Calculates the bottom-center of the visible pixels in an image."""
-        bbox = image.getbbox()
-        if not bbox:
-            return None
-        center_x = (bbox[0] + bbox[2]) // 2
-        bottom_y = bbox[3]
-        return (center_x, bottom_y)
-
-    def _get_image_center(self, image):
-        """Calculates the geometric center of the visible pixels in an image."""
-        bbox = image.getbbox()
-        if not bbox:
-            return None
-        center_x = (bbox[0] + bbox[2]) // 2
-        center_y = (bbox[1] + bbox[3]) // 2
-        return (center_x, center_y)
-
-    def _get_generated_frame_data(self, apply_correction):
-        sprite_numbers = [int(sv.get()) if sv.get().isdigit() else 0 for sv in self.string_vars]
-        result_data = []
-        frame_width, frame_height = self.anim_data["frame_width"], self.anim_data["frame_height"]
-
-        for i, num in enumerate(sprite_numbers):
-            sprite_to_paste = None
-            if num > 0:
-                sprite_path = os.path.join(self.sprite_folder, f"sprite_{num}.png")
-                try:
-                    sprite_to_paste = Image.open(sprite_path).convert('RGBA')
-                except FileNotFoundError:
-                    pass
-            
-            if sprite_to_paste:
-                if self.mirror_vars[i].get():
-                    sprite_to_paste = ImageOps.mirror(sprite_to_paste)
-
-                all_anchors = self.group_metadata[i]['anchors']
-                sprite_center_target = all_anchors.get("green") or all_anchors.get("black")
-                anchor_x, anchor_y = sprite_center_target
-                
-                sprite_w, sprite_h = sprite_to_paste.size
-                initial_paste_x = anchor_x - sprite_w // 2
-                initial_paste_y = anchor_y - sprite_h // 2
-                
-                final_paste_x, final_paste_y = initial_paste_x, initial_paste_y
-                
-                if apply_correction:
-                    original_frame = self.group_frames[i]
-                    temp_frame = Image.new('RGBA', (frame_width, frame_height), (0, 0, 0, 0))
-                    temp_frame.paste(sprite_to_paste, (initial_paste_x, initial_paste_y), sprite_to_paste)
-
-                    center_orig = self._get_image_bottom_center(original_frame)
-                    center_temp = self._get_image_bottom_center(temp_frame)
-                    
-                    correction_x, correction_y = 0, 0
-                    if center_orig and center_temp:
-                        correction_x = center_orig[0] - center_temp[0]
-                        correction_y = center_orig[1] - center_temp[1]
-
-                    final_paste_x += int(round(correction_x))
-                    final_paste_y += int(round(correction_y))
-                
-                result_data.append({"image": sprite_to_paste, "pos": (final_paste_x, final_paste_y)})
-            else:
-                result_data.append({"image": None, "pos": (0, 0)})
-        return result_data
+            comp.thumbnail((80, 80))
+            img_tk = ImageTk.PhotoImage(comp)
+            self.custom_sprite_labels[frame_idx].config(image=img_tk)
+            self.custom_sprite_labels[frame_idx].image = img_tk
 
     def refresh_all_previews(self):
-        self.load_corrected_result_animation()
-        self.load_uncorrected_overlay_animation()
-        self.load_isometric_shadow_animation()
-        self.load_isometric_combined_animation()
+        ids = [int(sv.get()) if sv.get().isdigit() else 0 for sv in self.string_vars]
+        mirrors = [mv.get() for mv in self.mirror_vars]
+        durations = self.anim_data["durations"]
 
-    def _get_group_bounds(self):
-        min_x, min_y, max_x, max_y = float('inf'), float('inf'), float('-inf'), float('-inf')
-        has_visible_sprites = False
+        uncorrected_data = self.preview_generator.get_generated_frame_data(ids, mirrors, False)
+        corrected_data = self.preview_generator.get_generated_frame_data(ids, mirrors, True)
 
-        frame_data_list = self._get_generated_frame_data(apply_correction=True)
+        overlay_res = self.preview_generator.generate_overlay_preview(uncorrected_data)
+        self.players["overlay"].set_animation(**overlay_res)
+        self.players["overlay"].play()
 
-        for frame_data in frame_data_list:
-            sprite_img = frame_data["image"]
-            if sprite_img:
-                has_visible_sprites = True
-                paste_x, paste_y = frame_data["pos"]
-                sprite_w, sprite_h = sprite_img.size
-                
-                min_x = min(min_x, paste_x)
-                min_y = min(min_y, paste_y)
-                max_x = max(max_x, paste_x + sprite_w)
-                max_y = max(max_y, paste_y + sprite_h)
+        corrected_res = self.preview_generator.generate_corrected_preview(corrected_data)
+        self.players["corrected"].set_animation(**corrected_res)
+        self.players["corrected"].play()
         
-        if not has_visible_sprites:
-            w, h = self.anim_data["frame_width"], self.anim_data["frame_height"]
-            return (0, 0, w, h)
+        iso_shadow_res = self.preview_generator.generate_iso_shadow_preview()
+        self.players["iso_shadow"].set_animation(**iso_shadow_res)
+        self.players["iso_shadow"].play()
 
-        return (int(min_x), int(min_y), int(max_x), int(max_y))
-
-    def load_corrected_result_animation(self):
-        for aid in self.result_after_ids: self.parent.after_cancel(aid)
-        self.result_after_ids.clear()
-
-        min_x, min_y, max_x, max_y = self._get_group_bounds()
-        
-        new_framewidth = math.ceil(max_x - min_x)
-        new_frameheight = math.ceil(max_y - min_y)
-
-        custom_frames_data = self._get_generated_frame_data(apply_correction=True)
-        if not custom_frames_data: return
-
-        final_offsets = []
-        for frame_data in custom_frames_data:
-            if frame_data["image"]:
-                abs_paste_x, abs_paste_y = frame_data["pos"]
-                final_offsets.append( (round(abs_paste_x - min_x), round(abs_paste_y - min_y)) )
-            else:
-                final_offsets.append( (0,0) )
-        
-        offset_texts = [f"Offset: {offset}" for offset in final_offsets]
-
-        preview_canvas_width = new_framewidth + 20
-        preview_canvas_height = new_frameheight + 20
-
-        final_frames = []
-        for frame_data in custom_frames_data:
-            final_frame = Image.new('RGBA', (preview_canvas_width, preview_canvas_height), (211, 211, 211, 255))
-            draw = ImageDraw.Draw(final_frame)
-
-            box_x0 = (preview_canvas_width - new_framewidth) // 2
-            box_y0 = (preview_canvas_height - new_frameheight) // 2
-            box_x1 = box_x0 + new_framewidth
-            box_y1 = box_y0 + new_frameheight
-            draw.rectangle([box_x0, box_y0, box_x1, box_y1], fill=None, outline="grey")
-            
-            sprite_img = frame_data["image"]
-            if sprite_img:
-                abs_paste_x, abs_paste_y = frame_data["pos"]
-                
-                relative_paste_x = abs_paste_x - min_x
-                relative_paste_y = abs_paste_y - min_y
-                
-                final_paste_x_in_box = box_x0 + int(round(relative_paste_x))
-                final_paste_y_in_box = box_y0 + int(round(relative_paste_y))
-                
-                final_paste_pos = (final_paste_x_in_box, final_paste_y_in_box)
-                final_frame.paste(sprite_img, final_paste_pos, sprite_img)
-
-            final_frames.append(final_frame)
-
-        durations = self.anim_data["durations"] * (len(final_frames) // len(self.anim_data["durations"]) + 1)
-        self._start_animation_loop(
-            image_label=self.result_label, 
-            frames=final_frames, 
-            durations=durations[:len(final_frames)], 
-            id_storage_list=self.result_after_ids,
-            text_label=self.corrected_offset_label,
-            text_data=offset_texts
-        )
-
-    def _tint_image(self, image, color):
-        image = image.convert('RGBA')
-        color_img = Image.new('RGBA', image.size, color)
-        alpha_mask = image.getchannel('A')
-        tinted_sprite = Image.new('RGBA', image.size, (0, 0, 0, 0))
-        tinted_sprite.paste(color_img, (0, 0), alpha_mask)
-        return tinted_sprite
-
-    def load_uncorrected_overlay_animation(self):
-        for aid in self.overlay_after_ids: self.parent.after_cancel(aid)
-        self.overlay_after_ids.clear()
-
-        uncorrected_frames_data = self._get_generated_frame_data(apply_correction=False)
-        if not uncorrected_frames_data: return
-
-        uncorrected_frames = []
-        frame_width, frame_height = self.anim_data["frame_width"], self.anim_data["frame_height"]
-        for frame_data in uncorrected_frames_data:
-            composite = Image.new('RGBA', (frame_width, frame_height), (0,0,0,0))
-            if frame_data["image"]:
-                paste_pos = (int(round(frame_data["pos"][0])), int(round(frame_data["pos"][1])))
-                composite.paste(frame_data["image"], paste_pos, frame_data["image"])
-            uncorrected_frames.append(composite)
-
-        if len(self.group_frames) != len(uncorrected_frames): return
-            
-        canvas_width, canvas_height = self.anim_data["frame_width"] * 2, self.anim_data["frame_height"] * 2
-        overlay_frames = []
-        offset_texts = []
-        
-        for i in range(len(uncorrected_frames)):
-            composite = Image.new('RGBA', (canvas_width, canvas_height), (0,0,0,0))
-            tinted_original = self._tint_image(self.group_frames[i], (255, 0, 0, 128))
-            tinted_custom = self._tint_image(uncorrected_frames[i], (0, 0, 255, 128))
-            paste_pos = (self.anim_data["frame_width"] // 2, self.anim_data["frame_height"] // 2)
-            composite.paste(tinted_original, paste_pos, tinted_original)
-            composite.paste(tinted_custom, paste_pos, tinted_custom)
-            overlay_frames.append(composite)
-
-            center_orig = self._get_image_bottom_center(self.group_frames[i])
-            center_custom = self._get_image_bottom_center(uncorrected_frames[i])
-
-            if center_orig and center_custom:
-                dx = center_custom[0] - center_orig[0]
-                dy = center_custom[1] - center_orig[1]
-                offset_texts.append(f"Offset: ({dx}, {dy})")
-            else:
-                offset_texts.append("Offset: (N/A)")
-
-        durations = self.anim_data["durations"] * (len(overlay_frames) // len(self.anim_data["durations"]) + 1)
-        self._start_animation_loop(
-            image_label=self.overlay_label, 
-            frames=overlay_frames, 
-            durations=durations[:len(overlay_frames)], 
-            id_storage_list=self.overlay_after_ids,
-            text_label=self.offset_label,
-            text_data=offset_texts
-        )
-
-    def _grid_to_screen(self, grid_x, grid_y, origin, TILE_WIDTH_HALF, TILE_HEIGHT_HALF):
-        screen_x = origin[0] + (grid_x - grid_y) * TILE_WIDTH_HALF
-        screen_y = origin[1] + (grid_x + grid_y) * TILE_HEIGHT_HALF
-        return int(screen_x), int(screen_y)
-
-    def _draw_iso_grid(self, image, origin, consts):
-        draw = ImageDraw.Draw(image)
-        fill_color = (200, 200, 200, 255)
-        outline_color = (150, 150, 150, 255)
-        
-        for y in range(3):
-            for x in range(3):
-                pos = self._grid_to_screen(x, y, origin, consts['WIDTH_HALF'], consts['HEIGHT_HALF'])
-                top = (pos[0] + consts['WIDTH_HALF'], pos[1])
-                right = (pos[0] + consts['WIDTH'], pos[1] + consts['HEIGHT_HALF'])
-                bottom = (pos[0] + consts['WIDTH_HALF'], pos[1] + consts['HEIGHT'])
-                left = (pos[0], pos[1] + consts['HEIGHT_HALF'])
-                draw.polygon([top, right, bottom, left], fill=fill_color, outline=outline_color)
-
-    def load_isometric_shadow_animation(self):
-        for aid in self.iso_shadow_after_ids: self.parent.after_cancel(aid)
-        self.iso_shadow_after_ids.clear()
-
-        base_sprite_img = None
-        try:
-            sprite_base_path = os.path.join(self.viewer.anim_folder, "sprite_base.png")
-            if os.path.exists(sprite_base_path):
-                base_sprite_img = Image.open(sprite_base_path).convert('RGBA')
-        except Exception as e:
-            print(f"Could not load sprite_base.png for shadow preview: {e}")
-
-        tile_consts = {'WIDTH': 32, 'HEIGHT': 16, 'WIDTH_HALF': 16, 'HEIGHT_HALF': 8}
-        canvas_width = tile_consts['WIDTH'] * 5
-        canvas_height = tile_consts['HEIGHT'] * 5
-
-        shadow_positions = [self._get_image_center(f) for f in self.group_shadow_frames]
-        reference_pos = shadow_positions[0] if shadow_positions and shadow_positions[0] is not None else None
-
-        iso_shadow_frames = []
-        offset_texts = []
-
-        for i in range(len(self.group_frames)):
-            canvas = Image.new('RGBA', (canvas_width, canvas_height), (255, 255, 255, 0))
-            draw = ImageDraw.Draw(canvas)
-            
-            world_anchor_x = canvas_width // 2
-            world_anchor_y = canvas_height // 2
-            center_tile_top_corner_x = world_anchor_x - tile_consts['WIDTH_HALF']
-            center_tile_top_corner_y = world_anchor_y - tile_consts['HEIGHT_HALF']
-            static_grid_origin_x = center_tile_top_corner_x
-            static_grid_origin_y = center_tile_top_corner_y - 2 * tile_consts['HEIGHT_HALF']
-            self._draw_iso_grid(canvas, (static_grid_origin_x, static_grid_origin_y), tile_consts)
-
-            current_shadow_anchor = shadow_positions[i] if i < len(shadow_positions) else None
-
-            if base_sprite_img and current_shadow_anchor:
-                movement_x, movement_y = 0, 0
-                if reference_pos:
-                    movement_x = current_shadow_anchor[0] - reference_pos[0]
-                    movement_y = current_shadow_anchor[1] - reference_pos[1]
-
-                target_center_x = world_anchor_x + movement_x
-                target_center_y = world_anchor_y + movement_y
-
-                shadow_w, shadow_h = base_sprite_img.size
-                paste_x = int(round(target_center_x - (shadow_w // 2)))
-                paste_y = int(round(target_center_y - (shadow_h // 2)))
-                
-                canvas.paste(base_sprite_img, (paste_x, paste_y), base_sprite_img)
-
-                offset_texts.append(f"Offset: ({movement_x}, {movement_y})")
-            else:
-                offset_texts.append("Offset: (N/A)")
-
-            cross_size = 3
-            draw.line((world_anchor_x - cross_size, world_anchor_y, world_anchor_x + cross_size, world_anchor_y), fill="red", width=1)
-            draw.line((world_anchor_x, world_anchor_y - cross_size, world_anchor_x, world_anchor_y + cross_size), fill="red", width=1)
-
-            canvas = canvas.resize((canvas.width * 2, canvas.height * 2), Image.NEAREST)
-            iso_shadow_frames.append(canvas)
-
-        durations = self.anim_data["durations"] * (len(iso_shadow_frames) // len(self.anim_data["durations"]) + 1)
-        self._start_animation_loop(
-            image_label=self.iso_shadow_label, 
-            frames=iso_shadow_frames, 
-            durations=durations[:len(iso_shadow_frames)], 
-            id_storage_list=self.iso_shadow_after_ids,
-            text_label=self.iso_shadow_offset_label,
-            text_data=offset_texts,
-            thumbnail_size=(400, 400)
-        )
-
-    def load_isometric_combined_animation(self):
-        for aid in self.iso_combined_after_ids: self.parent.after_cancel(aid)
-        self.iso_combined_after_ids.clear()
-
-        # --- Get common resources ---
-        base_sprite_img = None
-        try:
-            sprite_base_path = os.path.join(self.viewer.anim_folder, "sprite_base.png")
-            if os.path.exists(sprite_base_path):
-                base_sprite_img = Image.open(sprite_base_path).convert('RGBA')
-        except Exception as e:
-            print(f"Could not load sprite_base.png for combined preview: {e}")
-
-        custom_frames_data = self._get_generated_frame_data(apply_correction=True)
-        if not custom_frames_data: return
-
-        min_x, min_y, max_x, max_y = self._get_group_bounds()
-        group_fw = math.ceil(max_x - min_x)
-        group_fh = math.ceil(max_y - min_y)
-
-        tile_consts = {'WIDTH': 32, 'HEIGHT': 16, 'WIDTH_HALF': 16, 'HEIGHT_HALF': 8}
-        canvas_width = tile_consts['WIDTH'] * 5
-        canvas_height = tile_consts['HEIGHT'] * 5
-
-        # --- Calculate static offset between original character and shadow ---
-        static_offset = (0, 0)
-        offset_text_str = "Offset: (N/A)"
-        if self.group_frames and self.group_shadow_frames:
-            char_anchor_0 = self._get_image_center(self.group_frames[0])
-            shadow_anchor_0 = self._get_image_center(self.group_shadow_frames[0])
-            if char_anchor_0 and shadow_anchor_0:
-                static_offset = (
-                    char_anchor_0[0] - shadow_anchor_0[0],
-                    char_anchor_0[1] - shadow_anchor_0[1]
-                )
-                offset_text_str = f"Offset: ({static_offset[0]}, {static_offset[1]})"
-        
-        offset_texts = [offset_text_str] * len(self.group_frames)
-
-        # --- Get shadow positions for each frame ---
-        shadow_positions = [self._get_image_center(f) for f in self.group_shadow_frames]
-        reference_pos = shadow_positions[0] if shadow_positions and shadow_positions[0] is not None else None
-
-        # --- Generate combined frames ---
-        combined_frames = []
-        for i in range(len(self.group_frames)):
-            canvas = Image.new('RGBA', (canvas_width, canvas_height), (255, 255, 255, 0))
-            draw = ImageDraw.Draw(canvas)
-            
-            world_anchor_x = canvas_width // 2
-            world_anchor_y = canvas_height // 2
-            center_tile_top_corner_x = world_anchor_x - tile_consts['WIDTH_HALF']
-            center_tile_top_corner_y = world_anchor_y - tile_consts['HEIGHT_HALF']
-            static_grid_origin_x = center_tile_top_corner_x
-            static_grid_origin_y = center_tile_top_corner_y - 2 * tile_consts['HEIGHT_HALF']
-            self._draw_iso_grid(canvas, (static_grid_origin_x, static_grid_origin_y), tile_consts)
-
-            # --- Calculate shadow position for this frame ---
-            shadow_target_center_x, shadow_target_center_y = world_anchor_x, world_anchor_y
-            current_shadow_anchor = shadow_positions[i] if i < len(shadow_positions) else None
-            if base_sprite_img and current_shadow_anchor and reference_pos:
-                movement_x = current_shadow_anchor[0] - reference_pos[0]
-                movement_y = current_shadow_anchor[1] - reference_pos[1]
-                shadow_target_center_x = world_anchor_x + movement_x
-                shadow_target_center_y = world_anchor_y + movement_y
-                
-                shadow_w, shadow_h = base_sprite_img.size
-                paste_x = shadow_target_center_x - (shadow_w // 2)
-                paste_y = shadow_target_center_y - (shadow_h // 2)
-                canvas.paste(base_sprite_img, (paste_x, paste_y), base_sprite_img)
-
-            # --- Calculate character position for this frame ---
-            sprite_img = custom_frames_data[i]["image"]
-            if sprite_img:
-                # The character's frame should be positioned relative to the shadow's adjusted center
-                char_frame_origin_x = shadow_target_center_x + static_offset[0] - (group_fw // 2)
-                char_frame_origin_y = shadow_target_center_y + static_offset[1] - (group_fh // 2)
-
-                # Get the sprite's position relative to its own animation frame
-                abs_paste_x, abs_paste_y = custom_frames_data[i]["pos"]
-                relative_paste_x = abs_paste_x - min_x
-                relative_paste_y = abs_paste_y - min_y
-
-                # Final paste position
-                paste_x = char_frame_origin_x + relative_paste_x
-                paste_y = char_frame_origin_y + relative_paste_y
-                
-                canvas.paste(sprite_img, (paste_x, paste_y), sprite_img)
-
-            cross_size = 3
-            draw.line((world_anchor_x - cross_size, world_anchor_y, world_anchor_x + cross_size, world_anchor_y), fill="red", width=1)
-            draw.line((world_anchor_x, world_anchor_y - cross_size, world_anchor_x, world_anchor_y + cross_size), fill="red", width=1)
-
-            canvas = canvas.resize((canvas.width * 2, canvas.height * 2), Image.NEAREST)
-            combined_frames.append(canvas)
-
-        # --- Start animation loop ---
-        durations = self.anim_data["durations"] * (len(combined_frames) // len(self.anim_data["durations"]) + 1)
-        self._start_animation_loop(
-            image_label=self.iso_combined_label, 
-            frames=combined_frames, 
-            durations=durations[:len(combined_frames)], 
-            id_storage_list=self.iso_combined_after_ids,
-            text_label=self.iso_combined_offset_label,
-            text_data=offset_texts,
-            thumbnail_size=(400, 400)
-        )
-
+        iso_combined_res = self.preview_generator.generate_iso_combined_preview(corrected_data)
+        self.players["iso_combined"].set_animation(**iso_combined_res)
+        self.players["iso_combined"].play()
+    
     def set_sprite_values(self, sprite_numbers, mirror_flags):
-        for idx, sprite_number in enumerate(sprite_numbers):
-            if sprite_number > 0:
-                self.string_vars[idx].set(str(sprite_number))
+        for idx, num in enumerate(sprite_numbers):
+            if num > 0:
+                self.string_vars[idx].set(str(num))
                 self.mirror_vars[idx].set(mirror_flags[idx])
 
     def get_data(self):
-        group_entry = {"name": self.name_entry.get().strip()}
-
-        values_list = []
-        for i, sv in enumerate(self.string_vars):
-            sprite_id = int(sv.get()) if sv.get().isdigit() else 0
-            is_mirrored = self.mirror_vars[i].get()
-            values_list.append({"id": sprite_id, "mirrored": is_mirrored})
-
-        min_x, min_y, max_x, max_y = self._get_group_bounds()
+        ids = [int(sv.get()) if sv.get().isdigit() else 0 for sv in self.string_vars]
+        mirrors = [mv.get() for mv in self.mirror_vars]
         
-        group_entry["framewidth"] = math.ceil(max_x - min_x)
-        group_entry["frameheight"] = math.ceil(max_y - min_y)
-
-        frame_data_list = self._get_generated_frame_data(apply_correction=True)
-        relative_offsets = []
-        for frame_data in frame_data_list:
-            if frame_data["image"]:
-                abs_paste_x, abs_paste_y = frame_data["pos"]
-                relative_paste_x = abs_paste_x - min_x
-                relative_paste_y = abs_paste_y - min_y
-                relative_offsets.append([round(relative_paste_x), round(relative_paste_y)])
-            else:
-                relative_offsets.append([0, 0])
-
-        group_entry["values"] = values_list
-        group_entry["offsets"] = relative_offsets
-        return group_entry
-
-    def _calculate_all_corrected_offsets(self):
-        corrected_offsets = []
-        frame_width, frame_height = self.anim_data["frame_width"], self.anim_data["frame_height"]
-
-        for i, sv in enumerate(self.string_vars):
-            sprite_id = int(sv.get()) if sv.get().isdigit() else 0
-            is_mirrored = self.mirror_vars[i].get()
-
-            original_anchor = self.group_metadata[i]['anchors'].get('black')
-            if not original_anchor:
-                corrected_offsets.append((0,0))
-                continue
-
-            sprite_to_paste = None
-            if sprite_id > 0:
-                try:
-                    path = os.path.join(self.sprite_folder, f"sprite_{sprite_id}.png")
-                    sprite_to_paste = Image.open(path).convert('RGBA')
-                except FileNotFoundError:
-                    pass
-            
-            if sprite_to_paste:
-                if is_mirrored:
-                    sprite_to_paste = ImageOps.mirror(sprite_to_paste)
-
-                anchor_x, anchor_y = original_anchor
-                sprite_w, sprite_h = sprite_to_paste.size
-                initial_paste_x = anchor_x - sprite_w // 2
-                initial_paste_y = anchor_y - sprite_h // 2
-                
-                temp_frame = Image.new('RGBA', (frame_width, frame_height), (0, 0, 0, 0))
-                temp_frame.paste(sprite_to_paste, (initial_paste_x, initial_paste_y), sprite_to_paste)
-
-                center_orig = self._get_image_bottom_center(self.group_frames[i])
-                center_temp = self._get_image_bottom_center(temp_frame)
-
-                correction_x, correction_y = 0, 0
-                if center_orig and center_temp:
-                    correction_x = center_orig[0] - center_temp[0]
-                    correction_y = center_orig[1] - center_temp[1]
-
-                corrected_anchor_x = anchor_x + int(round(correction_x))
-                corrected_anchor_y = anchor_y + int(round(correction_y))
-                corrected_offsets.append((corrected_anchor_x, corrected_anchor_y))
-            else:
-                corrected_offsets.append(original_anchor)
+        corrected_data = self.preview_generator.get_generated_frame_data(ids, mirrors, True)
+        min_x, min_y, max_x, max_y = self.preview_generator.get_group_bounds(corrected_data)
         
-        return corrected_offsets
+        offsets = [[round(d["pos"][0] - min_x), round(d["pos"][1] - min_y)] if d["image"] else [0,0] for d in corrected_data]
+        values = [{"id": i, "mirrored": m} for i, m in zip(ids, mirrors)]
+
+        return {
+            "name": self.name_entry.get().strip(),
+            "framewidth": math.ceil(max_x - min_x),
+            "frameheight": math.ceil(max_y - min_y),
+            "values": values,
+            "offsets": offsets
+        }
 
     def cleanup(self):
-        for aid in self.after_ids: self.parent.after_cancel(aid)
-        for aid in self.result_after_ids: self.parent.after_cancel(aid)
-        for aid in self.overlay_after_ids: self.parent.after_cancel(aid)
-        for aid in self.iso_shadow_after_ids: self.parent.after_cancel(aid)
-        for aid in self.iso_combined_after_ids: self.parent.after_cancel(aid)
-        self.after_ids.clear()
-        self.result_after_ids.clear()
-        self.overlay_after_ids.clear()
-        self.iso_shadow_after_ids.clear()
-        self.iso_combined_after_ids.clear()
-
-    def _start_animation_loop(self, image_label, frames, durations, id_storage_list, text_label=None, text_data=None, thumbnail_size=(200, 200)):
-        current_frame = [0]
-        def update():
-            if not image_label.winfo_exists() or not frames: return
-            idx = current_frame[0] % len(frames)
-            
-            frame = frames[idx]
-            frame.thumbnail(thumbnail_size); img = ImageTk.PhotoImage(frame)
-            image_label.config(image=img); image_label.image = img
-            
-            if text_label and text_data:
-                text_label.config(text=text_data[idx % len(text_data)])
-            
-            delay = durations[idx % len(durations)] * 33; current_frame[0] += 1
-            after_id = self.parent.after(delay, update)
-            id_storage_list.append(after_id)
-        update()
+        for player in self.players.values():
+            player.stop()
+        self.players.clear()
 
     def _get_default_group_name(self):
         anim_name = self.anim_data["name"]

@@ -3,6 +3,7 @@
 from tkinter import Frame, Label, Button, Entry, Canvas, Scrollbar, messagebox, filedialog, OptionMenu, StringVar
 from PIL import Image, ImageTk, ImageOps, ImageDraw
 from sprite_sheet_handler import SpriteSheetHandler
+from ui_components.animation_player import AnimationPlayer
 import os
 import json
 import math
@@ -21,7 +22,7 @@ class AnimationCreator:
         self.image_path = None
         self.output_folder = None
         self.json_data = None
-        self.after_ids = []
+        self.players = []
         self.canvas = None
         
         self.main_frame = Frame(self.parent_frame)
@@ -286,7 +287,11 @@ class AnimationCreator:
         anim_label = Label(anim_panel); anim_label.pack()
         
         offset_label = Label(anim_panel, text="Offset: [N/A]", font=('Arial', 8)); offset_label.pack(pady=(5,0))
-        self.start_animation(anim_label, final_frames, durations, text_label=offset_label, text_data=offset_texts)
+        
+        player = AnimationPlayer(self.parent_frame, anim_label, offset_label)
+        player.set_animation(final_frames, durations, offset_texts)
+        player.play()
+        self.players.append(player)
         
         sprite_panel = Frame(content_frame); sprite_panel.pack(side="right", fill="x", expand=True)
         for idx, frame in enumerate(raw_frames):
@@ -335,28 +340,9 @@ class AnimationCreator:
             placeholder = Image.new('RGBA', (40, 40), (0, 0, 0, 0))
             draw = ImageDraw.Draw(placeholder); draw.text((5, 10), f"?{sprite_id_str}?", fill="red")
             return placeholder
-
-    def start_animation(self, label, frames, durations, text_label=None, text_data=None):
-        valid_frames = [f for f in frames if f]
-        if not valid_frames:
-            label.config(image=None, text="[No valid frames]"); return
-        current_frame = [0]
-        def update():
-            if not label.winfo_exists(): return
-            frame_index = current_frame[0] % len(valid_frames)
-            
-            frame = valid_frames[frame_index]; frame.thumbnail((200, 200)); img = ImageTk.PhotoImage(frame)
-            label.config(image=img); label.image = img
-            
-            if text_label and text_data:
-                text_label.config(text=text_data[frame_index % len(text_data)])
-
-            delay = durations[frame_index % len(durations)] * 33
-            current_frame[0] += 1
-            self.after_ids.append(self.parent_frame.after(delay, update))
-        update()
             
     def clear_frame(self):
-        for aid in self.after_ids: self.parent_frame.after_cancel(aid)
-        self.after_ids.clear()
+        for player in self.players:
+            player.stop()
+        self.players.clear()
         for widget in self.main_frame.winfo_children(): widget.destroy()

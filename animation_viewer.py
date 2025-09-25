@@ -109,6 +109,7 @@ class AnimationViewer:
                 group_shadow_frames=all_shadow_frames[start:end] if all_shadow_frames else [],
                 group_metadata=all_metadata[start:end],
                 sprite_folder=self.sprite_folder,
+                anim_folder=self.anim_folder,
                 json_group_data=ui_compatible_json_data["sprites"].get(str(group_idx + 1)) if ui_compatible_json_data else None,
                 ai_callback=self.identify_group_sprites
             )
