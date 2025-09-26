@@ -284,7 +284,7 @@ class AnimationGroupUI:
         self.players["corrected"].set_animation(**corrected_res)
         self.players["corrected"].play()
         
-        shadow_combined_res = self.preview_generator.generate_shadow_combined_preview()
+        shadow_combined_res = self.preview_generator.generate_shadow_combined_preview(corrected_data)
         
         static_offset = shadow_combined_res.pop("static_shadow_offset", None)
         

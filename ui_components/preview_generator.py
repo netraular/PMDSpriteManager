@@ -133,89 +133,97 @@ class PreviewGenerator:
         
         return {"frames": overlay_frames, "text_data": offset_texts, "durations": self.anim_data["durations"]}
 
-    def generate_shadow_combined_preview(self):
+    def generate_shadow_combined_preview(self, corrected_frame_data):
         if not self.group_shadow_frames or not self.group_metadata or not self.base_sprite_img:
             return {"frames": [], "text_data": [], "durations": self.anim_data["durations"], "static_shadow_offset": None}
 
-        # Calculate the static offset between the character's center and shadow's center on the first frame
-        shadow_offset = None
+        # Calculate the static offset between the character's anchor and shadow's anchor on the first frame
+        sprite_anchor_offset = None
         shadow_anchor_0 = self._find_white_pixel_anchor(self.group_shadow_frames[0])
         offset_anchor_0 = self.group_metadata[0]['anchors'].get('green')
 
         if shadow_anchor_0 and offset_anchor_0:
-            shadow_offset = (offset_anchor_0[0] - shadow_anchor_0[0], offset_anchor_0[1] - shadow_anchor_0[1])
+            sprite_anchor_offset = (offset_anchor_0[0] - shadow_anchor_0[0], offset_anchor_0[1] - shadow_anchor_0[1])
 
         consts = {'WIDTH': 32, 'HEIGHT': 16, 'WIDTH_HALF': 16, 'HEIGHT_HALF': 8}
         canvas_w, canvas_h = consts['WIDTH'] * 5, consts['HEIGHT'] * 5
-        
-        # Get all anchor positions for all frames
-        shadow_positions = [self._find_white_pixel_anchor(f) for f in self.group_shadow_frames]
-        green_anchor_positions = [md['anchors'].get('green') for md in self.group_metadata]
-        
-        ref_shadow_pos = shadow_positions[0] if shadow_positions and shadow_positions[0] else None
-        ref_green_pos = green_anchor_positions[0] if green_anchor_positions and green_anchor_positions[0] else None
 
-        if not ref_shadow_pos:
-            return {"frames": [], "text_data": ["World Displacement: (N/A)"] * len(self.group_shadow_frames), "durations": self.anim_data["durations"], "static_shadow_offset": shadow_offset}
+        # Get the corrected position from the first frame as the reference "zero" point
+        ref_pos_corrected = None
+        if corrected_frame_data and corrected_frame_data[0] and corrected_frame_data[0]["image"]:
+            ref_pos_corrected = corrected_frame_data[0]["pos"]
+
+        if not ref_pos_corrected:
+            # Fallback if no sprites are defined, but we still want to show the shadow
+             return {"frames": [], "text_data": ["World Displacement: (N/A)"] * len(self.group_frames), "durations": self.anim_data["durations"], "static_shadow_offset": sprite_anchor_offset}
 
         frames, frame_texts = [], []
-        for i in range(len(self.group_shadow_frames)):
+        for i, frame_data in enumerate(corrected_frame_data):
             canvas = Image.new('RGBA', (canvas_w, canvas_h), (0, 0, 0, 0))
-            
             world_anchor = (canvas_w // 2, canvas_h // 2)
             grid_origin = (world_anchor[0] - consts['WIDTH_HALF'], world_anchor[1] - consts['HEIGHT_HALF'] * 3)
             self._draw_iso_grid(canvas, grid_origin, consts)
-            
             draw = ImageDraw.Draw(canvas)
 
-            # Calculate shadow movement relative to its first frame
-            shadow_move_x, shadow_move_y = 0, 0
-            current_shadow_pos = shadow_positions[i]
-            if current_shadow_pos and ref_shadow_pos:
-                shadow_move_x = current_shadow_pos[0] - ref_shadow_pos[0]
-                shadow_move_y = current_shadow_pos[1] - ref_shadow_pos[1]
-            
-            shadow_center = (world_anchor[0] + shadow_move_x, world_anchor[1] + shadow_move_y)
-            
-            # Paste the shadow sprite based on its movement
+            # Calculate total unified movement based on the corrected final position data
+            total_move_x, total_move_y = 0, 0
+            current_pos_corrected = frame_data["pos"]
+            if current_pos_corrected and frame_data["image"]:
+                total_move_x = current_pos_corrected[0] - ref_pos_corrected[0]
+                total_move_y = current_pos_corrected[1] - ref_pos_corrected[1]
+
+            # The shadow moves based on this unified displacement
+            shadow_center = (world_anchor[0] + total_move_x, world_anchor[1] + total_move_y)
             paste_pos = (shadow_center[0] - self.base_sprite_img.width // 2, 
                          shadow_center[1] - self.base_sprite_img.height // 2)
             canvas.paste(self.base_sprite_img, paste_pos, self.base_sprite_img)
+            
+            world_disp_text = f"World Displacement: ({round(total_move_x)}, {round(total_move_y)})"
+            render_offset_text = "Render Offset: (N/A)"
 
-            # Calculate character anchor movement relative to its first frame
-            char_move_x, char_move_y = 0, 0
-            current_green_pos = green_anchor_positions[i]
-            if current_green_pos and ref_green_pos:
-                char_move_x = current_green_pos[0] - ref_green_pos[0]
-                char_move_y = current_green_pos[1] - ref_green_pos[1]
+            if sprite_anchor_offset:
+                # The green crosshair position is the shadow's new position plus the static offset
+                crosshair_x = shadow_center[0] + sprite_anchor_offset[0]
+                crosshair_y = shadow_center[1] + sprite_anchor_offset[1]
 
-            if shadow_offset and current_green_pos:
-                # Calculate where the character's anchor point should be on the canvas
-                crosshair_x = shadow_center[0] + shadow_offset[0] + char_move_x
-                crosshair_y = shadow_center[1] + shadow_offset[1] + char_move_y
-
-                # Get the character sprite for this frame
                 char_sprite = self.group_frames[i]
-                if char_sprite and char_sprite.getbbox():
-                    # Calculate the top-left position to paste the character frame
-                    # so its anchor aligns with the crosshair position.
+                current_green_pos = self.group_metadata[i]['anchors'].get('green')
+                
+                bbox = char_sprite.getbbox()
+                if bbox and current_green_pos:
+                    # Calculate paste position for the full frame
                     paste_x = crosshair_x - current_green_pos[0]
                     paste_y = crosshair_y - current_green_pos[1]
                     
-                    # Paste the character
+                    # Define the top-left corner of the actual asset (bounding box)
+                    render_anchor_x = paste_x + bbox[0]
+                    render_anchor_y = paste_y + bbox[1]
+
+                    # Draw the bounding box itself in yellow BEFORE pasting the sprite
+                    box_x1 = paste_x + bbox[2] - 1
+                    box_y1 = paste_y + bbox[3] - 1
+                    draw.rectangle([render_anchor_x, render_anchor_y, box_x1, box_y1], outline="yellow", width=1)
+
+                    # Paste the character sprite on top of the bounding box
                     canvas.paste(char_sprite, (paste_x, paste_y), char_sprite)
 
-                # Draw the green crosshair on top
-                s = 3
-                draw.line((crosshair_x-s, crosshair_y, crosshair_x+s, crosshair_y), fill="green", width=1)
-                draw.line((crosshair_x, crosshair_y-s, crosshair_x, crosshair_y+s), fill="green", width=1)
+                    s = 3
+                    # Draw the green crosshair (character anchor)
+                    draw.line((crosshair_x-s, crosshair_y, crosshair_x+s, crosshair_y), fill="green", width=1)
+                    draw.line((crosshair_x, crosshair_y-s, crosshair_x, crosshair_y+s), fill="green", width=1)
+                    
+                    # Draw the new lilac render offset cross at the top-left of the bounding box
+                    draw.line((render_anchor_x-s, render_anchor_y, render_anchor_x+s, render_anchor_y), fill="purple", width=1)
+                    draw.line((render_anchor_x, render_anchor_y-s, render_anchor_x, render_anchor_y+s), fill="purple", width=1)
+                    
+                    # Calculate and format the render offset text from the correct point
+                    render_offset_x = render_anchor_x - world_anchor[0]
+                    render_offset_y = render_anchor_y - world_anchor[1]
+                    render_offset_text = f"Render Offset: ({render_offset_x}, {render_offset_y})"
 
-            # Calculate and store the total displacement for this frame
-            total_offset_x = shadow_move_x + char_move_x
-            total_offset_y = shadow_move_y + char_move_y
-            frame_texts.append(f"World Displacement: ({total_offset_x}, {total_offset_y})")
+            frame_texts.append(f"{world_disp_text}\n{render_offset_text}")
 
-            # Draw the static world anchor
+            # Draw the static world anchor (red cross)
             s = 3
             draw.line((world_anchor[0]-s, world_anchor[1], world_anchor[0]+s, world_anchor[1]), fill="red")
             draw.line((world_anchor[0], world_anchor[1]-s, world_anchor[0], world_anchor[1]+s), fill="red")
@@ -223,7 +231,7 @@ class PreviewGenerator:
             canvas = canvas.resize((canvas.width * 2, canvas.height * 2), Image.NEAREST)
             frames.append(canvas)
         
-        return {"frames": frames, "text_data": frame_texts, "thumbnail_size": (400, 400), "durations": self.anim_data["durations"], "static_shadow_offset": shadow_offset}
+        return {"frames": frames, "text_data": frame_texts, "thumbnail_size": (400, 400), "durations": self.anim_data["durations"], "static_shadow_offset": sprite_anchor_offset}
 
     # Helper Methods
     def _load_sprite(self, sprite_id, is_mirrored):
