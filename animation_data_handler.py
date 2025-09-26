@@ -207,15 +207,81 @@ class AnimationDataHandler:
                 render_data.append({"image": None, "pos": (0, 0)})
         return render_data
 
+    def _get_image_center(self, image):
+        bbox = image.getbbox()
+        return ((bbox[0] + bbox[2]) // 2, (bbox[1] + bbox[3]) // 2) if bbox else None
+
+    def _find_white_pixel_anchor(self, image):
+        if image.mode != 'RGBA':
+            image = image.convert('RGBA')
+        
+        width, height = image.size
+        pixels = image.load()
+        white_pixel_color = (255, 255, 255, 255)
+        
+        for y in range(height):
+            for x in range(width):
+                if pixels[x, y] == white_pixel_color:
+                    return (x, y)
+        
+        return self._get_image_center(image)
+
+    def _calculate_isometric_render_data(self, corrected_frame_data, group_frames, group_shadow_frames, group_metadata):
+        if not group_shadow_frames or not group_metadata:
+            return None, [None] * len(group_frames)
+
+        sprite_anchor_offset = None
+        shadow_anchor_0 = self._find_white_pixel_anchor(group_shadow_frames[0])
+        offset_anchor_0 = group_metadata[0]['anchors'].get('green')
+
+        if shadow_anchor_0 and offset_anchor_0:
+            sprite_anchor_offset = (offset_anchor_0[0] - shadow_anchor_0[0], offset_anchor_0[1] - shadow_anchor_0[1])
+
+        ref_pos_corrected = None
+        if corrected_frame_data and corrected_frame_data[0] and corrected_frame_data[0]["image"]:
+            ref_pos_corrected = corrected_frame_data[0]["pos"]
+
+        if not ref_pos_corrected:
+            return sprite_anchor_offset, [None] * len(group_frames)
+
+        render_offsets = []
+        for i, frame_data in enumerate(corrected_frame_data):
+            current_render_offset = None
+            if sprite_anchor_offset:
+                total_move_x, total_move_y = 0, 0
+                current_pos_corrected = frame_data["pos"]
+                if current_pos_corrected and frame_data["image"]:
+                    total_move_x = current_pos_corrected[0] - ref_pos_corrected[0]
+                    total_move_y = current_pos_corrected[1] - ref_pos_corrected[1]
+
+                char_sprite = group_frames[i]
+                current_green_pos = group_metadata[i]['anchors'].get('green')
+                bbox = char_sprite.getbbox()
+
+                if bbox and current_green_pos:
+                    # Logic adapted from PreviewGenerator, independent of canvas/world_anchor
+                    paste_x = (total_move_x + sprite_anchor_offset[0]) - current_green_pos[0]
+                    paste_y = (total_move_y + sprite_anchor_offset[1]) - current_green_pos[1]
+                    
+                    render_anchor_x = paste_x + bbox[0]
+                    render_anchor_y = paste_y + bbox[1]
+                    
+                    current_render_offset = (render_anchor_x, render_anchor_y)
+            
+            render_offsets.append(current_render_offset)
+        
+        return sprite_anchor_offset, render_offsets
+
     def generate_animation_data(self, index):
         anim = self.anim_data[index]
-        all_frames, _, _, all_metadata = self._load_animation_assets(anim)
+        all_frames, _, all_shadow_frames, all_metadata = self._load_animation_assets(anim)
         grouped_sprites = {}
         try:
             matcher = SpriteMatcher(self.sprite_folder) if os.path.exists(self.sprite_folder) else None
             for group_idx in range(anim["total_groups"]):
                 start, end = group_idx * anim["frames_per_group"], (group_idx + 1) * anim["frames_per_group"]
                 group_frames = all_frames[start:end]
+                group_shadow_frames = all_shadow_frames[start:end] if all_shadow_frames else []
                 group_metadata = all_metadata[start:end]
 
                 values = []
@@ -241,20 +307,17 @@ class AnimationDataHandler:
                 
                 if not has_visible_sprites:
                     min_x, min_y, max_x, max_y = 0, 0, anim["frame_width"], anim["frame_height"]
-
-                relative_offsets = []
-                for data in render_data:
-                    if data["image"]:
-                        abs_px, abs_py = data["pos"]
-                        relative_offsets.append([round(abs_px - min_x), round(abs_py - min_y)])
-                    else:
-                        relative_offsets.append([0, 0])
+                
+                sprite_anchor_offset, render_offsets = self._calculate_isometric_render_data(
+                    render_data, group_frames, group_shadow_frames, group_metadata
+                )
 
                 group_name = self._get_default_group_name(anim["name"], anim["total_groups"], group_idx)
                 grouped_sprites[str(group_idx + 1)] = {
                     "name": group_name, 
                     "values": values, 
-                    "offsets": relative_offsets,
+                    "sprite_anchor_offset": sprite_anchor_offset,
+                    "render_offsets": render_offsets,
                     "framewidth": math.ceil(max_x - min_x),
                     "frameheight": math.ceil(max_y - min_y)
                 }
@@ -287,16 +350,17 @@ class AnimationDataHandler:
                     'name': group_data.get('name'),
                     'framewidth': group_data.get('framewidth', 2),
                     'frameheight': group_data.get('frameheight', 2),
+                    'sprite_anchor_offset': group_data.get('sprite_anchor_offset'),
                     'frames': []
                 }
 
-                offsets = group_data.get('offsets', [])
+                render_offsets = group_data.get('render_offsets', [])
                 for i, value in enumerate(group_data.get('values', [])):
                     original_id, is_mirrored = value.get('id', 0), value.get('mirrored', False)
-                    offset = offsets[i] if i < len(offsets) else [0, 0]
+                    render_offset = render_offsets[i] if i < len(render_offsets) else None
 
                     if original_id == 0:
-                        simplified_group['frames'].append({"id": "0", "offset": offset})
+                        simplified_group['frames'].append({"id": "0", "render_offset": render_offset})
                         continue
 
                     final_sprite_name = f"{original_id}_mirrored" if is_mirrored else str(original_id)
@@ -312,7 +376,7 @@ class AnimationDataHandler:
                         except FileNotFoundError: print(f"Warning: sprite_{original_id}.png not found.")
                         except Exception as e: print(f"Error processing sprite {original_id}: {e}")
                     
-                    simplified_group['frames'].append({"id": final_sprite_name, "offset": offset})
+                    simplified_group['frames'].append({"id": final_sprite_name, "render_offset": render_offset})
                 
                 simplified_json['sprites'][group_id] = simplified_group
 

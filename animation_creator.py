@@ -275,13 +275,9 @@ class AnimationCreator:
         raw_frames = self.get_group_frames(group_data)
         
         frame_data = group_data.get('frames', [])
-        offsets = [frame.get('offset', [0, 0]) for frame in frame_data]
-        offset_texts = [f"Offset: {offset}" for offset in offsets]
+        render_offsets = [frame.get('render_offset') for frame in frame_data]
+        offset_texts = [f"Render Offset: {offset}" for offset in render_offsets]
         
-        fw = group_data.get("framewidth")
-        fh = group_data.get("frameheight")
-        
-        final_frames = self._apply_offsets_to_frames(raw_frames, offsets, fw, fh) if offsets and fw and fh else raw_frames
         durations = self.json_data["durations"]
         anim_panel = Frame(content_frame); anim_panel.pack(side="left", padx=10)
         anim_label = Label(anim_panel); anim_label.pack()
@@ -289,7 +285,7 @@ class AnimationCreator:
         offset_label = Label(anim_panel, text="Offset: [N/A]", font=('Arial', 8)); offset_label.pack(pady=(5,0))
         
         player = AnimationPlayer(self.parent_frame, anim_label, offset_label)
-        player.set_animation(final_frames, durations, offset_texts)
+        player.set_animation(raw_frames, durations, offset_texts)
         player.play()
         self.players.append(player)
         
@@ -299,31 +295,6 @@ class AnimationCreator:
                 frame.thumbnail((80, 80)); img = ImageTk.PhotoImage(frame)
                 lbl = Label(sprite_panel, image=img); lbl.image = img; lbl.grid(row=0, column=idx, padx=2)
                 Label(sprite_panel, text=f"Dur: {durations[idx % len(durations)]}", font=('Arial', 7)).grid(row=1, column=idx)
-
-    def _apply_offsets_to_frames(self, frames, offsets, fw, fh):
-        cw, ch = fw * 2, fh * 2
-        positioned_frames = []
-        for i, sprite_img in enumerate(frames):
-            if i >= len(offsets) or not sprite_img: continue
-            composite = Image.new('RGBA', (cw, ch), (0, 0, 0, 0))
-            
-            relative_paste_x, relative_paste_y = offsets[i]
-            frame_origin_x, frame_origin_y = (cw - fw) // 2, (ch - fh) // 2
-            
-            paste_x = frame_origin_x + relative_paste_x
-            paste_y = frame_origin_y + relative_paste_y
-            
-            composite.paste(sprite_img, (paste_x, paste_y), sprite_img)
-            
-            draw = ImageDraw.Draw(composite)
-            box_x0 = frame_origin_x
-            box_y0 = frame_origin_y
-            box_x1 = box_x0 + fw
-            box_y1 = box_y0 + fh
-            draw.rectangle([box_x0, box_y0, box_x1, box_y1], outline="grey")
-            
-            positioned_frames.append(composite)
-        return positioned_frames
 
     def get_group_frames(self, group_data):
         frames = []

@@ -135,7 +135,7 @@ class PreviewGenerator:
 
     def generate_shadow_combined_preview(self, corrected_frame_data):
         if not self.group_shadow_frames or not self.group_metadata or not self.base_sprite_img:
-            return {"frames": [], "text_data": [], "durations": self.anim_data["durations"], "static_shadow_offset": None}
+            return {"frames": [], "text_data": [], "durations": self.anim_data["durations"], "static_shadow_offset": None, "render_offsets": []}
 
         # Calculate the static offset between the character's anchor and shadow's anchor on the first frame
         sprite_anchor_offset = None
@@ -155,9 +155,9 @@ class PreviewGenerator:
 
         if not ref_pos_corrected:
             # Fallback if no sprites are defined, but we still want to show the shadow
-             return {"frames": [], "text_data": ["World Displacement: (N/A)"] * len(self.group_frames), "durations": self.anim_data["durations"], "static_shadow_offset": sprite_anchor_offset}
+             return {"frames": [], "text_data": ["World Displacement: (N/A)"] * len(self.group_frames), "durations": self.anim_data["durations"], "static_shadow_offset": sprite_anchor_offset, "render_offsets": [None] * len(self.group_frames)}
 
-        frames, frame_texts = [], []
+        frames, frame_texts, render_offsets = [], [], []
         for i, frame_data in enumerate(corrected_frame_data):
             canvas = Image.new('RGBA', (canvas_w, canvas_h), (0, 0, 0, 0))
             world_anchor = (canvas_w // 2, canvas_h // 2)
@@ -180,6 +180,7 @@ class PreviewGenerator:
             
             world_disp_text = f"World Displacement: ({round(total_move_x)}, {round(total_move_y)})"
             render_offset_text = "Render Offset: (N/A)"
+            current_render_offset = None
 
             if sprite_anchor_offset:
                 # The green crosshair position is the shadow's new position plus the static offset
@@ -219,9 +220,11 @@ class PreviewGenerator:
                     # Calculate and format the render offset text from the correct point
                     render_offset_x = render_anchor_x - world_anchor[0]
                     render_offset_y = render_anchor_y - world_anchor[1]
+                    current_render_offset = (render_offset_x, render_offset_y)
                     render_offset_text = f"Render Offset: ({render_offset_x}, {render_offset_y})"
 
             frame_texts.append(f"{world_disp_text}\n{render_offset_text}")
+            render_offsets.append(current_render_offset)
 
             # Draw the static world anchor (red cross)
             s = 3
@@ -231,7 +234,7 @@ class PreviewGenerator:
             canvas = canvas.resize((canvas.width * 2, canvas.height * 2), Image.NEAREST)
             frames.append(canvas)
         
-        return {"frames": frames, "text_data": frame_texts, "thumbnail_size": (400, 400), "durations": self.anim_data["durations"], "static_shadow_offset": sprite_anchor_offset}
+        return {"frames": frames, "text_data": frame_texts, "thumbnail_size": (400, 400), "durations": self.anim_data["durations"], "static_shadow_offset": sprite_anchor_offset, "render_offsets": render_offsets}
 
     # Helper Methods
     def _load_sprite(self, sprite_id, is_mirrored):

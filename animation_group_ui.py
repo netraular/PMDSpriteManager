@@ -24,6 +24,9 @@ class AnimationGroupUI:
         )
         self.players = {}
         
+        self.static_shadow_offset = None
+        self.render_offsets = []
+
         self.string_vars = []
         self.mirror_vars = []
         self.custom_sprite_labels = []
@@ -286,13 +289,14 @@ class AnimationGroupUI:
         
         shadow_combined_res = self.preview_generator.generate_shadow_combined_preview(corrected_data)
         
-        static_offset = shadow_combined_res.pop("static_shadow_offset", None)
+        self.static_shadow_offset = shadow_combined_res.pop("static_shadow_offset", None)
+        self.render_offsets = shadow_combined_res.pop("render_offsets", [])
         
         self.players["shadow_combined"].set_animation(**shadow_combined_res)
         self.players["shadow_combined"].play()
         
-        if static_offset is not None:
-            self.shadow_offset_label.config(text=f"Sprite Anchor Offset: {static_offset}")
+        if self.static_shadow_offset is not None:
+            self.shadow_offset_label.config(text=f"Sprite Anchor Offset: {self.static_shadow_offset}")
         else:
             self.shadow_offset_label.config(text="Sprite Anchor Offset: (N/A)")
     
@@ -309,7 +313,6 @@ class AnimationGroupUI:
         corrected_data = self.preview_generator.get_generated_frame_data(ids, mirrors, True)
         min_x, min_y, max_x, max_y = self.preview_generator.get_group_bounds(corrected_data)
         
-        offsets = [[round(d["pos"][0] - min_x), round(d["pos"][1] - min_y)] if d["image"] else [0,0] for d in corrected_data]
         values = [{"id": i, "mirrored": m} for i, m in zip(ids, mirrors)]
 
         return {
@@ -317,7 +320,8 @@ class AnimationGroupUI:
             "framewidth": math.ceil(max_x - min_x),
             "frameheight": math.ceil(max_y - min_y),
             "values": values,
-            "offsets": offsets
+            "sprite_anchor_offset": self.static_shadow_offset,
+            "render_offsets": self.render_offsets
         }
 
     def cleanup(self):

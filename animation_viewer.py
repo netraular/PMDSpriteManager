@@ -353,13 +353,11 @@ class AnimationViewer:
         ui_data = optimized_data.copy()
         ui_data['sprites'] = {}
         for group_id, group_data in optimized_data.get('sprites', {}).items():
-            ui_group = {'name': group_data.get('name'), 'values': [], 'offsets': []}
+            ui_group = {'name': group_data.get('name'), 'values': []}
             for frame in group_data.get('frames', []):
                 sprite_id_str = frame.get('id', '0')
-                offset = frame.get('offset', [0, 0])
                 is_mirrored = "_mirrored" in sprite_id_str
                 base_id = int(sprite_id_str.replace("_mirrored", "")) if sprite_id_str.replace("_mirrored", "").isdigit() else 0
                 ui_group['values'].append({'id': base_id, 'mirrored': is_mirrored})
-                ui_group['offsets'].append(offset)
             ui_data['sprites'][group_id] = ui_group
         return ui_data
