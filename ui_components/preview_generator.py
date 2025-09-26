@@ -148,7 +148,8 @@ class PreviewGenerator:
         else:
             offset_text = "Shadow Offset: (N/A)"
 
-        canvas_w, canvas_h = 100, 100
+        consts = {'WIDTH': 32, 'HEIGHT': 16, 'WIDTH_HALF': 16, 'HEIGHT_HALF': 8}
+        canvas_w, canvas_h = consts['WIDTH'] * 5, consts['HEIGHT'] * 5
         
         # Get all anchor positions for all frames
         shadow_positions = [self._find_white_pixel_anchor(f) for f in self.group_shadow_frames]
@@ -162,11 +163,14 @@ class PreviewGenerator:
 
         frames = []
         for i in range(len(self.group_shadow_frames)):
-            canvas = Image.new('RGBA', (canvas_w, canvas_h), (211, 211, 211, 255))
-            draw = ImageDraw.Draw(canvas)
+            canvas = Image.new('RGBA', (canvas_w, canvas_h), (0, 0, 0, 0))
             
             world_anchor = (canvas_w // 2, canvas_h // 2)
+            grid_origin = (world_anchor[0] - consts['WIDTH_HALF'], world_anchor[1] - consts['HEIGHT_HALF'] * 3)
+            self._draw_iso_grid(canvas, grid_origin, consts)
             
+            draw = ImageDraw.Draw(canvas)
+
             # Calculate shadow movement relative to its first frame
             shadow_move_x, shadow_move_y = 0, 0
             current_shadow_pos = shadow_positions[i]
@@ -218,68 +222,6 @@ class PreviewGenerator:
             frames.append(canvas)
         
         final_texts = [offset_text] * len(frames)
-        return {"frames": frames, "text_data": final_texts, "durations": self.anim_data["durations"]}
-
-    def generate_iso_combined_preview(self, corrected_frame_data):
-        return self._generate_iso_preview(render_character=True, corrected_frame_data=corrected_frame_data)
-    
-    def _generate_iso_preview(self, render_character, corrected_frame_data=None):
-        consts = {'WIDTH': 32, 'HEIGHT': 16, 'WIDTH_HALF': 16, 'HEIGHT_HALF': 8}
-        canvas_w, canvas_h = consts['WIDTH'] * 5, consts['HEIGHT'] * 5
-        
-        shadow_pos = [self._find_white_pixel_anchor(f) for f in self.group_shadow_frames]
-        ref_pos = shadow_pos[0] if shadow_pos and shadow_pos[0] else None
-
-        min_x, min_y, max_x, max_y = (0,0,0,0)
-        group_fw, group_fh = (0,0)
-        static_offset = (0,0)
-
-        if render_character and corrected_frame_data:
-            min_x, min_y, max_x, max_y = self.get_group_bounds(corrected_frame_data)
-            group_fw, group_fh = math.ceil(max_x - min_x), math.ceil(max_y - min_y)
-            char_anchor_0 = self._get_image_center(self.group_frames[0])
-            shadow_anchor_0 = self._find_white_pixel_anchor(self.group_shadow_frames[0])
-            if char_anchor_0 and shadow_anchor_0:
-                static_offset = (char_anchor_0[0] - shadow_anchor_0[0], char_anchor_0[1] - shadow_anchor_0[1])
-
-        frames, texts = [], []
-
-        for i in range(len(self.group_frames)):
-            canvas = Image.new('RGBA', (canvas_w, canvas_h))
-            draw = ImageDraw.Draw(canvas)
-            
-            world_anchor = (canvas_w // 2, canvas_h // 2)
-            grid_origin = (world_anchor[0] - consts['WIDTH_HALF'], world_anchor[1] - consts['HEIGHT_HALF'] * 3)
-            self._draw_iso_grid(canvas, grid_origin, consts)
-
-            shadow_center = world_anchor
-            if self.base_sprite_img and ref_pos and i < len(shadow_pos) and shadow_pos[i]:
-                move_x, move_y = shadow_pos[i][0] - ref_pos[0], shadow_pos[i][1] - ref_pos[0]
-                shadow_center = (world_anchor[0] + move_x, world_anchor[1] + move_y)
-                
-                paste_pos = (shadow_center[0] - self.base_sprite_img.width // 2, shadow_center[1] - self.base_sprite_img.height // 2)
-                canvas.paste(self.base_sprite_img, paste_pos, self.base_sprite_img)
-                texts.append(f"Offset: ({move_x}, {move_y})")
-            else:
-                texts.append("Offset: (N/A)")
-
-            if render_character and i < len(corrected_frame_data):
-                sprite_img = corrected_frame_data[i]["image"]
-                if sprite_img:
-                    char_frame_origin = (shadow_center[0] + static_offset[0] - (group_fw // 2), shadow_center[1] + static_offset[1] - (group_fh // 2))
-                    rel_paste_pos = (corrected_frame_data[i]["pos"][0] - min_x, corrected_frame_data[i]["pos"][1] - min_y)
-                    
-                    final_paste_pos = (char_frame_origin[0] + rel_paste_pos[0], char_frame_origin[1] + rel_paste_pos[1])
-                    canvas.paste(sprite_img, final_paste_pos, sprite_img)
-
-            s = 3
-            draw.line((world_anchor[0]-s, world_anchor[1], world_anchor[0]+s, world_anchor[1]), fill="red")
-            draw.line((world_anchor[0], world_anchor[1]-s, world_anchor[0], world_anchor[1]+s), fill="red")
-            
-            canvas = canvas.resize((canvas.width * 2, canvas.height * 2), Image.NEAREST)
-            frames.append(canvas)
-        
-        final_texts = [f"Offset: {static_offset}"] * len(frames) if render_character else texts
         return {"frames": frames, "text_data": final_texts, "thumbnail_size": (400, 400), "durations": self.anim_data["durations"]}
 
     # Helper Methods

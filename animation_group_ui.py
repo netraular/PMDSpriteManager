@@ -142,8 +142,7 @@ class AnimationGroupUI:
         col3_content.pack(fill='both', expand=True)
         self._create_preview_panel(col3_content, "overlay", "Uncorrected Overlay", "Offset: (N/A)")
         self._create_preview_panel(col3_content, "corrected", "Corrected Preview", "Offset: (N/A)")
-        self._create_preview_panel(col3_content, "shadow_combined", "Shadow Combined", "Offset: (N/A)")
-        self._create_preview_panel(col3_content, "iso_combined", "Isometric Combined", "Offset: (N/A)")
+        self._create_preview_panel(col3_content, "shadow_combined", "Isometric Preview", "Offset: (N/A)")
 
     def _create_combined_original_frames(self, char_frames, shadow_frames, offset_frames):
         combined = []
@@ -273,10 +272,6 @@ class AnimationGroupUI:
         shadow_combined_res = self.preview_generator.generate_shadow_combined_preview()
         self.players["shadow_combined"].set_animation(**shadow_combined_res)
         self.players["shadow_combined"].play()
-
-        iso_combined_res = self.preview_generator.generate_iso_combined_preview(corrected_data)
-        self.players["iso_combined"].set_animation(**iso_combined_res)
-        self.players["iso_combined"].play()
     
     def set_sprite_values(self, sprite_numbers, mirror_flags):
         for idx, num in enumerate(sprite_numbers):
