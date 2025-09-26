@@ -20,7 +20,6 @@ class AnimationCreator:
         
         self.sprites = []
         self.image_path = None
-        self.output_folder = None
         self.json_data = None
         self.players = []
         self.canvas = None
@@ -44,58 +43,12 @@ class AnimationCreator:
 
     def setup_ui(self):
         if self.start_in_preview_mode:
-            self.show_animation_selector_view()
+            self.show_all_animations_preview()
         elif self.start_directly_at_json_upload:
-            self.output_folder = os.path.join(self.folder, "Sprites")
+            self.sprite_output_folder = os.path.join(self.folder, "Sprites")
             self.show_json_upload_view()
         elif self._auto_load_image():
             self.show_process_sheet_view()
-
-    def show_animation_selector_view(self):
-        if self.update_breadcrumbs:
-            path = self.base_path + [("Preview Animations", self.show_animation_selector_view)]
-            self.update_breadcrumbs(path)
-        self.clear_frame()
-        selector_frame = Frame(self.main_frame)
-        selector_frame.pack(pady=20)
-        
-        Button(selector_frame, text="Back", command=self.return_to_main).pack(pady=10)
-        Label(selector_frame, text="Select Animation to Preview", font=('Arial', 16)).pack(pady=10)
-        
-        self.optimized_folder = os.path.join(self.folder, "AnimationData")
-
-        if not os.path.exists(self.optimized_folder):
-            messagebox.showerror("Error", f"Animation data folder not found at:\n{self.optimized_folder}")
-            self.return_to_main()
-            return
-
-        try:
-            json_files = [f for f in os.listdir(self.optimized_folder) if f.lower().endswith('-animdata.json')]
-            anim_names = sorted([f.replace('-AnimData.json', '') for f in json_files])
-            
-            if not anim_names:
-                Label(selector_frame, text="No optimized animations found.").pack()
-                return
-
-            self.selected_anim_var = StringVar(selector_frame)
-            self.selected_anim_var.set(anim_names[0])
-
-            dropdown = OptionMenu(selector_frame, self.selected_anim_var, *anim_names)
-            dropdown.pack(pady=10)
-            
-            Button(selector_frame, text="Load Animation", command=self._load_selected_animation).pack(pady=10)
-
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to read animations: {e}")
-
-    def _load_selected_animation(self):
-        anim_name = self.selected_anim_var.get()
-        if not anim_name:
-            messagebox.showwarning("Warning", "No animation selected.")
-            return
-        
-        file_path = os.path.join(self.optimized_folder, f"{anim_name}-AnimData.json")
-        self._load_json_from_path(file_path)
 
     def show_process_sheet_view(self):
         if self.update_breadcrumbs:
@@ -123,12 +76,12 @@ class AnimationCreator:
             if sprite_number > total_sprites:
                 messagebox.showerror("Error", f"Cannot save {sprite_number} sprites. Sheet may only contain {total_sprites}."); return
             
-            self.output_folder = os.path.join(self.folder, "Sprites")
-            if os.path.exists(self.output_folder) and os.listdir(self.output_folder):
+            self.sprite_output_folder = os.path.join(self.folder, "Sprites")
+            if os.path.exists(self.sprite_output_folder) and os.listdir(self.sprite_output_folder):
                 if not messagebox.askyesno("Confirmation", "The 'Sprites' folder will be overwritten. Continue?"): return
             
-            os.makedirs(self.output_folder, exist_ok=True)
-            for file in os.listdir(self.output_folder): os.unlink(os.path.join(self.output_folder, file))
+            os.makedirs(self.sprite_output_folder, exist_ok=True)
+            for file in os.listdir(self.sprite_output_folder): os.unlink(os.path.join(self.sprite_output_folder, file))
             
             handler = SpriteSheetHandler(self.image_path, remove_first_row=True, remove_first_col=False)
             self.sprites, _, _ = handler.split_sprites(size, size)
@@ -137,9 +90,9 @@ class AnimationCreator:
                 bbox = sprite.getbbox()
                 if bbox:
                     sprite = sprite.crop(bbox)
-                sprite.save(os.path.join(self.output_folder, f"sprite_{idx + 1}.png"))
+                sprite.save(os.path.join(self.sprite_output_folder, f"sprite_{idx + 1}.png"))
             
-            messagebox.showinfo("Success", f"{len(self.sprites)} sprites saved in:\n{self.output_folder}")
+            messagebox.showinfo("Success", f"{len(self.sprites)} sprites saved in:\n{self.sprite_output_folder}")
             self.show_json_upload_view()
         except ValueError: messagebox.showerror("Error", "Please enter valid numeric values")
         except Exception as e: messagebox.showerror("Error", f"Processing error: {str(e)}")
@@ -164,17 +117,17 @@ class AnimationCreator:
         self.show_generated_sprites()
 
     def show_generated_sprites(self):
-        if not self.output_folder or not os.path.exists(self.output_folder): return
+        if not self.sprite_output_folder or not os.path.exists(self.sprite_output_folder): return
         try:
-            sprite_files = sorted([f for f in os.listdir(self.output_folder) if f.lower().endswith('.png')], key=lambda x: int(x.split('_')[-1].split('.')[0]))
+            sprite_files = sorted([f for f in os.listdir(self.sprite_output_folder) if f.lower().endswith('.png')], key=lambda x: int(x.split('_')[-1].split('.')[0]))
         except ValueError:
-            sprite_files = sorted([f for f in os.listdir(self.output_folder) if f.lower().endswith('.png')])
+            sprite_files = sorted([f for f in os.listdir(self.sprite_output_folder) if f.lower().endswith('.png')])
         
         sprite_display_frame = Frame(self.main_frame); sprite_display_frame.pack(fill='both', expand=True, pady=10)
         num_columns = getattr(self, 'saved_width', 10)
         row, col = 0, 0
         for sprite_file in sprite_files:
-            sprite_path = os.path.join(self.output_folder, sprite_file)
+            sprite_path = os.path.join(self.sprite_output_folder, sprite_file)
             sprite = Image.open(sprite_path); sprite.thumbnail((80, 80)); img_tk = ImageTk.PhotoImage(sprite)
             sprite_frame = Frame(sprite_display_frame); sprite_frame.grid(row=row, column=col, padx=5, pady=5)
             label = Label(sprite_frame, image=img_tk); label.image = img_tk; label.pack()
@@ -190,24 +143,46 @@ class AnimationCreator:
             filetypes=(("JSON files", "*.json"), ("All files", "*.*"))
         )
         if file_path:
-            self._load_json_from_path(file_path)
+            self._load_and_preview_single_json(file_path)
 
-    def _load_json_from_path(self, file_path):
+    def _load_and_preview_single_json(self, file_path):
         try:
             with open(file_path, 'r') as f:
                 self.json_data = json.load(f)
             
             json_dir = os.path.dirname(file_path)
-            anim_name = self.json_data.get('name')
-            if anim_name:
-                self.output_folder = os.path.join(json_dir, anim_name)
-            else:
-                self.output_folder = json_dir
+            anim_name = os.path.basename(file_path).replace("-AnimData.json", "")
+            sprite_folder = os.path.join(json_dir, anim_name)
 
-            if not os.path.exists(self.output_folder):
-                messagebox.showerror("Error", f"Sprite folder for this animation not found at:\n{self.output_folder}")
+            if not os.path.exists(sprite_folder):
+                messagebox.showerror("Error", f"Sprite folder for this animation not found at:\n{sprite_folder}")
                 return
-            self.show_animation_preview()
+
+            self.clear_frame()
+            self.animation_frame = Frame(self.main_frame)
+            self.animation_frame.pack(fill='both', expand=True)
+            
+            back_command = self.show_json_upload_view
+            Button(self.animation_frame, text="Back", command=back_command).pack(pady=10)
+            
+            Label(self.animation_frame, text=f"Preview: {anim_name}", font=('Arial', 16)).pack(pady=10)
+            
+            preview_data = self._generate_isometric_preview_data(self.json_data, sprite_folder)
+
+            anim_panel = Frame(self.animation_frame)
+            anim_panel.pack(pady=10)
+            
+            anim_label = Label(anim_panel)
+            anim_label.pack()
+            
+            text_label = Label(anim_panel, text="Render Offset: [N/A]", font=('Arial', 10))
+            text_label.pack(pady=(5,0))
+            
+            player = AnimationPlayer(self.parent_frame, anim_label, text_label)
+            player.set_animation(**preview_data)
+            player.play()
+            self.players.append(player)
+
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load or process JSON file: {e}")
 
@@ -227,85 +202,198 @@ class AnimationCreator:
         for child in widget.winfo_children():
             self._bind_mousewheel_recursively(child)
 
-    def show_animation_preview(self):
+    def show_all_animations_preview(self):
         if self.update_breadcrumbs:
-            if self.start_in_preview_mode:
-                path = self.base_path + [
-                    ("Preview Animations", self.show_animation_selector_view),
-                    ("Preview", self.show_animation_preview)
-                ]
-            else:
-                path = self.base_path + [
-                    ("Process Spritesheet", self.show_process_sheet_view),
-                    ("JSON Upload", self.show_json_upload_view),
-                    ("Preview", self.show_animation_preview)
-                ]
+            path = self.base_path + [("All Animations Preview", self.show_all_animations_preview)]
             self.update_breadcrumbs(path)
         self.clear_frame()
-        self.animation_frame = Frame(self.main_frame); self.animation_frame.pack(fill='both', expand=True)
+
+        self.animation_frame = Frame(self.main_frame)
+        self.animation_frame.pack(fill='both', expand=True)
+
         self.canvas = Canvas(self.animation_frame)
-        self.scrollbar = Scrollbar(self.animation_frame, orient="vertical", command=self.canvas.yview)
-        self.scroll_frame = Frame(self.canvas)
-        self.scroll_frame.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
-        self.canvas.create_window((0, 0), window=self.scroll_frame, anchor="nw")
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        scrollbar = Scrollbar(self.animation_frame, orient="vertical", command=self.canvas.yview)
+        scroll_frame = Frame(self.canvas)
+        scroll_frame.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+        self.canvas.configure(yscrollcommand=scrollbar.set)
         
         self.canvas.bind("<MouseWheel>", self._on_mousewheel)
         self.canvas.bind("<Button-4>", self._on_mousewheel)
         self.canvas.bind("<Button-5>", self._on_mousewheel)
 
         self.canvas.pack(side="left", fill="both", expand=True)
-        self.scrollbar.pack(side="right", fill="y")
-        
-        back_command = self.show_animation_selector_view if self.start_in_preview_mode else self.show_json_upload_view
-        Button(self.scroll_frame, text="Back", command=back_command).pack(pady=10)
-        
-        Label(self.scroll_frame, text="Animation Preview", font=('Arial', 16)).pack(pady=10)
-        for group_id, group_data in self.json_data["sprites"].items():
-            self.create_group_preview(group_id, group_data)
-        
-        self._bind_mousewheel_recursively(self.scroll_frame)
+        scrollbar.pack(side="right", fill="y")
 
-    def create_group_preview(self, group_id, group_data):
-        group_frame = Frame(self.scroll_frame, bd=2, relief="groove"); group_frame.pack(fill="x", padx=5, pady=5)
-        header_frame = Frame(group_frame); header_frame.pack(fill="x", pady=5)
-        group_name = group_data.get("name", f"Group {group_id}")
-        Label(header_frame, text=group_name, font=('Arial', 12, 'bold')).pack(side='left')
-        content_frame = Frame(group_frame); content_frame.pack(fill="x")
-        raw_frames = self.get_group_frames(group_data)
+        top_bar = Frame(scroll_frame)
+        top_bar.pack(fill='x', pady=10, padx=10)
+        Button(top_bar, text="Back", command=self.return_to_main).pack(side='left')
         
-        frame_data = group_data.get('frames', [])
-        render_offsets = [frame.get('render_offset') for frame in frame_data]
-        offset_texts = [f"Render Offset: {offset}" for offset in render_offsets]
-        
-        durations = self.json_data["durations"]
-        anim_panel = Frame(content_frame); anim_panel.pack(side="left", padx=10)
-        anim_label = Label(anim_panel); anim_label.pack()
-        
-        offset_label = Label(anim_panel, text="Offset: [N/A]", font=('Arial', 8)); offset_label.pack(pady=(5,0))
-        
-        player = AnimationPlayer(self.parent_frame, anim_label, offset_label)
-        player.set_animation(raw_frames, durations, offset_texts)
-        player.play()
-        self.players.append(player)
-        
-        sprite_panel = Frame(content_frame); sprite_panel.pack(side="right", fill="x", expand=True)
-        for idx, frame in enumerate(raw_frames):
-            if frame:
-                frame.thumbnail((80, 80)); img = ImageTk.PhotoImage(frame)
-                lbl = Label(sprite_panel, image=img); lbl.image = img; lbl.grid(row=0, column=idx, padx=2)
-                Label(sprite_panel, text=f"Dur: {durations[idx % len(durations)]}", font=('Arial', 7)).grid(row=1, column=idx)
+        Label(scroll_frame, text="All Animations Preview", font=('Arial', 16)).pack(pady=10)
 
-    def get_group_frames(self, group_data):
-        frames = []
-        for frame_info in group_data.get("frames", []):
-            frames.append(self.load_sprite(frame_info.get("id", "0")))
-        return frames
+        optimized_folder = os.path.join(self.folder, "AnimationData")
+        if not os.path.exists(optimized_folder):
+            messagebox.showerror("Error", f"Animation data folder not found at:\n{optimized_folder}")
+            self.return_to_main()
+            return
 
-    def load_sprite(self, sprite_id_str):
+        try:
+            json_files = sorted([f for f in os.listdir(optimized_folder) if f.lower().endswith('-animdata.json')])
+            if not json_files:
+                Label(scroll_frame, text="No optimized animations found.").pack()
+                return
+
+            grid_container = Frame(scroll_frame)
+            grid_container.pack(pady=10, padx=10)
+            
+            row, col = 0, 0
+            max_cols = 5
+
+            for json_file in json_files:
+                file_path = os.path.join(optimized_folder, json_file)
+                anim_name = os.path.basename(file_path).replace("-AnimData.json", "")
+                
+                with open(file_path, 'r') as f:
+                    json_data = json.load(f)
+                
+                sprite_folder = os.path.join(optimized_folder, anim_name)
+                if not os.path.exists(sprite_folder):
+                    print(f"Warning: Sprite folder not found for {anim_name}, skipping.")
+                    continue
+
+                group_frame = Frame(grid_container, bd=2, relief="groove")
+                group_frame.grid(row=row, column=col, padx=10, pady=10, sticky="n")
+                
+                Label(group_frame, text=anim_name, font=('Arial', 12, 'bold')).pack(pady=5)
+                
+                preview_data = self._generate_isometric_preview_data(json_data, sprite_folder)
+
+                if preview_data["frames"]:
+                    anim_panel = Frame(group_frame)
+                    anim_panel.pack(pady=5)
+                    anim_label = Label(anim_panel)
+                    anim_label.pack()
+                    text_label = Label(anim_panel, text="Render Offset: [N/A]", font=('Arial', 10))
+                    text_label.pack(pady=(5,0))
+                    
+                    player = AnimationPlayer(self.parent_frame, anim_label, text_label)
+                    player.set_animation(**preview_data)
+                    player.play()
+                    self.players.append(player)
+                else:
+                    Label(group_frame, text="No frames to display.", fg="red").pack(pady=10)
+
+                col += 1
+                if col >= max_cols:
+                    col = 0
+                    row += 1
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to read animations: {e}")
+
+        self._bind_mousewheel_recursively(scroll_frame)
+
+    def _grid_to_screen(self, gx, gy, origin, w_half, h_half):
+        return (int(origin[0] + (gx - gy) * w_half), int(origin[1] + (gx + gy) * h_half))
+
+    def _draw_iso_grid(self, image, origin, consts):
+        draw = ImageDraw.Draw(image)
+        for y in range(3):
+            for x in range(3):
+                pos = self._grid_to_screen(x, y, origin, consts['WIDTH_HALF'], consts['HEIGHT_HALF'])
+                points = [
+                    (pos[0] + consts['WIDTH_HALF'], pos[1]),
+                    (pos[0] + consts['WIDTH'], pos[1] + consts['HEIGHT_HALF']),
+                    (pos[0] + consts['WIDTH_HALF'], pos[1] + consts['HEIGHT']),
+                    (pos[0], pos[1] + consts['HEIGHT_HALF'])
+                ]
+                draw.polygon(points, fill=(200, 200, 200), outline=(150, 150, 150))
+
+    def _load_base_shadow(self):
+        try:
+            path = os.path.join(self.folder, "Animations", "sprite_base.png")
+            if not os.path.exists(path):
+                 path = os.path.join(self.folder, "sprite_base.png")
+            
+            if os.path.exists(path):
+                return Image.open(path).convert('RGBA')
+        except Exception as e:
+            print(f"Could not load sprite_base.png: {e}")
+        
+        shadow = Image.new('RGBA', (32, 16), (0,0,0,0))
+        draw = ImageDraw.Draw(shadow)
+        draw.ellipse([(0,0), (31,15)], fill=(0,0,0,100))
+        return shadow
+
+    def _generate_isometric_preview_data(self, json_data, sprite_folder):
+        base_shadow = self._load_base_shadow()
+        consts = {'WIDTH': 32, 'HEIGHT': 16, 'WIDTH_HALF': 16, 'HEIGHT_HALF': 8}
+        canvas_w, canvas_h = consts['WIDTH'] * 5, consts['HEIGHT'] * 5
+
+        all_frames_data = []
+        for group_id in sorted(json_data["sprites"].keys(), key=int):
+            group_data = json_data["sprites"][group_id]
+            all_frames_data.extend(group_data.get("frames", []))
+
+        if not all_frames_data:
+            return {"frames": [], "text_data": [], "durations": []}
+
+        final_frames = []
+        text_data = []
+
+        for frame_info in all_frames_data:
+            canvas = Image.new('RGBA', (canvas_w, canvas_h), (0, 0, 0, 0))
+            world_anchor = (canvas_w // 2, canvas_h // 2)
+            grid_origin = (world_anchor[0] - consts['WIDTH_HALF'], world_anchor[1] - consts['HEIGHT_HALF'] * 3)
+            self._draw_iso_grid(canvas, grid_origin, consts)
+            draw = ImageDraw.Draw(canvas)
+
+            if base_shadow:
+                shadow_pos = (world_anchor[0] - base_shadow.width // 2, world_anchor[1] - base_shadow.height // 2)
+                canvas.paste(base_shadow, shadow_pos, base_shadow)
+
+            render_offset = frame_info.get("render_offset")
+            sprite_id = frame_info.get("id", "0")
+            sprite_img = self.load_sprite(sprite_id, sprite_folder)
+
+            current_offset_text = "Render Offset: (N/A)"
+
+            if sprite_img and render_offset and len(render_offset) == 2:
+                render_x, render_y = render_offset
+                paste_pos = (world_anchor[0] + render_x, world_anchor[1] + render_y)
+                canvas.paste(sprite_img, paste_pos, sprite_img)
+
+                s = 3
+                draw.line((paste_pos[0]-s, paste_pos[1], paste_pos[0]+s, paste_pos[1]), fill="purple", width=1)
+                draw.line((paste_pos[0], paste_pos[1]-s, paste_pos[0], paste_pos[1]+s), fill="purple", width=1)
+                current_offset_text = f"Render Offset: ({render_x}, {render_y})"
+
+            s = 3
+            draw.line((world_anchor[0]-s, world_anchor[1], world_anchor[0]+s, world_anchor[1]), fill="red", width=1)
+            draw.line((world_anchor[0], world_anchor[1]-s, world_anchor[0], world_anchor[1]+s), fill="red", width=1)
+            
+            canvas_2x = canvas.resize((canvas.width * 2, canvas.height * 2), Image.NEAREST)
+            final_frames.append(canvas_2x)
+            text_data.append(current_offset_text)
+            
+        num_frames_per_group = len(json_data["sprites"]["1"].get("frames", []))
+        num_groups = len(json_data["sprites"])
+        total_frames = num_frames_per_group * num_groups
+        
+        base_durations = json_data.get("durations", [1])
+        durations = (base_durations * (total_frames // len(base_durations) + 1))[:total_frames]
+        
+        return {
+            "frames": final_frames, 
+            "text_data": text_data, 
+            "durations": durations,
+            "thumbnail_size": (400, 400)
+        }
+
+    def load_sprite(self, sprite_id_str, sprite_folder):
         if sprite_id_str == "0": return None 
         try:
-            sprite_path = os.path.join(self.output_folder, f"sprite_{sprite_id_str}.png")
+            sprite_path = os.path.join(sprite_folder, f"sprite_{sprite_id_str}.png")
             return Image.open(sprite_path).convert('RGBA')
         except (FileNotFoundError, ValueError):
             placeholder = Image.new('RGBA', (40, 40), (0, 0, 0, 0))
