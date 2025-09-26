@@ -7,9 +7,10 @@ from ui_components.animation_player import AnimationPlayer
 import os
 import json
 import math
+import pathlib
 
 class AnimationCreator:
-    def __init__(self, parent_frame, folder, return_to_main_callback, update_breadcrumbs_callback=None, base_path=None, start_directly_at_json_upload=False, start_in_preview_mode=False):
+    def __init__(self, parent_frame, folder, return_to_main_callback, update_breadcrumbs_callback=None, base_path=None, start_directly_at_json_upload=False, start_in_preview_mode=False, anim_data_subfolder="AnimationData", show_navigation=True):
         self.parent_frame = parent_frame
         self.folder = folder
         self.return_to_main = return_to_main_callback
@@ -17,7 +18,12 @@ class AnimationCreator:
         self.base_path = base_path if base_path is not None else []
         self.start_directly_at_json_upload = start_directly_at_json_upload
         self.start_in_preview_mode = start_in_preview_mode
+        self.anim_data_subfolder = anim_data_subfolder
+        self.show_navigation = show_navigation
         
+        parent_dir_name = pathlib.Path(folder).parent.name
+        self.is_2x_preview = (parent_dir_name == "output x2")
+
         self.sprites = []
         self.image_path = None
         self.json_data = None
@@ -204,7 +210,7 @@ class AnimationCreator:
             self._bind_mousewheel_recursively(child)
 
     def show_all_animations_preview(self):
-        if self.update_breadcrumbs:
+        if self.update_breadcrumbs and self.show_navigation:
             path = self.base_path + [("All Animations Preview", self.show_all_animations_preview)]
             self.update_breadcrumbs(path)
         self.clear_frame()
@@ -226,13 +232,18 @@ class AnimationCreator:
         self.canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-        top_bar = Frame(scroll_frame)
-        top_bar.pack(fill='x', pady=10, padx=10)
-        Button(top_bar, text="Back", command=self.return_to_main).pack(side='left')
+        if self.show_navigation:
+            top_bar = Frame(scroll_frame)
+            top_bar.pack(fill='x', pady=10, padx=10)
+            Button(top_bar, text="Back", command=self.return_to_main).pack(side='left')
         
         Label(scroll_frame, text="All Animations Preview", font=('Arial', 16)).pack(pady=10)
 
-        optimized_folder = os.path.join(self.folder, "AnimationData")
+        if self.anim_data_subfolder:
+            optimized_folder = os.path.join(self.folder, self.anim_data_subfolder)
+        else:
+            optimized_folder = self.folder
+            
         if not os.path.exists(optimized_folder):
             messagebox.showerror("Error", f"Animation data folder not found at:\n{optimized_folder}")
             self.return_to_main()
@@ -388,14 +399,24 @@ class AnimationCreator:
         except Exception as e:
             print(f"Could not load sprite_base.png: {e}")
         
-        shadow = Image.new('RGBA', (32, 16), (0,0,0,0))
-        draw = ImageDraw.Draw(shadow)
-        draw.ellipse([(0,0), (31,15)], fill=(0,0,0,100))
+        if self.is_2x_preview:
+            shadow = Image.new('RGBA', (64, 32), (0,0,0,0))
+            draw = ImageDraw.Draw(shadow)
+            draw.ellipse([(0,0), (63,31)], fill=(0,0,0,100))
+        else:
+            shadow = Image.new('RGBA', (32, 16), (0,0,0,0))
+            draw = ImageDraw.Draw(shadow)
+            draw.ellipse([(0,0), (31,15)], fill=(0,0,0,100))
         return shadow
 
     def _generate_isometric_preview_data(self, json_data, sprite_folder):
         base_shadow = self._load_base_shadow()
-        consts = {'WIDTH': 32, 'HEIGHT': 16, 'WIDTH_HALF': 16, 'HEIGHT_HALF': 8}
+        
+        if self.is_2x_preview:
+            consts = {'WIDTH': 64, 'HEIGHT': 32, 'WIDTH_HALF': 32, 'HEIGHT_HALF': 16}
+        else:
+            consts = {'WIDTH': 32, 'HEIGHT': 16, 'WIDTH_HALF': 16, 'HEIGHT_HALF': 8}
+
         canvas_w, canvas_h = consts['WIDTH'] * 5, consts['HEIGHT'] * 5
 
         all_frames_data = []
@@ -405,10 +426,8 @@ class AnimationCreator:
 
         if not all_frames_data:
             return {"frames": [], "text_data": [], "durations": []}
-
-        num_frames_per_group = len(json_data["sprites"]["1"].get("frames", []))
-        num_groups = len(json_data["sprites"])
-        total_frames = num_frames_per_group * num_groups
+        
+        total_frames = len(all_frames_data)
         base_durations = json_data.get("durations", [1])
         durations = (base_durations * (total_frames // len(base_durations) + 1))[:total_frames]
         
@@ -449,8 +468,12 @@ class AnimationCreator:
             draw.line((world_anchor[0]-s, world_anchor[1], world_anchor[0]+s, world_anchor[1]), fill="red", width=1)
             draw.line((world_anchor[0], world_anchor[1]-s, world_anchor[0], world_anchor[1]+s), fill="red", width=1)
             
-            canvas_2x = canvas.resize((canvas.width * 2, canvas.height * 2), Image.NEAREST)
-            final_frames.append(canvas_2x)
+            if self.is_2x_preview:
+                final_canvas = canvas
+            else:
+                final_canvas = canvas.resize((canvas.width * 2, canvas.height * 2), Image.NEAREST)
+
+            final_frames.append(final_canvas)
             text_data.append(final_text_for_frame)
         
         return {

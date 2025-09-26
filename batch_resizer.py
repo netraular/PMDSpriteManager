@@ -5,12 +5,11 @@ import pathlib
 import zipfile
 import shutil
 import json
-from tkinter import Frame, Label, Button, Entry, messagebox, filedialog, Canvas, Scrollbar, Text, END, Toplevel
+from tkinter import Frame, Label, Button, Entry, messagebox, filedialog, Canvas, Scrollbar, Text, END, Toplevel, StringVar, OptionMenu
 from PIL import Image, ImageTk
 from sprite_sheet_handler import SpriteSheetHandler
 from animation_data_handler import AnimationDataHandler
 from animation_creator import AnimationCreator
-from isometric_animation_previewer import IsometricAnimationPreviewer
 import threading
 import queue
 
@@ -26,7 +25,6 @@ class BatchResizer:
         self.current_folder_index = 0
         self.cancel_operation = False
         self.animation_creator = None
-        self.isometric_previewer = None
         self.sprite_previews = [] # To hold image references
 
         self.main_frame = Frame(self.parent_frame)
@@ -73,7 +71,7 @@ class BatchResizer:
         Button(content_frame, text="Export Final Assets", command=self.show_export_assets_view, font=('Arial', 12), width=35, bg="lightgreen").pack(pady=10)
         Button(content_frame, text="Export Final Assets (x2)", command=self.show_export_assets_x2_view, font=('Arial', 12), width=35, bg="lightblue").pack(pady=10)
         Button(content_frame, text="Generate Shadow Sprites", command=self.show_shadow_generation_view, font=('Arial', 12), width=35).pack(pady=10)
-        Button(content_frame, text="Preview Optimized Animations", command=self.show_isometric_previewer, font=('Arial', 12), width=35).pack(pady=10)
+        Button(content_frame, text="Preview Optimized Animations", command=self.show_optimized_animation_previewer, font=('Arial', 12), width=35).pack(pady=10)
 
     def show_asset_generation_view(self):
         if self.update_breadcrumbs:
@@ -281,10 +279,71 @@ class BatchResizer:
         project_path = os.path.join(self.parent_folder, folder_name)
         self.animation_creator = AnimationCreator(self.main_frame, project_path, self.show_pokemon_selection_view, start_in_preview_mode=True)
 
-    def show_isometric_previewer(self):
+    def show_optimized_animation_previewer(self):
         self.clear_frame()
-        new_base_path = self.base_path + [("Batch Tasks", self.show_task_selection_view)]
-        self.isometric_previewer = IsometricAnimationPreviewer(self.main_frame, self.parent_folder, self.show_task_selection_view, self.update_breadcrumbs, new_base_path)
+        if self.update_breadcrumbs:
+            path = self.base_path + [
+                ("Batch Tasks", self.show_task_selection_view),
+                ("Preview Animations", self.show_optimized_animation_previewer)
+            ]
+            self.update_breadcrumbs(path)
+        
+        top_frame = Frame(self.main_frame)
+        top_frame.pack(fill='x', padx=10, pady=5)
+        Button(top_frame, text="Back to Tasks", command=self.show_task_selection_view).pack(side='left')
+        
+        output_folder = os.path.join(self.parent_folder, "output x2")
+        if not os.path.exists(output_folder):
+            output_folder = os.path.join(self.parent_folder, "output")
+        
+        if not os.path.exists(output_folder):
+            messagebox.showerror("Error", "'output' or 'output x2' folder does not exist.\nPlease run an export task first.")
+            self.show_task_selection_view()
+            return
+        
+        characters = sorted([d for d in os.listdir(output_folder) if os.path.isdir(os.path.join(output_folder, d))])
+        if not characters:
+            Label(self.main_frame, text="No characters found in 'output' or 'output x2' folder.", fg="red").pack(pady=50)
+            return
+
+        Label(top_frame, text="Character:").pack(side='left', padx=(20, 5))
+        self.selected_char_var = StringVar()
+        self.char_dropdown = OptionMenu(top_frame, self.selected_char_var, *characters, command=self._on_character_selected_for_preview)
+        self.char_dropdown.pack(side='left')
+        
+        self.preview_content_frame = Frame(self.main_frame)
+        self.preview_content_frame.pack(fill='both', expand=True)
+
+        self.selected_char_var.set(characters[0])
+        self._on_character_selected_for_preview(characters[0])
+
+    def _on_character_selected_for_preview(self, char_name):
+        if self.animation_creator:
+            self.animation_creator.clear_frame()
+        for widget in self.preview_content_frame.winfo_children():
+            widget.destroy()
+
+        output_folder = os.path.join(self.parent_folder, "output x2")
+        if not os.path.exists(output_folder):
+            output_folder = os.path.join(self.parent_folder, "output")
+
+        character_path = os.path.join(output_folder, char_name)
+
+        new_base_path = self.base_path + [
+            ("Batch Tasks", self.show_task_selection_view),
+            ("Preview Animations", self.show_optimized_animation_previewer)
+        ]
+
+        self.animation_creator = AnimationCreator(
+            self.preview_content_frame,
+            folder=character_path,
+            return_to_main_callback=self.show_task_selection_view,
+            update_breadcrumbs_callback=self.update_breadcrumbs,
+            base_path=new_base_path,
+            start_in_preview_mode=True,
+            anim_data_subfolder=None,
+            show_navigation=False
+        )
 
     def start_sprite_generation(self):
         if self.update_breadcrumbs:
@@ -807,7 +866,7 @@ class BatchResizer:
     def clear_frame(self):
         self.cancel_operation = True
         self.sprite_previews.clear()
-        if self.isometric_previewer:
-            self.isometric_previewer.clear_frame()
-            self.isometric_previewer = None
+        if self.animation_creator:
+            self.animation_creator.clear_frame()
+            self.animation_creator = None
         for widget in self.main_frame.winfo_children(): widget.destroy()
