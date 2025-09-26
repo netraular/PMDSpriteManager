@@ -135,7 +135,7 @@ class AnimationDataHandler:
         if frame_image.mode != 'RGBA': frame_image = frame_image.convert('RGBA')
         width, height = frame_image.size; pixels = frame_image.load()
         # Anchor colors used for pixel-perfect positioning from the -Offsets.png file.
-        # Black: #000000, Red: #FF0000, Green: #00FF00, Blue: #0000FF
+        # (Mouth) Black: #000000, (Right hand) Red: #FF0000, (Left hand) Green: #00FF00, (Body center) Blue: #0000FF
         anchor_colors = {"black": (0, 0, 0, 255), "red": (255, 0, 0, 255), "green": (0, 255, 0, 255), "blue": (0, 0, 255, 255)}
         found_anchors = {color: None for color in anchor_colors}
         for x in range(width):

@@ -134,44 +134,82 @@ class PreviewGenerator:
         return {"frames": overlay_frames, "text_data": offset_texts, "durations": self.anim_data["durations"]}
 
     def generate_shadow_combined_preview(self):
-        if not self.group_shadow_frames or not self.base_sprite_img:
+        if not self.group_shadow_frames or not self.group_metadata or not self.base_sprite_img:
             return {"frames": [], "text_data": [], "durations": self.anim_data["durations"]}
+
+        # Calculate the static offset between the character's center and shadow's center on the first frame
+        shadow_offset = None
+        shadow_anchor_0 = self._find_white_pixel_anchor(self.group_shadow_frames[0])
+        offset_anchor_0 = self.group_metadata[0]['anchors'].get('green')
+
+        if shadow_anchor_0 and offset_anchor_0:
+            shadow_offset = (offset_anchor_0[0] - shadow_anchor_0[0], offset_anchor_0[1] - shadow_anchor_0[1])
+            offset_text = f"Shadow Offset: {shadow_offset}"
+        else:
+            offset_text = "Shadow Offset: (N/A)"
 
         canvas_w, canvas_h = 100, 100
         
-        shadow_pos = [self._find_white_pixel_anchor(f) for f in self.group_shadow_frames]
-        ref_pos = shadow_pos[0] if shadow_pos and shadow_pos[0] else None
+        # Get all anchor positions for all frames
+        shadow_positions = [self._find_white_pixel_anchor(f) for f in self.group_shadow_frames]
+        green_anchor_positions = [md['anchors'].get('green') for md in self.group_metadata]
+        
+        ref_shadow_pos = shadow_positions[0] if shadow_positions and shadow_positions[0] else None
+        ref_green_pos = green_anchor_positions[0] if green_anchor_positions and green_anchor_positions[0] else None
 
-        if not ref_pos:
-            return {"frames": [], "text_data": ["Offset: (N/A)"] * len(self.group_shadow_frames), "durations": self.anim_data["durations"]}
+        if not ref_shadow_pos:
+            return {"frames": [], "text_data": [offset_text] * len(self.group_shadow_frames), "durations": self.anim_data["durations"]}
 
-        frames, texts = [], []
-
+        frames = []
         for i in range(len(self.group_shadow_frames)):
             canvas = Image.new('RGBA', (canvas_w, canvas_h), (211, 211, 211, 255))
             draw = ImageDraw.Draw(canvas)
             
             world_anchor = (canvas_w // 2, canvas_h // 2)
             
-            current_pos = shadow_pos[i]
+            # Calculate shadow movement relative to its first frame
+            shadow_move_x, shadow_move_y = 0, 0
+            current_shadow_pos = shadow_positions[i]
+            if current_shadow_pos and ref_shadow_pos:
+                shadow_move_x = current_shadow_pos[0] - ref_shadow_pos[0]
+                shadow_move_y = current_shadow_pos[1] - ref_shadow_pos[1]
             
-            if current_pos:
-                move_x = current_pos[0] - ref_pos[0]
-                move_y = current_pos[1] - ref_pos[1]
-                
-                shadow_center = (world_anchor[0] + move_x, world_anchor[1] + move_y)
-                
-                paste_pos = (shadow_center[0] - self.base_sprite_img.width // 2, 
-                             shadow_center[1] - self.base_sprite_img.height // 2)
-                
-                canvas.paste(self.base_sprite_img, paste_pos, self.base_sprite_img)
-                texts.append(f"Offset: ({move_x}, {move_y})")
-            else:
-                paste_pos = (world_anchor[0] - self.base_sprite_img.width // 2, 
-                             world_anchor[1] - self.base_sprite_img.height // 2)
-                canvas.paste(self.base_sprite_img, paste_pos, self.base_sprite_img)
-                texts.append("Offset: (N/A)")
+            shadow_center = (world_anchor[0] + shadow_move_x, world_anchor[1] + shadow_move_y)
+            
+            # Paste the shadow sprite based on its movement
+            paste_pos = (shadow_center[0] - self.base_sprite_img.width // 2, 
+                         shadow_center[1] - self.base_sprite_img.height // 2)
+            canvas.paste(self.base_sprite_img, paste_pos, self.base_sprite_img)
 
+            # Calculate character anchor movement relative to its first frame
+            char_move_x, char_move_y = 0, 0
+            current_green_pos = green_anchor_positions[i]
+            if current_green_pos and ref_green_pos:
+                char_move_x = current_green_pos[0] - ref_green_pos[0]
+                char_move_y = current_green_pos[1] - ref_green_pos[1]
+
+            if shadow_offset and current_green_pos:
+                # Calculate where the character's anchor point should be on the canvas
+                crosshair_x = shadow_center[0] + shadow_offset[0] + char_move_x
+                crosshair_y = shadow_center[1] + shadow_offset[1] + char_move_y
+
+                # Get the character sprite for this frame
+                char_sprite = self.group_frames[i]
+                if char_sprite and char_sprite.getbbox():
+                    # Calculate the top-left position to paste the character frame
+                    # so its anchor aligns with the crosshair position.
+                    paste_x = crosshair_x - current_green_pos[0]
+                    paste_y = crosshair_y - current_green_pos[1]
+                    
+                    # Paste the character
+                    canvas.paste(char_sprite, (paste_x, paste_y), char_sprite)
+
+                # Draw the green crosshair on top
+                s = 3
+                draw.line((crosshair_x-s, crosshair_y, crosshair_x+s, crosshair_y), fill="green", width=1)
+                draw.line((crosshair_x, crosshair_y-s, crosshair_x, crosshair_y+s), fill="green", width=1)
+
+            # Draw the static world anchor
             s = 3
             draw.line((world_anchor[0]-s, world_anchor[1], world_anchor[0]+s, world_anchor[1]), fill="red")
             draw.line((world_anchor[0], world_anchor[1]-s, world_anchor[0], world_anchor[1]+s), fill="red")
@@ -179,7 +217,8 @@ class PreviewGenerator:
             canvas = canvas.resize((canvas.width * 2, canvas.height * 2), Image.NEAREST)
             frames.append(canvas)
         
-        return {"frames": frames, "text_data": texts, "durations": self.anim_data["durations"]}
+        final_texts = [offset_text] * len(frames)
+        return {"frames": frames, "text_data": final_texts, "durations": self.anim_data["durations"]}
 
     def generate_iso_combined_preview(self, corrected_frame_data):
         return self._generate_iso_preview(render_character=True, corrected_frame_data=corrected_frame_data)
@@ -215,7 +254,7 @@ class PreviewGenerator:
 
             shadow_center = world_anchor
             if self.base_sprite_img and ref_pos and i < len(shadow_pos) and shadow_pos[i]:
-                move_x, move_y = shadow_pos[i][0] - ref_pos[0], shadow_pos[i][1] - ref_pos[1]
+                move_x, move_y = shadow_pos[i][0] - ref_pos[0], shadow_pos[i][1] - ref_pos[0]
                 shadow_center = (world_anchor[0] + move_x, world_anchor[1] + move_y)
                 
                 paste_pos = (shadow_center[0] - self.base_sprite_img.width // 2, shadow_center[1] - self.base_sprite_img.height // 2)
