@@ -144,9 +144,6 @@ class PreviewGenerator:
 
         if shadow_anchor_0 and offset_anchor_0:
             shadow_offset = (offset_anchor_0[0] - shadow_anchor_0[0], offset_anchor_0[1] - shadow_anchor_0[1])
-            offset_text = f"Shadow Offset: {shadow_offset}"
-        else:
-            offset_text = "Shadow Offset: (N/A)"
 
         consts = {'WIDTH': 32, 'HEIGHT': 16, 'WIDTH_HALF': 16, 'HEIGHT_HALF': 8}
         canvas_w, canvas_h = consts['WIDTH'] * 5, consts['HEIGHT'] * 5
@@ -159,9 +156,9 @@ class PreviewGenerator:
         ref_green_pos = green_anchor_positions[0] if green_anchor_positions and green_anchor_positions[0] else None
 
         if not ref_shadow_pos:
-            return {"frames": [], "text_data": [offset_text] * len(self.group_shadow_frames), "durations": self.anim_data["durations"]}
+            return {"frames": [], "text_data": ["Offset: (N/A)"] * len(self.group_shadow_frames), "durations": self.anim_data["durations"]}
 
-        frames = []
+        frames, frame_texts = [], []
         for i in range(len(self.group_shadow_frames)):
             canvas = Image.new('RGBA', (canvas_w, canvas_h), (0, 0, 0, 0))
             
@@ -213,6 +210,11 @@ class PreviewGenerator:
                 draw.line((crosshair_x-s, crosshair_y, crosshair_x+s, crosshair_y), fill="green", width=1)
                 draw.line((crosshair_x, crosshair_y-s, crosshair_x, crosshair_y+s), fill="green", width=1)
 
+            # Calculate and store the total displacement for this frame
+            total_offset_x = shadow_move_x + char_move_x
+            total_offset_y = shadow_move_y + char_move_y
+            frame_texts.append(f"Offset: ({total_offset_x}, {total_offset_y})")
+
             # Draw the static world anchor
             s = 3
             draw.line((world_anchor[0]-s, world_anchor[1], world_anchor[0]+s, world_anchor[1]), fill="red")
@@ -221,8 +223,7 @@ class PreviewGenerator:
             canvas = canvas.resize((canvas.width * 2, canvas.height * 2), Image.NEAREST)
             frames.append(canvas)
         
-        final_texts = [offset_text] * len(frames)
-        return {"frames": frames, "text_data": final_texts, "thumbnail_size": (400, 400), "durations": self.anim_data["durations"]}
+        return {"frames": frames, "text_data": frame_texts, "thumbnail_size": (400, 400), "durations": self.anim_data["durations"]}
 
     # Helper Methods
     def _load_sprite(self, sprite_id, is_mirrored):

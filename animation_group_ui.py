@@ -86,6 +86,10 @@ class AnimationGroupUI:
         self.players["combined_original"] = AnimationPlayer(self.parent, Label(col1_content, bg="lightgrey"))
         self.players["combined_original"].image_label.grid(row=1, column=1, padx=5, pady=5)
 
+        # Shadow Offset Label
+        self.shadow_offset_label = Label(col1_content, text="Shadow Offset: (N/A)", font=('Arial', 8))
+        self.shadow_offset_label.grid(row=2, column=0, columnspan=2, pady=(5,0))
+
         # --- Column 2: Individual Sprite Editor ---
         self.col2_frame = Frame(main_container)
 
@@ -143,6 +147,18 @@ class AnimationGroupUI:
         self._create_preview_panel(col3_content, "overlay", "Uncorrected Overlay", "Offset: (N/A)")
         self._create_preview_panel(col3_content, "corrected", "Corrected Preview", "Offset: (N/A)")
         self._create_preview_panel(col3_content, "shadow_combined", "Isometric Preview", "Offset: (N/A)")
+
+    def play_all(self):
+        for player in self.players.values():
+            player.play()
+
+    def pause_all(self):
+        for player in self.players.values():
+            player.pause()
+
+    def go_to_frame(self, frame_index):
+        for player in self.players.values():
+            player.go_to_frame(frame_index)
 
     def _create_combined_original_frames(self, char_frames, shadow_frames, offset_frames):
         combined = []
@@ -272,6 +288,12 @@ class AnimationGroupUI:
         shadow_combined_res = self.preview_generator.generate_shadow_combined_preview()
         self.players["shadow_combined"].set_animation(**shadow_combined_res)
         self.players["shadow_combined"].play()
+        
+        # Update the shadow offset label with the text from the preview data
+        if shadow_combined_res and shadow_combined_res["text_data"]:
+            self.shadow_offset_label.config(text=shadow_combined_res["text_data"][0])
+        else:
+            self.shadow_offset_label.config(text="Shadow Offset: (N/A)")
     
     def set_sprite_values(self, sprite_numbers, mirror_flags):
         for idx, num in enumerate(sprite_numbers):

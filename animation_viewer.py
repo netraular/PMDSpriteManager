@@ -22,6 +22,12 @@ class AnimationViewer:
         
         self.selected_anim_var = StringVar()
 
+        # Animation control state
+        self.is_paused = False
+        self.current_frame = 0
+        self.total_frames = 0
+        self.animation_control_frame = None
+
         # Visibility control variables
         self.show_original_var = BooleanVar(value=True)
         self.show_editor_var = BooleanVar(value=True)
@@ -83,6 +89,11 @@ class AnimationViewer:
         
         anim = self.anim_data[self.current_anim_index]
         
+        # Reset animation control state for the new animation
+        self.is_paused = False
+        self.current_frame = 0
+        self.total_frames = anim.get("frames_per_group", 0)
+        
         all_frames, all_offsets_frames, all_shadow_frames, all_metadata = self.data_handler._load_animation_assets(anim)
         
         ui_compatible_json_data = self.load_and_convert_optimized_json(anim["name"])
@@ -102,6 +113,21 @@ class AnimationViewer:
         Label(header_frame, text=count_text, font=('Arial', 12, 'italic')).pack(side='left', padx=10)
 
         Button(header_frame, text="View Options", command=self.open_view_options).pack(side='left', padx=10)
+
+        self.animation_control_frame = Frame(header_frame, bd=1, relief="sunken")
+        self.animation_control_frame.pack(side='left', padx=10)
+
+        self.prev_frame_button = Button(self.animation_control_frame, text="<", command=self.prev_frame)
+        self.prev_frame_button.pack(side='left')
+
+        self.play_pause_button = Button(self.animation_control_frame, text="Pause", command=self.toggle_play_pause)
+        self.play_pause_button.pack(side='left')
+
+        self.next_frame_button = Button(self.animation_control_frame, text=">", command=self.next_frame)
+        self.next_frame_button.pack(side='left')
+
+        self.frame_counter_label = Label(self.animation_control_frame, text="0 / 0", width=8)
+        self.frame_counter_label.pack(side='left', padx=5)
 
         for group_idx in range(anim["total_groups"]):
             start, end = group_idx * anim["frames_per_group"], (group_idx + 1) * anim["frames_per_group"]
@@ -131,6 +157,59 @@ class AnimationViewer:
                 self.identify_group_sprites(group_ui)
         
         self._bind_mousewheel_recursively(self.scroll_frame)
+        self.update_frame_counter()
+        self.start_frame_watcher()
+
+    def toggle_play_pause(self):
+        self.is_paused = not self.is_paused
+        if self.is_paused:
+            self.play_pause_button.config(text="Play")
+            for group_ui in self.group_ui_instances:
+                group_ui.pause_all()
+        else:
+            self.play_pause_button.config(text="Pause")
+            for group_ui in self.group_ui_instances:
+                group_ui.play_all()
+
+    def next_frame(self):
+        if not self.is_paused:
+            self.toggle_play_pause()
+        
+        if self.total_frames > 0:
+            self.current_frame = (self.current_frame + 1) % self.total_frames
+            self.update_frame_counter()
+            for group_ui in self.group_ui_instances:
+                group_ui.go_to_frame(self.current_frame)
+
+    def prev_frame(self):
+        if not self.is_paused:
+            self.toggle_play_pause()
+
+        if self.total_frames > 0:
+            self.current_frame = (self.current_frame - 1 + self.total_frames) % self.total_frames
+            self.update_frame_counter()
+            for group_ui in self.group_ui_instances:
+                group_ui.go_to_frame(self.current_frame)
+
+    def update_frame_counter(self):
+        if self.animation_control_frame and self.animation_control_frame.winfo_exists():
+            self.frame_counter_label.config(text=f"{self.current_frame + 1} / {self.total_frames}")
+
+    def start_frame_watcher(self):
+        if not self.group_ui_instances:
+            return
+
+        if not self.is_paused:
+            first_group = self.group_ui_instances[0]
+            if first_group.players:
+                first_player = first_group.players.get("original")
+                if first_player and first_player.frames:
+                    new_frame_index = first_player.current_frame_index
+                    if new_frame_index != self.current_frame:
+                        self.current_frame = new_frame_index
+                        self.update_frame_counter()
+        
+        self.parent_frame.after(50, self.start_frame_watcher)
 
     def open_view_options(self):
         top = Toplevel(self.parent_frame)
