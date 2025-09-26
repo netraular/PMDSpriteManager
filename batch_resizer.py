@@ -72,6 +72,7 @@ class BatchResizer:
         Button(content_frame, text="Generate Optimized Animations", command=self.start_animation_generation, font=('Arial', 12), width=35).pack(pady=10)
         Button(content_frame, text="Export Final Assets", command=self.show_export_assets_view, font=('Arial', 12), width=35, bg="lightgreen").pack(pady=10)
         Button(content_frame, text="Export Final Assets (x2)", command=self.show_export_assets_x2_view, font=('Arial', 12), width=35, bg="lightblue").pack(pady=10)
+        Button(content_frame, text="Generate Shadow Sprites", command=self.show_shadow_generation_view, font=('Arial', 12), width=35).pack(pady=10)
         Button(content_frame, text="Preview Optimized Animations", command=self.show_isometric_previewer, font=('Arial', 12), width=35).pack(pady=10)
 
     def show_asset_generation_view(self):
@@ -513,9 +514,6 @@ class BatchResizer:
                 shutil.rmtree(output_character_dir)
             output_character_dir.mkdir()
             
-            output_sprites_dir = output_character_dir / "Sprites"
-            output_sprites_dir.mkdir()
-
             for json_name in sorted(list(common_animations)):
                 if self.cancel_operation: q.put("Cancelled."); q.put("DONE:CANCEL"); return
                 try:
@@ -531,7 +529,10 @@ class BatchResizer:
 
                 if not source_sprites_path.is_dir():
                     q.put(f"  - Warning: Sprite folder '{animation_name}' for this JSON was not found."); continue
-
+                
+                dest_sprites_subfolder = output_character_dir / animation_name
+                dest_sprites_subfolder.mkdir()
+                
                 q.put(f"  - Copying sprites from: '{source_sprites_path.relative_to(main_path)}'")
                 found_pngs = list(source_sprites_path.glob('*.png'))
 
@@ -539,7 +540,7 @@ class BatchResizer:
                     q.put("    - No .png files were found in this folder."); continue
 
                 for source_png in found_pngs:
-                    shutil.copy2(source_png, output_sprites_dir)
+                    shutil.copy2(source_png, dest_sprites_subfolder)
         
         q.put("\n-----------------------------------------------------")
         q.put(f"✅ Process completed. Files have been generated in the folder: {output_dir}")
@@ -628,27 +629,28 @@ class BatchResizer:
 
             dest_char_dir = dest_dir / char_name; dest_char_dir.mkdir()
 
-            # Process Sprites
-            source_sprites_dir = char_folder / "Sprites"
-            dest_sprites_dir = dest_char_dir / "Sprites"
-            if source_sprites_dir.is_dir():
-                dest_sprites_dir.mkdir()
-                q.put("  Resizing sprites...")
-                for sprite_file in source_sprites_dir.glob("*.png"):
-                    if self.cancel_operation: q.put("Cancelled."); q.put("DONE:CANCEL"); return
-                    try:
-                        with Image.open(sprite_file) as img:
-                            new_size = (img.width * 2, img.height * 2)
-                            resized_img = img.resize(new_size, Image.NEAREST)
-                            resized_img.save(dest_sprites_dir / sprite_file.name)
-                    except Exception as e:
-                        q.put(f"    ❌ Error resizing {sprite_file.name}: {e}")
-                q.put("  ✅ Sprites resized.")
-
-            # Process JSONs
-            q.put("  Adjusting JSON files...")
             for json_file in char_folder.glob("*.json"):
                 if self.cancel_operation: q.put("Cancelled."); q.put("DONE:CANCEL"); return
+                
+                anim_name = json_file.name.removesuffix("-AnimData.json")
+                source_sprites_dir = char_folder / anim_name
+                dest_sprites_dir = dest_char_dir / anim_name
+
+                if source_sprites_dir.is_dir():
+                    dest_sprites_dir.mkdir()
+                    q.put(f"  Resizing sprites for {anim_name}...")
+                    for sprite_file in source_sprites_dir.glob("*.png"):
+                        if self.cancel_operation: q.put("Cancelled."); q.put("DONE:CANCEL"); return
+                        try:
+                            with Image.open(sprite_file) as img:
+                                new_size = (img.width * 2, img.height * 2)
+                                resized_img = img.resize(new_size, Image.NEAREST)
+                                resized_img.save(dest_sprites_dir / sprite_file.name)
+                        except Exception as e:
+                            q.put(f"    ❌ Error resizing {sprite_file.name}: {e}")
+                    q.put(f"  ✅ Sprites resized for {anim_name}.")
+
+                q.put(f"  Adjusting JSON file: {json_file.name}...")
                 try:
                     with open(json_file, 'r') as f:
                         data = json.load(f)
@@ -656,19 +658,138 @@ class BatchResizer:
                     for group in data.get('sprites', {}).values():
                         group['framewidth'] *= 2
                         group['frameheight'] *= 2
+                        
+                        if 'sprite_anchor_offset' in group and group['sprite_anchor_offset'] and len(group['sprite_anchor_offset']) == 2:
+                            group['sprite_anchor_offset'][0] *= 2
+                            group['sprite_anchor_offset'][1] *= 2
+
                         for frame in group.get('frames', []):
-                            if 'offset' in frame and len(frame['offset']) == 2:
-                                frame['offset'][0] *= 2
-                                frame['offset'][1] *= 2
+                            if 'render_offset' in frame and frame['render_offset'] and len(frame['render_offset']) == 2:
+                                frame['render_offset'][0] *= 2
+                                frame['render_offset'][1] *= 2
                     
                     with open(dest_char_dir / json_file.name, 'w') as f:
                         json.dump(data, f, indent=4)
+                    q.put(f"  ✅ JSON file adjusted.")
                 except Exception as e:
                     q.put(f"    ❌ Error processing {json_file.name}: {e}")
-            q.put("  ✅ JSON files adjusted.")
 
         q.put("\n-----------------------------------------------------")
         q.put(f"✅ x2 Export completed. Files are in: {dest_dir}")
+        q.put("-----------------------------------------------------")
+        q.put("DONE:COMPLETE")
+
+    def show_shadow_generation_view(self):
+        if self.update_breadcrumbs:
+            path = self.base_path + [
+                ("Batch Tasks", self.show_task_selection_view),
+                ("Generate Shadow Sprites", self.show_shadow_generation_view)
+            ]
+            self.update_breadcrumbs(path)
+        self.clear_frame()
+        top_frame = Frame(self.main_frame); top_frame.pack(fill='x', padx=10, pady=5)
+        Button(top_frame, text="Back to Tasks", command=self.show_task_selection_view).pack(side='left')
+        
+        Label(self.main_frame, text="Generate Shadow Sprites", font=('Arial', 14)).pack(pady=10)
+        description = "This will find the 'sprite_base.png' for each character and copy it into the 'output' folder.\nA 2x version will be created for the 'output x2' folder."
+        Label(self.main_frame, text=description, wraplength=600).pack(pady=5)
+        Label(self.main_frame, text=f"Target Folder: {self.parent_folder}", font=('Arial', 10)).pack(pady=5)
+
+        self.action_button = Button(self.main_frame, text="Start Generation", command=self._start_shadow_generation, font=('Arial', 12), width=20)
+        self.action_button.pack(pady=20)
+
+        log_frame = Frame(self.main_frame); log_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        Label(log_frame, text="Log Output:").pack(anchor='w')
+        self.log_text = Text(log_frame, height=15, wrap='word', state='disabled')
+        log_scroll = Scrollbar(log_frame, command=self.log_text.yview)
+        self.log_text.config(yscrollcommand=log_scroll.set)
+        log_scroll.pack(side='right', fill='y')
+        self.log_text.pack(side='left', fill='both', expand=True)
+
+    def _start_shadow_generation(self):
+        self.cancel_operation = False
+        self._clear_log()
+        self.action_button.config(text="Cancel", command=self.request_cancel, bg="tomato")
+        
+        self.export_progress_queue = queue.Queue()
+        self.export_worker_thread = threading.Thread(target=self._shadow_generation_worker, args=(self.export_progress_queue,), daemon=True)
+        self.export_worker_thread.start()
+        self.parent_frame.after(100, self._check_export_progress_queue)
+
+    def _shadow_generation_worker(self, q):
+        main_path = pathlib.Path(self.parent_folder)
+        output_dir_1x = main_path / "output"
+        output_dir_2x = main_path / "output x2"
+        
+        q.put("--- Starting Shadow Sprite Generation ---")
+        
+        if not output_dir_1x.is_dir():
+            q.put(f"❌ ERROR: The source folder '{output_dir_1x}' does not exist.")
+            q.put("Please run the 'Export Final Assets' task first.")
+            q.put("DONE:ERROR"); return
+        
+        q.put(f"\nProcessing 1x shadows for '{output_dir_1x.name}'...")
+        character_folders_1x = [d for d in output_dir_1x.iterdir() if d.is_dir()]
+        copied_1x, skipped_1x = 0, 0
+
+        for char_folder in character_folders_1x:
+            if self.cancel_operation: q.put("Cancelled."); q.put("DONE:CANCEL"); return
+            char_name = char_folder.name
+            source_project_path = main_path / char_name
+            
+            source_shadow_path = source_project_path / "Animations" / "sprite_base.png"
+            if not source_shadow_path.exists():
+                source_shadow_path = source_project_path / "sprite_base.png"
+            
+            if source_shadow_path.exists():
+                dest_shadow_path = char_folder / "sprite_base.png"
+                try:
+                    shutil.copy2(source_shadow_path, dest_shadow_path)
+                    q.put(f"  ✅ Copied shadow for '{char_name}'")
+                    copied_1x += 1
+                except Exception as e:
+                    q.put(f"  ❌ Error copying shadow for '{char_name}': {e}")
+                    skipped_1x += 1
+            else:
+                q.put(f"  - WARNING: No 'sprite_base.png' found for '{char_name}'. Skipping.")
+                skipped_1x += 1
+
+        if not output_dir_2x.is_dir():
+            q.put(f"\n- INFO: Folder '{output_dir_2x.name}' not found. Skipping 2x shadow generation.")
+        else:
+            q.put(f"\nProcessing 2x shadows for '{output_dir_2x.name}'...")
+            character_folders_2x = [d for d in output_dir_2x.iterdir() if d.is_dir()]
+            copied_2x, skipped_2x = 0, 0
+            
+            for char_folder in character_folders_2x:
+                if self.cancel_operation: q.put("Cancelled."); q.put("DONE:CANCEL"); return
+                char_name = char_folder.name
+                source_project_path = main_path / char_name
+                
+                source_shadow_path = source_project_path / "Animations" / "sprite_base.png"
+                if not source_shadow_path.exists():
+                    source_shadow_path = source_project_path / "sprite_base.png"
+                
+                if source_shadow_path.exists():
+                    dest_shadow_path = char_folder / "sprite_base.png"
+                    try:
+                        with Image.open(source_shadow_path) as img:
+                            resized_img = img.resize((img.width * 2, img.height * 2), Image.NEAREST)
+                            resized_img.save(dest_shadow_path)
+                            q.put(f"  ✅ Created 2x shadow for '{char_name}'")
+                            copied_2x += 1
+                    except Exception as e:
+                        q.put(f"  ❌ Error creating 2x shadow for '{char_name}': {e}")
+                        skipped_2x += 1
+                else:
+                    q.put(f"  - WARNING: No 'sprite_base.png' found for '{char_name}'. Skipping.")
+                    skipped_2x += 1
+
+        q.put("\n-----------------------------------------------------")
+        q.put("✅ Shadow generation completed.")
+        q.put(f"   - 1x Output: {copied_1x} created, {skipped_1x} skipped/failed.")
+        if output_dir_2x.is_dir():
+            q.put(f"   - 2x Output: {copied_2x} created, {skipped_2x} skipped/failed.")
         q.put("-----------------------------------------------------")
         q.put("DONE:COMPLETE")
 
