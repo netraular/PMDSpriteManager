@@ -3,6 +3,7 @@
 import os
 from PIL import Image, ImageDraw, ImageOps
 import math
+from ui_components import isometric_renderer
 
 class PreviewGenerator:
     def __init__(self, anim_data, group_frames, group_metadata, group_shadow_frames, sprite_folder, anim_folder):
@@ -162,7 +163,7 @@ class PreviewGenerator:
             canvas = Image.new('RGBA', (canvas_w, canvas_h), (0, 0, 0, 0))
             world_anchor = (canvas_w // 2, canvas_h // 2)
             grid_origin = (world_anchor[0] - consts['WIDTH_HALF'], world_anchor[1] - consts['HEIGHT_HALF'] * 3)
-            self._draw_iso_grid(canvas, grid_origin, consts)
+            isometric_renderer.draw_iso_grid(canvas, grid_origin, consts)
             draw = ImageDraw.Draw(canvas)
 
             # Calculate total unified movement based on the corrected final position data
@@ -172,8 +173,8 @@ class PreviewGenerator:
                 total_move_x = current_pos_corrected[0] - ref_pos_corrected[0]
                 total_move_y = current_pos_corrected[1] - ref_pos_corrected[1]
 
-            # The shadow moves based on this unified displacement
-            shadow_center = (world_anchor[0] + total_move_x, world_anchor[1] + total_move_y)
+            # The shadow is static at the world anchor
+            shadow_center = world_anchor
             paste_pos = (shadow_center[0] - self.base_sprite_img.width // 2, 
                          shadow_center[1] - self.base_sprite_img.height // 2)
             canvas.paste(self.base_sprite_img, paste_pos, self.base_sprite_img)
@@ -183,9 +184,9 @@ class PreviewGenerator:
             current_render_offset = None
 
             if sprite_anchor_offset:
-                # The green crosshair position is the shadow's new position plus the static offset
-                crosshair_x = shadow_center[0] + sprite_anchor_offset[0]
-                crosshair_y = shadow_center[1] + sprite_anchor_offset[1]
+                # The green crosshair position is the world anchor + static offset + world displacement
+                crosshair_x = world_anchor[0] + sprite_anchor_offset[0] + total_move_x
+                crosshair_y = world_anchor[1] + sprite_anchor_offset[1] + total_move_y
 
                 char_sprite = self.group_frames[i]
                 current_green_pos = self.group_metadata[i]['anchors'].get('green')
@@ -276,20 +277,3 @@ class PreviewGenerator:
         tint_layer = Image.new('RGBA', image.size, color)
         
         return Image.composite(tint_layer, image, image)
-
-
-    def _grid_to_screen(self, gx, gy, origin, w_half, h_half):
-        return (int(origin[0] + (gx - gy) * w_half), int(origin[1] + (gx + gy) * h_half))
-
-    def _draw_iso_grid(self, image, origin, consts):
-        draw = ImageDraw.Draw(image)
-        for y in range(3):
-            for x in range(3):
-                pos = self._grid_to_screen(x, y, origin, consts['WIDTH_HALF'], consts['HEIGHT_HALF'])
-                points = [
-                    (pos[0] + consts['WIDTH_HALF'], pos[1]),
-                    (pos[0] + consts['WIDTH'], pos[1] + consts['HEIGHT_HALF']),
-                    (pos[0] + consts['WIDTH_HALF'], pos[1] + consts['HEIGHT']),
-                    (pos[0], pos[1] + consts['HEIGHT_HALF'])
-                ]
-                draw.polygon(points, fill=(200, 200, 200), outline=(150, 150, 150))

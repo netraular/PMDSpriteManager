@@ -4,6 +4,7 @@ from tkinter import Frame, Label, Button, Entry, Canvas, Scrollbar, messagebox, 
 from PIL import Image, ImageTk, ImageOps, ImageDraw
 from sprite_sheet_handler import SpriteSheetHandler
 from ui_components.animation_player import AnimationPlayer
+from ui_components import isometric_renderer
 import os
 import json
 import math
@@ -155,7 +156,7 @@ class AnimationCreator:
     def _load_and_preview_single_json(self, file_path):
         try:
             with open(file_path, 'r') as f:
-                self.json_data = json.load(f)
+                json_data = json.load(f)
             
             json_dir = os.path.dirname(file_path)
             anim_name = os.path.basename(file_path).replace("-AnimData.json", "")
@@ -174,7 +175,9 @@ class AnimationCreator:
             
             Label(self.animation_frame, text=f"Preview: {anim_name}", font=('Arial', 16)).pack(pady=10)
             
-            preview_data = self._generate_isometric_preview_data(self.json_data, sprite_folder)
+            base_shadow = self._load_base_shadow()
+            sprite_map = isometric_renderer.load_sprites_from_json(json_data, sprite_folder)
+            preview_data = isometric_renderer.generate_isometric_preview_data(json_data, sprite_map, base_shadow, self.is_2x_preview)
 
             anim_panel = Frame(self.animation_frame)
             anim_panel.pack(pady=10)
@@ -182,7 +185,7 @@ class AnimationCreator:
             anim_label = Label(anim_panel)
             anim_label.pack()
             
-            text_label = Label(anim_panel, text="Render Offset: [N/A]", font=('Arial', 10))
+            text_label = Label(anim_panel, text="Render Offset: [N/A]", font=('Arial', 10), justify="left")
             text_label.pack(pady=(5,0))
             
             player = AnimationPlayer(self.parent_frame, anim_label, text_label)
@@ -260,6 +263,8 @@ class AnimationCreator:
             
             row, col = 0, 0
             max_cols = 5
+            
+            base_shadow = self._load_base_shadow()
 
             for json_file in json_files:
                 file_path = os.path.join(optimized_folder, json_file)
@@ -278,7 +283,8 @@ class AnimationCreator:
                 
                 Label(group_frame, text=anim_name, font=('Arial', 12, 'bold')).pack(pady=5)
                 
-                preview_data = self._generate_isometric_preview_data(json_data, sprite_folder)
+                sprite_map = isometric_renderer.load_sprites_from_json(json_data, sprite_folder)
+                preview_data = isometric_renderer.generate_isometric_preview_data(json_data, sprite_map, base_shadow, self.is_2x_preview)
 
                 if preview_data["frames"]:
                     anim_panel = Frame(group_frame)
@@ -372,22 +378,6 @@ class AnimationCreator:
 
         self.frame_updater_after_id = self.parent_frame.after(100, self._start_frame_counter_updater)
 
-    def _grid_to_screen(self, gx, gy, origin, w_half, h_half):
-        return (int(origin[0] + (gx - gy) * w_half), int(origin[1] + (gx + gy) * h_half))
-
-    def _draw_iso_grid(self, image, origin, consts):
-        draw = ImageDraw.Draw(image)
-        for y in range(3):
-            for x in range(3):
-                pos = self._grid_to_screen(x, y, origin, consts['WIDTH_HALF'], consts['HEIGHT_HALF'])
-                points = [
-                    (pos[0] + consts['WIDTH_HALF'], pos[1]),
-                    (pos[0] + consts['WIDTH'], pos[1] + consts['HEIGHT_HALF']),
-                    (pos[0] + consts['WIDTH_HALF'], pos[1] + consts['HEIGHT']),
-                    (pos[0], pos[1] + consts['HEIGHT_HALF'])
-                ]
-                draw.polygon(points, fill=(200, 200, 200), outline=(150, 150, 150))
-
     def _load_base_shadow(self):
         try:
             path = os.path.join(self.folder, "Animations", "sprite_base.png")
@@ -408,90 +398,6 @@ class AnimationCreator:
             draw = ImageDraw.Draw(shadow)
             draw.ellipse([(0,0), (31,15)], fill=(0,0,0,100))
         return shadow
-
-    def _generate_isometric_preview_data(self, json_data, sprite_folder):
-        base_shadow = self._load_base_shadow()
-        
-        if self.is_2x_preview:
-            consts = {'WIDTH': 64, 'HEIGHT': 32, 'WIDTH_HALF': 32, 'HEIGHT_HALF': 16}
-        else:
-            consts = {'WIDTH': 32, 'HEIGHT': 16, 'WIDTH_HALF': 16, 'HEIGHT_HALF': 8}
-
-        canvas_w, canvas_h = consts['WIDTH'] * 5, consts['HEIGHT'] * 5
-
-        all_frames_data = []
-        for group_id in sorted(json_data["sprites"].keys(), key=int):
-            group_data = json_data["sprites"][group_id]
-            all_frames_data.extend(group_data.get("frames", []))
-
-        if not all_frames_data:
-            return {"frames": [], "text_data": [], "durations": []}
-        
-        total_frames = len(all_frames_data)
-        base_durations = json_data.get("durations", [1])
-        durations = (base_durations * (total_frames // len(base_durations) + 1))[:total_frames]
-        
-        final_frames = []
-        text_data = []
-
-        for i, frame_info in enumerate(all_frames_data):
-            canvas = Image.new('RGBA', (canvas_w, canvas_h), (0, 0, 0, 0))
-            world_anchor = (canvas_w // 2, canvas_h // 2)
-            grid_origin = (world_anchor[0] - consts['WIDTH_HALF'], world_anchor[1] - consts['HEIGHT_HALF'] * 3)
-            self._draw_iso_grid(canvas, grid_origin, consts)
-            draw = ImageDraw.Draw(canvas)
-
-            if base_shadow:
-                shadow_pos = (world_anchor[0] - base_shadow.width // 2, world_anchor[1] - base_shadow.height // 2)
-                canvas.paste(base_shadow, shadow_pos, base_shadow)
-
-            render_offset = frame_info.get("render_offset")
-            sprite_id = frame_info.get("id", "0")
-            sprite_img = self.load_sprite(sprite_id, sprite_folder)
-
-            current_offset_text = "Render Offset: (N/A)"
-
-            if sprite_img and render_offset and len(render_offset) == 2:
-                render_x, render_y = render_offset
-                paste_pos = (world_anchor[0] + render_x, world_anchor[1] + render_y)
-                canvas.paste(sprite_img, paste_pos, sprite_img)
-
-                s = 3
-                draw.line((paste_pos[0]-s, paste_pos[1], paste_pos[0]+s, paste_pos[1]), fill="purple", width=1)
-                draw.line((paste_pos[0], paste_pos[1]-s, paste_pos[0], paste_pos[1]+s), fill="purple", width=1)
-                current_offset_text = f"Render Offset: ({render_x}, {render_y})"
-
-            frame_duration = durations[i] if i < len(durations) else "N/A"
-            final_text_for_frame = f"{current_offset_text}\nDuration: {frame_duration}"
-
-            s = 3
-            draw.line((world_anchor[0]-s, world_anchor[1], world_anchor[0]+s, world_anchor[1]), fill="red", width=1)
-            draw.line((world_anchor[0], world_anchor[1]-s, world_anchor[0], world_anchor[1]+s), fill="red", width=1)
-            
-            if self.is_2x_preview:
-                final_canvas = canvas
-            else:
-                final_canvas = canvas.resize((canvas.width * 2, canvas.height * 2), Image.NEAREST)
-
-            final_frames.append(final_canvas)
-            text_data.append(final_text_for_frame)
-        
-        return {
-            "frames": final_frames, 
-            "text_data": text_data, 
-            "durations": durations,
-            "thumbnail_size": (400, 400)
-        }
-
-    def load_sprite(self, sprite_id_str, sprite_folder):
-        if sprite_id_str == "0": return None 
-        try:
-            sprite_path = os.path.join(sprite_folder, f"sprite_{sprite_id_str}.png")
-            return Image.open(sprite_path).convert('RGBA')
-        except (FileNotFoundError, ValueError):
-            placeholder = Image.new('RGBA', (40, 40), (0, 0, 0, 0))
-            draw = ImageDraw.Draw(placeholder); draw.text((5, 10), f"?{sprite_id_str}?", fill="red")
-            return placeholder
             
     def clear_frame(self):
         if self.frame_updater_after_id:

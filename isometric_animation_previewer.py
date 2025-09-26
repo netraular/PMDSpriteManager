@@ -3,8 +3,9 @@
 import os
 import json
 from tkinter import Frame, Label, Button, Canvas, messagebox, OptionMenu, StringVar, Entry
-
 from PIL import Image, ImageTk, ImageDraw
+from ui_components.animation_player import AnimationPlayer
+from ui_components import isometric_renderer
 
 class IsometricAnimationPreviewer:
     def __init__(self, parent_frame, parent_folder, return_to_main_callback, update_breadcrumbs_callback=None, base_path=None):
@@ -18,7 +19,8 @@ class IsometricAnimationPreviewer:
         self.main_frame = Frame(self.parent_frame)
         self.main_frame.pack(fill='both', expand=True)
         
-        self.after_ids = []
+        self.player_1x = None
+        self.player_2x = None
 
         self.selected_char_var = StringVar()
         self.selected_anim_var = StringVar()
@@ -63,13 +65,19 @@ class IsometricAnimationPreviewer:
         preview_container = Frame(self.main_frame); preview_container.pack(fill='both', expand=True, pady=10)
         preview_container.grid_columnconfigure(0, weight=1); preview_container.grid_columnconfigure(1, weight=1)
 
+        # Setup 1x Player
         frame_1x = Frame(preview_container); frame_1x.grid(row=0, column=0, padx=10, sticky="nsew")
         Label(frame_1x, text="1x Scale (output)", font=('Arial', 12, 'bold')).pack()
-        self.label_1x = Label(frame_1x); self.label_1x.pack(expand=True)
+        label_1x = Label(frame_1x); label_1x.pack(expand=True)
+        text_1x = Label(frame_1x, justify="left"); text_1x.pack(pady=(5,0))
+        self.player_1x = AnimationPlayer(self.main_frame, label_1x, text_1x)
         
+        # Setup 2x Player
         frame_2x = Frame(preview_container); frame_2x.grid(row=0, column=1, padx=10, sticky="nsew")
         Label(frame_2x, text="2x Scale (output x2)", font=('Arial', 12, 'bold')).pack()
-        self.label_2x = Label(frame_2x); self.label_2x.pack(expand=True)
+        label_2x = Label(frame_2x); label_2x.pack(expand=True)
+        text_2x = Label(frame_2x, justify="left"); text_2x.pack(pady=(5,0))
+        self.player_2x = AnimationPlayer(self.main_frame, label_2x, text_2x)
 
         self.selected_char_var.set(characters[0])
         self._on_character_selected(characters[0])
@@ -121,21 +129,25 @@ class IsometricAnimationPreviewer:
         anim_filename = f"{anim_name}-AnimData.json"
 
         try:
+            # Load and display 1x animation
             anim_data_1x, sprites_1x, shadow_1x = self._load_animation_data(self.output_folder_1x, char_name, anim_filename)
-            anim_data_2x, sprites_2x, shadow_2x = self._load_animation_data(self.output_folder_2x, char_name, anim_filename)
-            
-            tile_constants_1x = {'WIDTH': 32, 'HEIGHT': 16, 'WIDTH_HALF': 16, 'HEIGHT_HALF': 8}
-            tile_constants_2x = {'WIDTH': 64, 'HEIGHT': 32, 'WIDTH_HALF': 32, 'HEIGHT_HALF': 16}
-
             if anim_data_1x:
-                self._start_animation_loop(self.label_1x, anim_data_1x, tile_constants_1x, sprites_1x, shadow_1x)
+                preview_data = isometric_renderer.generate_isometric_preview_data(anim_data_1x, sprites_1x, shadow_1x, is_2x=False)
+                self.player_1x.set_animation(**preview_data)
+                self.player_1x.play()
             else:
-                self.label_1x.config(image='', text="No 1x data found", fg="grey")
+                self.player_1x.set_animation([], [], text_data=[])
+                self.player_1x.image_label.config(text="No 1x data found", fg="grey")
 
+            # Load and display 2x animation
+            anim_data_2x, sprites_2x, shadow_2x = self._load_animation_data(self.output_folder_2x, char_name, anim_filename)
             if anim_data_2x:
-                self._start_animation_loop(self.label_2x, anim_data_2x, tile_constants_2x, sprites_2x, shadow_2x)
+                preview_data = isometric_renderer.generate_isometric_preview_data(anim_data_2x, sprites_2x, shadow_2x, is_2x=True)
+                self.player_2x.set_animation(**preview_data)
+                self.player_2x.play()
             else:
-                self.label_2x.config(image='', text="No 2x data found", fg="grey")
+                self.player_2x.set_animation([], [], text_data=[])
+                self.player_2x.image_label.config(text="No 2x data found", fg="grey")
 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to start preview: {e}")
@@ -148,18 +160,7 @@ class IsometricAnimationPreviewer:
             data = json.load(f)
         
         sprite_folder = os.path.join(base_folder, character_name, data['name'])
-        loaded_sprites = {}
-
-        for group in data.get('sprites', {}).values():
-            for frame in group.get('frames', []):
-                sprite_id = frame.get('id', '0')
-                if sprite_id != '0' and sprite_id not in loaded_sprites:
-                    sprite_path = os.path.join(sprite_folder, f"sprite_{sprite_id}.png")
-                    try:
-                        loaded_sprites[sprite_id] = Image.open(sprite_path).convert('RGBA')
-                    except FileNotFoundError:
-                        print(f"Warning: Sprite not found at {sprite_path}")
-                        loaded_sprites[sprite_id] = None
+        sprite_map = isometric_renderer.load_sprites_from_json(data, sprite_folder)
         
         shadow_sprite = None
         shadow_path = os.path.join(base_folder, character_name, "sprite_base.png")
@@ -169,92 +170,11 @@ class IsometricAnimationPreviewer:
             except Exception as e:
                 print(f"Warning: Could not load shadow sprite at {shadow_path}: {e}")
 
-        return data, loaded_sprites, shadow_sprite
-
-    def _grid_to_screen(self, grid_x, grid_y, origin, TILE_WIDTH_HALF, TILE_HEIGHT_HALF):
-        screen_x = origin[0] + (grid_x - grid_y) * TILE_WIDTH_HALF
-        screen_y = origin[1] + (grid_x + grid_y) * TILE_HEIGHT_HALF
-        return int(screen_x), int(screen_y)
-
-    def _draw_iso_grid(self, image, origin, consts):
-        draw = ImageDraw.Draw(image)
-        fill_color = (200, 200, 200, 255)
-        outline_color = (150, 150, 150, 255)
-        
-        for y in range(3):
-            for x in range(3):
-                pos = self._grid_to_screen(x, y, origin, consts['WIDTH_HALF'], consts['HEIGHT_HALF'])
-                top = (pos[0] + consts['WIDTH_HALF'], pos[1])
-                right = (pos[0] + consts['WIDTH'], pos[1] + consts['HEIGHT_HALF'])
-                bottom = (pos[0] + consts['WIDTH_HALF'], pos[1] + consts['HEIGHT'])
-                left = (pos[0], pos[1] + consts['HEIGHT_HALF'])
-                draw.polygon([top, right, bottom, left], fill=fill_color, outline=outline_color)
-
-    def _start_animation_loop(self, label, anim_data, tile_consts, sprite_map, shadow_sprite):
-        all_frames_with_context = []
-        for group_id in sorted(anim_data['sprites'].keys(), key=int):
-            group_data = anim_data['sprites'][group_id]
-            for frame_info in group_data['frames']:
-                all_frames_with_context.append({
-                    "frame_info": frame_info,
-                })
-        
-        if not all_frames_with_context:
-            label.config(image='', text="No frames in animation", fg="red")
-            return
-
-        canvas_width = tile_consts['WIDTH'] * 5
-        canvas_height = tile_consts['HEIGHT'] * 5
-        
-        current_frame_idx = [0]
-        
-        def update():
-            if not label.winfo_exists(): return
-            
-            context = all_frames_with_context[current_frame_idx[0] % len(all_frames_with_context)]
-            frame_info = context["frame_info"]
-            
-            canvas = Image.new('RGBA', (canvas_width, canvas_height), (0, 0, 0, 0))
-            
-            world_anchor_x = canvas_width // 2
-            world_anchor_y = canvas_height // 2
-
-            grid_origin_x = world_anchor_x - tile_consts['WIDTH_HALF']
-            grid_origin_y = world_anchor_y - (tile_consts['HEIGHT_HALF'] * 3)
-            
-            self._draw_iso_grid(canvas, (grid_origin_x, grid_origin_y), tile_consts)
-            
-            if shadow_sprite:
-                shadow_paste_x = world_anchor_x - shadow_sprite.width // 2
-                shadow_paste_y = world_anchor_y - shadow_sprite.height // 2
-                canvas.paste(shadow_sprite, (shadow_paste_x, shadow_paste_y), shadow_sprite)
-
-            sprite_id = frame_info.get('id', '0')
-            sprite_img = sprite_map.get(sprite_id)
-            render_offset = frame_info.get('render_offset')
-
-            if sprite_img and render_offset and len(render_offset) == 2:
-                render_x, render_y = render_offset
-                paste_pos = (world_anchor_x + render_x, world_anchor_y + render_y)
-                canvas.paste(sprite_img, paste_pos, sprite_img)
-
-            img_tk = ImageTk.PhotoImage(canvas)
-            label.config(image=img_tk)
-            label.image = img_tk
-            
-            duration_idx = current_frame_idx[0] % len(anim_data['durations'])
-            delay = anim_data['durations'][duration_idx] * 33
-            
-            current_frame_idx[0] += 1
-            self.after_ids.append(self.parent_frame.after(delay, update))
-        
-        update()
+        return data, sprite_map, shadow_sprite
 
     def clear_animations(self):
-        for aid in self.after_ids: self.parent_frame.after_cancel(aid)
-        self.after_ids.clear()
-        if hasattr(self, 'label_1x'): self.label_1x.config(image='')
-        if hasattr(self, 'label_2x'): self.label_2x.config(image='')
+        if self.player_1x: self.player_1x.stop()
+        if self.player_2x: self.player_2x.stop()
 
     def clear_frame(self):
         self.clear_animations()
