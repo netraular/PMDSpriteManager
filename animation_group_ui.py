@@ -87,7 +87,7 @@ class AnimationGroupUI:
         self.players["combined_original"].image_label.grid(row=1, column=1, padx=5, pady=5)
 
         # Shadow Offset Label
-        self.shadow_offset_label = Label(col1_content, text="Shadow Offset: (N/A)", font=('Arial', 8))
+        self.shadow_offset_label = Label(col1_content, text="Sprite Anchor Offset: (N/A)", font=('Arial', 8))
         self.shadow_offset_label.grid(row=2, column=0, columnspan=2, pady=(5,0))
 
         # --- Column 2: Individual Sprite Editor ---
@@ -144,9 +144,9 @@ class AnimationGroupUI:
         # Content for Column 3
         col3_content = Frame(self.col3_frame)
         col3_content.pack(fill='both', expand=True)
-        self._create_preview_panel(col3_content, "overlay", "Uncorrected Overlay", "Offset: (N/A)")
-        self._create_preview_panel(col3_content, "corrected", "Corrected Preview", "Offset: (N/A)")
-        self._create_preview_panel(col3_content, "shadow_combined", "Isometric Preview", "Offset: (N/A)")
+        self._create_preview_panel(col3_content, "overlay", "Uncorrected Overlay", "Displacement: (N/A)")
+        self._create_preview_panel(col3_content, "corrected", "Corrected Preview", "Final Offset: (N/A)")
+        self._create_preview_panel(col3_content, "shadow_combined", "Isometric Preview", "World Displacement: (N/A)")
 
     def play_all(self):
         for player in self.players.values():
@@ -272,8 +272,7 @@ class AnimationGroupUI:
     def refresh_all_previews(self):
         ids = [int(sv.get()) if sv.get().isdigit() else 0 for sv in self.string_vars]
         mirrors = [mv.get() for mv in self.mirror_vars]
-        durations = self.anim_data["durations"]
-
+        
         uncorrected_data = self.preview_generator.get_generated_frame_data(ids, mirrors, False)
         corrected_data = self.preview_generator.get_generated_frame_data(ids, mirrors, True)
 
@@ -286,14 +285,16 @@ class AnimationGroupUI:
         self.players["corrected"].play()
         
         shadow_combined_res = self.preview_generator.generate_shadow_combined_preview()
+        
+        static_offset = shadow_combined_res.pop("static_shadow_offset", None)
+        
         self.players["shadow_combined"].set_animation(**shadow_combined_res)
         self.players["shadow_combined"].play()
         
-        # Update the shadow offset label with the text from the preview data
-        if shadow_combined_res and shadow_combined_res["text_data"]:
-            self.shadow_offset_label.config(text=shadow_combined_res["text_data"][0])
+        if static_offset is not None:
+            self.shadow_offset_label.config(text=f"Sprite Anchor Offset: {static_offset}")
         else:
-            self.shadow_offset_label.config(text="Shadow Offset: (N/A)")
+            self.shadow_offset_label.config(text="Sprite Anchor Offset: (N/A)")
     
     def set_sprite_values(self, sprite_numbers, mirror_flags):
         for idx, num in enumerate(sprite_numbers):

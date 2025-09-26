@@ -12,7 +12,7 @@ class MainApplication:
     def __init__(self, root):
         self.root = root
         self.root.title("Sprite Sheet Tool")
-        self.root.geometry("900x700")
+        self.root.geometry("1920x1080")
         
         self.breadcrumb_frame = Frame(self.root, bd=1, relief="sunken")
         self.breadcrumb_frame.pack(fill='x', side='top', ipady=2)

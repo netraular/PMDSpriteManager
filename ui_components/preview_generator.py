@@ -81,7 +81,7 @@ class PreviewGenerator:
         fw, fh = math.ceil(max_x - min_x), math.ceil(max_y - min_y)
         
         final_offsets = [[round(d["pos"][0] - min_x), round(d["pos"][1] - min_y)] if d["image"] else [0,0] for d in corrected_frame_data]
-        offset_texts = [f"Offset: {off}" for off in final_offsets]
+        offset_texts = [f"Final Offset: {off}" for off in final_offsets]
         
         canvas_w, canvas_h = fw + 20, fh + 20
         final_frames = []
@@ -127,15 +127,15 @@ class PreviewGenerator:
             cust_center = self._get_image_bottom_center(custom_frame)
             
             if orig_center and cust_center:
-                offset_texts.append(f"Offset: ({cust_center[0] - orig_center[0]}, {cust_center[1] - orig_center[1]})")
+                offset_texts.append(f"Displacement: ({cust_center[0] - orig_center[0]}, {cust_center[1] - orig_center[1]})")
             else:
-                offset_texts.append("Offset: (N/A)")
+                offset_texts.append("Displacement: (N/A)")
         
         return {"frames": overlay_frames, "text_data": offset_texts, "durations": self.anim_data["durations"]}
 
     def generate_shadow_combined_preview(self):
         if not self.group_shadow_frames or not self.group_metadata or not self.base_sprite_img:
-            return {"frames": [], "text_data": [], "durations": self.anim_data["durations"]}
+            return {"frames": [], "text_data": [], "durations": self.anim_data["durations"], "static_shadow_offset": None}
 
         # Calculate the static offset between the character's center and shadow's center on the first frame
         shadow_offset = None
@@ -156,7 +156,7 @@ class PreviewGenerator:
         ref_green_pos = green_anchor_positions[0] if green_anchor_positions and green_anchor_positions[0] else None
 
         if not ref_shadow_pos:
-            return {"frames": [], "text_data": ["Offset: (N/A)"] * len(self.group_shadow_frames), "durations": self.anim_data["durations"]}
+            return {"frames": [], "text_data": ["World Displacement: (N/A)"] * len(self.group_shadow_frames), "durations": self.anim_data["durations"], "static_shadow_offset": shadow_offset}
 
         frames, frame_texts = [], []
         for i in range(len(self.group_shadow_frames)):
@@ -213,7 +213,7 @@ class PreviewGenerator:
             # Calculate and store the total displacement for this frame
             total_offset_x = shadow_move_x + char_move_x
             total_offset_y = shadow_move_y + char_move_y
-            frame_texts.append(f"Offset: ({total_offset_x}, {total_offset_y})")
+            frame_texts.append(f"World Displacement: ({total_offset_x}, {total_offset_y})")
 
             # Draw the static world anchor
             s = 3
@@ -223,7 +223,7 @@ class PreviewGenerator:
             canvas = canvas.resize((canvas.width * 2, canvas.height * 2), Image.NEAREST)
             frames.append(canvas)
         
-        return {"frames": frames, "text_data": frame_texts, "thumbnail_size": (400, 400), "durations": self.anim_data["durations"]}
+        return {"frames": frames, "text_data": frame_texts, "thumbnail_size": (400, 400), "durations": self.anim_data["durations"], "static_shadow_offset": shadow_offset}
 
     # Helper Methods
     def _load_sprite(self, sprite_id, is_mirrored):
