@@ -23,6 +23,7 @@ class AnimationCreator:
         self.json_data = None
         self.players = []
         self.canvas = None
+        self.frame_updater_after_id = None
         
         self.main_frame = Frame(self.parent_frame)
         self.main_frame.pack(fill='both', expand=True)
@@ -181,7 +182,7 @@ class AnimationCreator:
             player = AnimationPlayer(self.parent_frame, anim_label, text_label)
             player.set_animation(**preview_data)
             player.play()
-            self.players.append(player)
+            self.players.append({'player': player})
 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load or process JSON file: {e}")
@@ -273,13 +274,36 @@ class AnimationCreator:
                     anim_panel.pack(pady=5)
                     anim_label = Label(anim_panel)
                     anim_label.pack()
-                    text_label = Label(anim_panel, text="Render Offset: [N/A]", font=('Arial', 10))
+                    text_label = Label(anim_panel, text="Render Offset: [N/A]", font=('Arial', 10), justify="left")
                     text_label.pack(pady=(5,0))
                     
                     player = AnimationPlayer(self.parent_frame, anim_label, text_label)
                     player.set_animation(**preview_data)
                     player.play()
-                    self.players.append(player)
+                    
+                    control_frame = Frame(group_frame)
+                    control_frame.pack(pady=(5, 5))
+
+                    frame_count = len(preview_data.get("frames", []))
+                    counter_label = Label(control_frame, text=f"1 / {frame_count}", width=8)
+                    
+                    play_pause_button = Button(control_frame, text="Pause")
+
+                    prev_button = Button(control_frame, text="<", command=lambda p=player, lbl=counter_label, btn=play_pause_button: self._prev_frame(p, lbl, btn))
+                    prev_button.pack(side='left')
+
+                    play_pause_button.config(command=lambda p=player, btn=play_pause_button: self._toggle_play_pause(p, btn))
+                    play_pause_button.pack(side='left')
+
+                    next_button = Button(control_frame, text=">", command=lambda p=player, lbl=counter_label, btn=play_pause_button: self._next_frame(p, lbl, btn))
+                    next_button.pack(side='left')
+                    
+                    counter_label.pack(side='left', padx=5)
+
+                    self.players.append({
+                        'player': player,
+                        'counter_label': counter_label
+                    })
                 else:
                     Label(group_frame, text="No frames to display.", fg="red").pack(pady=10)
 
@@ -292,6 +316,50 @@ class AnimationCreator:
             messagebox.showerror("Error", f"Failed to read animations: {e}")
 
         self._bind_mousewheel_recursively(scroll_frame)
+        self._start_frame_counter_updater()
+
+    def _toggle_play_pause(self, player, button):
+        if player.is_playing:
+            player.pause()
+            button.config(text="Play")
+        else:
+            player.play()
+            button.config(text="Pause")
+
+    def _next_frame(self, player, label, play_pause_button):
+        if player.is_playing:
+            self._toggle_play_pause(player, play_pause_button)
+        
+        if not player.frames:
+            return
+        
+        new_index = (player.current_frame_index + 1) % len(player.frames)
+        player.go_to_frame(new_index)
+        label.config(text=f"{player.current_frame_index + 1} / {len(player.frames)}")
+
+    def _prev_frame(self, player, label, play_pause_button):
+        if player.is_playing:
+            self._toggle_play_pause(player, play_pause_button)
+
+        if not player.frames:
+            return
+            
+        new_index = (player.current_frame_index - 1 + len(player.frames)) % len(player.frames)
+        player.go_to_frame(new_index)
+        label.config(text=f"{player.current_frame_index + 1} / {len(player.frames)}")
+
+    def _start_frame_counter_updater(self):
+        if not hasattr(self, 'main_frame') or not self.main_frame.winfo_exists():
+            return
+
+        for context in self.players:
+            player = context['player']
+            label = context['counter_label']
+            
+            if player.frames and player.is_playing:
+                label.config(text=f"{player.current_frame_index + 1} / {len(player.frames)}")
+
+        self.frame_updater_after_id = self.parent_frame.after(100, self._start_frame_counter_updater)
 
     def _grid_to_screen(self, gx, gy, origin, w_half, h_half):
         return (int(origin[0] + (gx - gy) * w_half), int(origin[1] + (gx + gy) * h_half))
@@ -338,10 +406,16 @@ class AnimationCreator:
         if not all_frames_data:
             return {"frames": [], "text_data": [], "durations": []}
 
+        num_frames_per_group = len(json_data["sprites"]["1"].get("frames", []))
+        num_groups = len(json_data["sprites"])
+        total_frames = num_frames_per_group * num_groups
+        base_durations = json_data.get("durations", [1])
+        durations = (base_durations * (total_frames // len(base_durations) + 1))[:total_frames]
+        
         final_frames = []
         text_data = []
 
-        for frame_info in all_frames_data:
+        for i, frame_info in enumerate(all_frames_data):
             canvas = Image.new('RGBA', (canvas_w, canvas_h), (0, 0, 0, 0))
             world_anchor = (canvas_w // 2, canvas_h // 2)
             grid_origin = (world_anchor[0] - consts['WIDTH_HALF'], world_anchor[1] - consts['HEIGHT_HALF'] * 3)
@@ -368,20 +442,16 @@ class AnimationCreator:
                 draw.line((paste_pos[0], paste_pos[1]-s, paste_pos[0], paste_pos[1]+s), fill="purple", width=1)
                 current_offset_text = f"Render Offset: ({render_x}, {render_y})"
 
+            frame_duration = durations[i] if i < len(durations) else "N/A"
+            final_text_for_frame = f"{current_offset_text}\nDuration: {frame_duration}"
+
             s = 3
             draw.line((world_anchor[0]-s, world_anchor[1], world_anchor[0]+s, world_anchor[1]), fill="red", width=1)
             draw.line((world_anchor[0], world_anchor[1]-s, world_anchor[0], world_anchor[1]+s), fill="red", width=1)
             
             canvas_2x = canvas.resize((canvas.width * 2, canvas.height * 2), Image.NEAREST)
             final_frames.append(canvas_2x)
-            text_data.append(current_offset_text)
-            
-        num_frames_per_group = len(json_data["sprites"]["1"].get("frames", []))
-        num_groups = len(json_data["sprites"])
-        total_frames = num_frames_per_group * num_groups
-        
-        base_durations = json_data.get("durations", [1])
-        durations = (base_durations * (total_frames // len(base_durations) + 1))[:total_frames]
+            text_data.append(final_text_for_frame)
         
         return {
             "frames": final_frames, 
@@ -401,7 +471,10 @@ class AnimationCreator:
             return placeholder
             
     def clear_frame(self):
-        for player in self.players:
-            player.stop()
+        if self.frame_updater_after_id:
+            self.parent_frame.after_cancel(self.frame_updater_after_id)
+            self.frame_updater_after_id = None
+        for context in self.players:
+            context['player'].stop()
         self.players.clear()
         for widget in self.main_frame.winfo_children(): widget.destroy()

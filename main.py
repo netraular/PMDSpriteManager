@@ -69,7 +69,7 @@ class MainApplication:
         Label(self.current_frame, text=f"Selected folder:\n{self.folder}", font=('Arial', 12)).pack(pady=20)
         Button(self.current_frame, text="Process Spritesheet", command=self.show_animation_creator, width=25).pack(pady=10)
         Button(self.current_frame, text="Edit Animations", command=self.show_animation_viewer, width=25).pack(pady=10)
-        Button(self.current_frame, text="Preview Optimized Animations", command=self.show_json_previewer, width=25).pack(pady=10)
+        Button(self.current_frame, text="All Animations Preview", command=self.show_json_previewer, width=25).pack(pady=10)
         Button(self.current_frame, text="Back to Workflow Selection", command=self.show_folder_selection).pack(pady=20)
 
     def show_animation_viewer(self):
