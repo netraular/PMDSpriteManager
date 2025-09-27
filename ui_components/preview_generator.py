@@ -150,8 +150,7 @@ class PreviewGenerator:
             world_anchor = (canvas_w // 2, canvas_h // 2)
             grid_origin = (world_anchor[0] - consts['WIDTH_HALF'], world_anchor[1] - consts['HEIGHT_HALF'] * 3)
             isometric_renderer.draw_iso_grid(canvas, grid_origin, consts)
-            draw = ImageDraw.Draw(canvas)
-
+            
             total_move_x, total_move_y = 0, 0
             current_pos_corrected = frame_data["pos"]
             if current_pos_corrected and frame_data["image"]:
@@ -168,34 +167,44 @@ class PreviewGenerator:
             current_render_offset = render_offsets[i]
             if current_render_offset:
                 render_offset_text = f"Render Offset: ({current_render_offset[0]}, {current_render_offset[1]})"
+                
+                char_sprite_to_render = frame_data["image"]
+                if char_sprite_to_render:
+                    paste_x = world_anchor[0] + current_render_offset[0]
+                    paste_y = world_anchor[1] + current_render_offset[1]
+                    canvas.paste(char_sprite_to_render, (paste_x, paste_y), char_sprite_to_render)
+
+                    # To draw with opacity, create a separate overlay, draw on it, and then composite it.
+                    overlay = Image.new('RGBA', canvas.size, (0, 0, 0, 0))
+                    draw_overlay = ImageDraw.Draw(overlay)
+
+                    # Draw the semi-transparent yellow bounding box on the overlay
+                    w, h = char_sprite_to_render.size
+                    box_coords = [paste_x, paste_y, paste_x + w - 1, paste_y + h - 1]
+                    yellow_with_alpha = (255, 255, 0, 128)  # Yellow with ~50% opacity
+                    draw_overlay.rectangle(box_coords, outline=yellow_with_alpha, width=1)
+                    
+                    # Composite the overlay onto the main canvas
+                    canvas = Image.alpha_composite(canvas, overlay)
             else:
                 render_offset_text = "Render Offset: (N/A)"
+            
+            # Re-initialize the draw object on the new composited canvas to add crosshairs
+            draw = ImageDraw.Draw(canvas)
 
             if sprite_anchor_offset:
                 crosshair_x = world_anchor[0] + sprite_anchor_offset[0] + total_move_x
                 crosshair_y = world_anchor[1] + sprite_anchor_offset[1] + total_move_y
-
-                char_sprite = self.group_frames[i]
-                current_green_pos = self.group_metadata[i]['anchors'].get('green')
-                bbox = char_sprite.getbbox()
-                
-                if bbox and current_green_pos:
-                    paste_x = crosshair_x - current_green_pos[0]
-                    paste_y = crosshair_y - current_green_pos[1]
-                    
-                    render_anchor_x = paste_x + bbox[0]
-                    render_anchor_y = paste_y + bbox[1]
-
-                    box_x1 = paste_x + bbox[2] - 1
-                    box_y1 = paste_y + bbox[3] - 1
-                    draw.rectangle([render_anchor_x, render_anchor_y, box_x1, box_y1], outline="yellow", width=1)
-                    canvas.paste(char_sprite, (paste_x, paste_y), char_sprite)
-
-                    s = 3
-                    draw.line((crosshair_x-s, crosshair_y, crosshair_x+s, crosshair_y), fill="green", width=1)
-                    draw.line((crosshair_x, crosshair_y-s, crosshair_x, crosshair_y+s), fill="green", width=1)
-                    draw.line((render_anchor_x-s, render_anchor_y, render_anchor_x+s, render_anchor_y), fill="purple", width=1)
-                    draw.line((render_anchor_x, render_anchor_y-s, render_anchor_x, render_anchor_y+s), fill="purple", width=1)
+                s = 3
+                draw.line((crosshair_x-s, crosshair_y, crosshair_x+s, crosshair_y), fill="green", width=1)
+                draw.line((crosshair_x, crosshair_y-s, crosshair_x, crosshair_y+s), fill="green", width=1)
+            
+            if current_render_offset and frame_data["image"]:
+                 paste_x = world_anchor[0] + current_render_offset[0]
+                 paste_y = world_anchor[1] + current_render_offset[1]
+                 s = 3
+                 draw.line((paste_x-s, paste_y, paste_x+s, paste_y), fill="purple", width=1)
+                 draw.line((paste_x, paste_y-s, paste_x, paste_y+s), fill="purple", width=1)
 
             frame_texts.append(f"{world_disp_text}\n{render_offset_text}")
 

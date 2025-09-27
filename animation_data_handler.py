@@ -25,32 +25,48 @@ def calculate_isometric_render_data(corrected_frame_data, group_frames, group_sh
     if corrected_frame_data and corrected_frame_data[0] and corrected_frame_data[0]["image"]:
         ref_pos_corrected = corrected_frame_data[0]["pos"]
 
-    if not ref_pos_corrected:
+    if not ref_pos_corrected or not offset_anchor_0:
         return sprite_anchor_offset, [None] * len(group_frames)
 
     render_offsets = []
+    
     for i, frame_data in enumerate(corrected_frame_data):
         current_render_offset = None
-        if sprite_anchor_offset:
-            total_move_x, total_move_y = 0, 0
-            current_pos_corrected = frame_data["pos"]
-            if current_pos_corrected and frame_data["image"]:
-                total_move_x = current_pos_corrected[0] - ref_pos_corrected[0]
-                total_move_y = current_pos_corrected[1] - ref_pos_corrected[1]
+        if sprite_anchor_offset and frame_data["image"]:
+            
+            # LOGIC EXPLANATION:
+            # The 'render_offset' is the final vector from the world origin (shadow's center)
+            # to the top-left corner of the corrected sprite's visible pixels for the current frame.
+            # It is calculated by chaining vectors to find the absolute position:
+            #
+            # Final_Render_Offset = (Vector from Shadow_Center to Original_Anchor_Point_in_Frame0) +
+            #                       (Vector from Original_Anchor_Point_in_Frame0 to Corrected_Sprite_TopLeft)
+            #
+            # Where:
+            #   - (Shadow_Center -> Original_Anchor) is calculated as `sprite_anchor_offset - offset_anchor_0`.
+            #     This term positions the entire original animation frame relative to the shadow.
+            #   - (Original_Anchor -> Corrected_Sprite_TopLeft) is `frame_data["pos"]`.
+            #     This vector represents the final position of the new, corrected sprite.
+            #     It already contains all the necessary adjustments to keep the character's
+            #     feet perfectly aligned, accounting for any changes in sprite size or internal position.
+            
+            render_anchor_x_offset = sprite_anchor_offset[0] - offset_anchor_0[0] + frame_data["pos"][0]
+            render_anchor_y_offset = sprite_anchor_offset[1] - offset_anchor_0[1] + frame_data["pos"][1]
 
-            char_sprite = group_frames[i]
-            current_green_pos = group_metadata[i]['anchors'].get('green')
-            bbox = char_sprite.getbbox()
+            current_render_offset = (round(render_anchor_x_offset), round(render_anchor_y_offset))
+            
+            total_move_x = frame_data["pos"][0] - ref_pos_corrected[0]
+            total_move_y = frame_data["pos"][1] - ref_pos_corrected[1]
 
-            if bbox and current_green_pos:
-                paste_x_offset = (total_move_x + sprite_anchor_offset[0]) - current_green_pos[0]
-                paste_y_offset = (total_move_y + sprite_anchor_offset[1]) - current_green_pos[1]
-                
-                render_anchor_x_offset = paste_x_offset + bbox[0]
-                render_anchor_y_offset = paste_y_offset + bbox[1]
-                
-                current_render_offset = (render_anchor_x_offset, render_anchor_y_offset)
-        
+            print("-" * 50)
+            print(f"DEBUG: Render Offset Calculation (Frame {i})")
+            print(f"  - World Disp (for info): ({total_move_x:.2f}, {total_move_y:.2f})")
+            print(f"  - Sprite Anchor Offset: {sprite_anchor_offset}")
+            print(f"  - Ref Green Pos (Frame 0): {offset_anchor_0}")
+            print(f"  - Corrected Sprite Pos (current frame): {frame_data['pos']}")
+            print(f"  - FINAL Render Offset: {current_render_offset}")
+            print("-" * 50)
+
         render_offsets.append(current_render_offset)
     
     return sprite_anchor_offset, render_offsets
