@@ -52,18 +52,19 @@ def load_base_shadow_sprite(project_folder, anim_folder=None, is_2x=False):
     If not found, generates a default placeholder.
     """
     search_paths = []
-    if anim_folder:
-        search_paths.append(os.path.join(anim_folder, "sprite_base.png"))
     if project_folder:
-        search_paths.append(os.path.join(project_folder, "Animations", "sprite_base.png"))
-        search_paths.append(os.path.join(project_folder, "sprite_base.png"))
+        search_paths.append(os.path.join(project_folder, "Sprites", "sprite_shadow.png"))
+        search_paths.append(os.path.join(project_folder, "Animations", "sprite_shadow.png"))
+        search_paths.append(os.path.join(project_folder, "sprite_shadow.png"))
+    if anim_folder:
+        search_paths.append(os.path.join(anim_folder, "sprite_shadow.png"))
         
     for path in search_paths:
         if os.path.exists(path):
             try:
                 return Image.open(path).convert('RGBA')
             except Exception as e:
-                print(f"Warning: Could not load sprite_base.png from {path}: {e}")
+                print(f"Warning: Could not load sprite_shadow.png from {path}: {e}")
 
     # If not found, create a default one
     if is_2x:

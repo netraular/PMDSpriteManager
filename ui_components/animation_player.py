@@ -99,7 +99,7 @@ class AnimationPlayer:
         self._render_current_frame()
         
         duration_idx = self.current_frame_index % len(self.durations)
-        delay = self.durations[duration_idx] * 33
+        delay = self.durations[duration_idx] * 30
         
         self.current_frame_index = (self.current_frame_index + 1) % len(self.frames)
         

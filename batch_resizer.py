@@ -126,7 +126,7 @@ class BatchResizer:
         )
 
     def show_shadow_generation_view(self):
-        description = "This will find the 'sprite_base.png' for each character and copy it into the 'output' folder.\nA 2x version will be created for the 'output x2' folder."
+        description = "This will find the 'sprite_shadow.png' for each character and copy it into the 'output' folder.\nA 2x version will be created for the 'output x2' folder."
         self._setup_task_view(
             title="Generate Shadow Sprites",
             description=description,
@@ -354,22 +354,25 @@ class BatchResizer:
             copied, skipped = 0, 0
             for char_folder in [d for d in output_dir.iterdir() if d.is_dir()]:
                 if self.cancel_operation: q.put("DONE:CANCEL"); return
-                source_shadow_path = main_path / char_folder.name / "sprite_base.png"
+                
+                source_shadow_path = main_path / char_folder.name / "Sprites" / "sprite_shadow.png"
                 if not source_shadow_path.exists():
-                    source_shadow_path = main_path / char_folder.name / "Animations" / "sprite_base.png"
+                    source_shadow_path = main_path / char_folder.name / "Animations" / "sprite_shadow.png"
+                if not source_shadow_path.exists():
+                    source_shadow_path = main_path / char_folder.name / "sprite_shadow.png"
                 
                 if source_shadow_path.exists():
                     try:
                         with Image.open(source_shadow_path) as img:
                             if scale == "2x":
                                 img = img.resize((img.width * 2, img.height * 2), Image.NEAREST)
-                            img.save(char_folder / "sprite_base.png")
+                            img.save(char_folder / "sprite_shadow.png")
                         q.put(f"  ✅ Created {scale} shadow for '{char_folder.name}'")
                         copied += 1
                     except Exception as e:
                         q.put(f"  ❌ Error for '{char_folder.name}': {e}"); skipped += 1
                 else:
-                    q.put(f"  - WARNING: No 'sprite_base.png' found for '{char_folder.name}'."); skipped += 1
+                    q.put(f"  - WARNING: No 'sprite_shadow.png' found for '{char_folder.name}'."); skipped += 1
         
         q.put("\n" + "-"*50 + "\n✅ Shadow generation completed.\n" + "-"*50)
         q.put("DONE:COMPLETE")

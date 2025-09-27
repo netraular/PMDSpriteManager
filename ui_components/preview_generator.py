@@ -14,7 +14,7 @@ class PreviewGenerator:
         self.group_shadow_frames = group_shadow_frames
         self.sprite_folder = sprite_folder
         self.anim_folder = anim_folder
-        self.base_sprite_img = image_utils.load_base_shadow_sprite(self.sprite_folder, self.anim_folder)
+        self.base_sprite_img = image_utils.load_base_shadow_sprite(self.anim_folder)
 
     def get_generated_frame_data(self, sprite_ids, mirror_flags, apply_correction):
         result_data = []

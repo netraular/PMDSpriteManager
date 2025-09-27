@@ -163,7 +163,7 @@ class IsometricAnimationPreviewer:
         sprite_map = isometric_renderer.load_sprites_from_json(data, sprite_folder)
         
         shadow_sprite = None
-        shadow_path = os.path.join(base_folder, character_name, "sprite_base.png")
+        shadow_path = os.path.join(base_folder, character_name, "sprite_shadow.png")
         if os.path.exists(shadow_path):
             try:
                 shadow_sprite = Image.open(shadow_path).convert('RGBA')

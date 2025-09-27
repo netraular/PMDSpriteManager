@@ -164,15 +164,16 @@ class AnimationDataHandler:
             shadow_handler = SpriteSheetHandler(shadow_image_path)
             all_shadow_frames = shadow_handler.split_animation_frames(anim["frame_width"], anim["frame_height"])
             
-            sprite_base_path = os.path.join(self.project_path, "sprite_base.png")
-            if not os.path.exists(sprite_base_path) and all_shadow_frames:
+            os.makedirs(self.sprite_folder, exist_ok=True)
+            sprite_shadow_path = os.path.join(self.sprite_folder, "sprite_shadow.png")
+            if not os.path.exists(sprite_shadow_path) and all_shadow_frames:
                 try:
                     first_shadow_frame = next((f for f in all_shadow_frames if f.getbbox()), None)
                     if first_shadow_frame:
                         bbox = first_shadow_frame.getbbox()
                         base_sprite = first_shadow_frame.crop(bbox)
-                        base_sprite.save(sprite_base_path)
-                        print(f"Saved base shadow sprite to {sprite_base_path}")
+                        base_sprite.save(sprite_shadow_path)
+                        print(f"Saved base shadow sprite to {sprite_shadow_path}")
                 except Exception as e:
                     print(f"Could not extract and save base shadow sprite: {e}")
             
