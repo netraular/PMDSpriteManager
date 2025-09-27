@@ -13,6 +13,7 @@ from PIL import Image, ImageTk
 from animation_data_handler import AnimationDataHandler
 from animation_creator import AnimationCreator
 from sprite_sheet_handler import SpriteSheetHandler
+from ui_components.esp32_asset_exporter import ESP32AssetExporter
 
 class BatchResizer:
     def __init__(self, parent_frame, return_to_main_callback, update_breadcrumbs_callback=None, base_path=None):
@@ -96,6 +97,7 @@ class BatchResizer:
         Button(content_frame, text="Export Final Assets (x2)", command=self.show_export_assets_x2_view, font=('Arial', 12), width=35, bg="lightblue").pack(pady=10)
         Button(content_frame, text="Generate Shadow Sprites", command=self.show_shadow_generation_view, font=('Arial', 12), width=35).pack(pady=10)
         Button(content_frame, text="Preview Optimized Animations", command=self.show_optimized_animation_previewer, font=('Arial', 12), width=35).pack(pady=10)
+        Button(content_frame, text="ESP32 Export", command=self.show_esp32_export_view, font=('Arial', 12), width=35).pack(pady=10)
 
     # --- Task View Setup Methods (using the generic framework) ---
 
@@ -133,6 +135,15 @@ class BatchResizer:
             description=description,
             start_button_text="Start Generation",
             worker_function=self._shadow_generation_worker
+        )
+
+    def show_esp32_export_view(self):
+        description = "Finds the most frequent animations across all characters and exports them to a new 'esp32_output' folder.\nIt copies the required JSON and sprite files from the 'output x2' directory."
+        self._setup_task_view(
+            title="ESP32 Export",
+            description=description,
+            start_button_text="Start ESP32 Export",
+            worker_function=self._esp32_export_worker
         )
 
     # --- Generic Task Execution Framework ---
@@ -440,6 +451,31 @@ class BatchResizer:
         
         q.put("\n" + "-"*50 + "\n✅ Shadow generation completed.\n" + "-"*50)
         q.put("DONE:COMPLETE")
+        
+    def _esp32_export_worker(self, q):
+        try:
+            exporter = ESP32AssetExporter(self.parent_folder)
+            
+            def log_to_queue(message):
+                if self.cancel_operation:
+                    raise InterruptedError("Operation cancelled by user.")
+                q.put(message)
+            
+            success = exporter.export(log_callback=log_to_queue)
+            
+            if self.cancel_operation:
+                q.put("DONE:CANCEL")
+            elif success:
+                q.put("DONE:COMPLETE")
+            else:
+                q.put("DONE:ERROR")
+        
+        except InterruptedError:
+            q.put("\nOperation was cancelled during execution.")
+            q.put("DONE:CANCEL")
+        except Exception as e:
+            q.put(f"\n❌ A critical error occurred during ESP32 export: {e}")
+            q.put("DONE:ERROR")
 
     # --- Unique/Interactive Task Handlers ---
 
