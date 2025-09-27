@@ -7,6 +7,7 @@ import shutil
 import json
 import threading
 import queue
+import concurrent.futures
 from tkinter import Frame, Label, Button, Entry, messagebox, filedialog, Canvas, Scrollbar, Text, END, Toplevel, StringVar, OptionMenu
 from PIL import Image, ImageTk
 from animation_data_handler import AnimationDataHandler
@@ -219,40 +220,95 @@ class BatchResizer:
 
     # --- Task Worker Functions (Background Logic) ---
 
+    def _process_project_for_anim_gen(self, project_path, folder_name, q):
+        if self.cancel_operation:
+            return 0, 0, True
+
+        q.put(f"Processing: {folder_name}")
+        try:
+            handler = AnimationDataHandler(project_path)
+            if not handler.anim_data:
+                q.put(f"  -> Skipping {folder_name}: No valid animation data found in XML.")
+                return 0, 1, False
+
+            project_anims_saved = 0
+            for index, anim in enumerate(handler.anim_data):
+                if self.cancel_operation:
+                    return project_anims_saved, 0, True
+                
+                json_data = handler.generate_animation_data(index)
+                if json_data:
+                    _, error = handler.export_optimized_animation(json_data)
+                    if error:
+                        q.put(f"  -> Failed to export {anim['name']} for {folder_name}: {error}")
+                    else:
+                        project_anims_saved += 1
+            
+            if project_anims_saved == 0 and not self.cancel_operation:
+                 return 0, 1, False
+            
+            return project_anims_saved, 0, False
+
+        except Exception as e:
+            q.put(f"  -> Critical error processing project '{folder_name}': {e}")
+            return 0, 1, False
+
     def _animation_generation_worker(self, q):
         total_anims_saved, projects_failed = 0, 0
-        for i, folder_name in enumerate(self.project_folders):
-            if self.cancel_operation: break
-            project_path = os.path.join(self.parent_folder, folder_name)
-            q.put(f"Processing ({i+1}/{len(self.project_folders)}): {folder_name}")
-            try:
-                handler = AnimationDataHandler(project_path)
-                if not handler.anim_data:
-                    q.put(f"  -> Skipping {folder_name}: No valid animation data found in XML."); projects_failed += 1; continue
-                project_anims_saved = 0
-                for index, anim in enumerate(handler.anim_data):
-                    if self.cancel_operation: break
-                    json_data = handler.generate_animation_data(index)
-                    if json_data:
-                        _, error = handler.export_optimized_animation(json_data)
-                        if error: q.put(f"  -> Failed to export {anim['name']}: {error}")
-                        else: project_anims_saved += 1
-                if project_anims_saved > 0: total_anims_saved += project_anims_saved
-                else: projects_failed += 1
-            except Exception as e:
-                q.put(f"  -> Critical error processing project '{folder_name}': {e}"); projects_failed += 1
         
+        tasks = [(os.path.join(self.parent_folder, fn), fn) for fn in self.project_folders]
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = {executor.submit(self._process_project_for_anim_gen, path, name, q): name for path, name in tasks}
+            
+            for future in concurrent.futures.as_completed(futures):
+                if self.cancel_operation:
+                    break 
+
+                try:
+                    saved, failed, skipped = future.result()
+                    if not skipped:
+                        total_anims_saved += saved
+                        projects_failed += failed
+                except Exception as exc:
+                    folder_name = futures[future]
+                    q.put(f"  -> Exception for '{folder_name}': {exc}")
+                    projects_failed += 1
+
         if self.cancel_operation:
             q.put("DONE:CANCEL")
         else:
             q.put(f"DONE:{total_anims_saved}:{projects_failed}")
+
+    def _process_project_for_export(self, char_folder, common_animations, output_dir, q):
+        if self.cancel_operation: return
+
+        char_name = char_folder.name
+        source_anim_path = char_folder / "AnimationData"
+        q.put(f"\n--- Processing: {char_name} ---")
+        output_char_dir = output_dir / char_name
+        output_char_dir.mkdir()
+        
+        for json_name in sorted(list(common_animations)):
+            if self.cancel_operation: return
+            
+            shutil.copy2(source_anim_path / json_name, output_char_dir / json_name)
+            
+            anim_name = json_name.removesuffix("-AnimData.json")
+            source_sprites_path = source_anim_path / anim_name
+            if source_sprites_path.is_dir():
+                shutil.copytree(source_sprites_path, output_char_dir / anim_name)
+                q.put(f"  ✅ Copied assets for '{anim_name}' from '{char_name}'")
+            else:
+                q.put(f"  - Warning: Sprite folder for '{anim_name}' not found in '{char_name}'.")
 
     def _export_assets_worker(self, q):
         main_path = pathlib.Path(self.parent_folder)
         q.put(f"Analyzing folder structure in: {main_path}\n")
         character_folders = [d for d in main_path.iterdir() if d.is_dir() and not d.name.startswith(('.', 'output'))]
         if not character_folders:
-            q.put("Error: No character subfolders found in the specified directory."); q.put("DONE:ERROR"); return
+            q.put("Error: No character subfolders found in the specified directory.")
+            q.put("DONE:ERROR"); return
 
         animations_by_character = {}
         for char_folder in character_folders:
@@ -278,26 +334,49 @@ class BatchResizer:
             q.put(f"Deleting existing 'output' folder..."); shutil.rmtree(output_dir)
         output_dir.mkdir()
 
-        for char_folder in character_folders:
-            if self.cancel_operation: q.put("DONE:CANCEL"); return
-            char_name, source_anim_path = char_folder.name, char_folder / "AnimationData"
-            q.put(f"\n--- Processing: {char_name} ---")
-            output_char_dir = output_dir / char_name; output_char_dir.mkdir()
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = [executor.submit(self._process_project_for_export, cf, common_animations, output_dir, q) for cf in character_folders]
+            for future in concurrent.futures.as_completed(futures):
+                if self.cancel_operation: break
+                try: future.result()
+                except Exception as e: q.put(f"  -> An error occurred during export: {e}")
+
+        if self.cancel_operation:
+            q.put("DONE:CANCEL")
+        else:
+            q.put("\n" + "-"*50 + f"\n✅ Process completed. Files are in: {output_dir}\n" + "-"*50)
+            q.put("DONE:COMPLETE")
+
+    def _process_project_for_x2_export(self, char_folder, dest_dir, q):
+        if self.cancel_operation: return
             
-            for json_name in sorted(list(common_animations)):
-                if self.cancel_operation: q.put("DONE:CANCEL"); return
-                shutil.copy2(source_anim_path / json_name, output_char_dir / json_name)
-                
-                anim_name = json_name.removesuffix("-AnimData.json")
-                source_sprites_path = source_anim_path / anim_name
-                if source_sprites_path.is_dir():
-                    shutil.copytree(source_sprites_path, output_char_dir / anim_name)
-                    q.put(f"  ✅ Copied assets for '{anim_name}'")
-                else:
-                    q.put(f"  - Warning: Sprite folder not found for '{anim_name}'.")
-        
-        q.put("\n" + "-"*50 + f"\n✅ Process completed. Files are in: {output_dir}\n" + "-"*50)
-        q.put("DONE:COMPLETE")
+        char_name = char_folder.name
+        q.put(f"\n--- Processing: {char_name} ---")
+        dest_char_dir = dest_dir / char_name
+        dest_char_dir.mkdir()
+
+        for json_file in char_folder.glob("*.json"):
+            if self.cancel_operation: return
+            
+            q.put(f"  -> Processing {json_file.name} for {char_name}")
+            with open(json_file, 'r') as f: data = json.load(f)
+            for group in data.get('sprites', {}).values():
+                group['framewidth'] *= 2; group['frameheight'] *= 2
+                if group.get('sprite_anchor_offset'):
+                    group['sprite_anchor_offset'] = [v * 2 for v in group['sprite_anchor_offset']]
+                for frame in group.get('frames', []):
+                    if frame.get('render_offset'):
+                        frame['render_offset'] = [v * 2 for v in frame['render_offset']]
+            with open(dest_char_dir / json_file.name, 'w') as f: json.dump(data, f, indent=4)
+            
+            anim_name = json_file.name.removesuffix("-AnimData.json")
+            source_sprites_dir, dest_sprites_dir = char_folder / anim_name, dest_char_dir / anim_name
+            if source_sprites_dir.is_dir():
+                dest_sprites_dir.mkdir()
+                for sprite_file in source_sprites_dir.glob("*.png"):
+                    if self.cancel_operation: return
+                    with Image.open(sprite_file) as img:
+                        img.resize((img.width * 2, img.height * 2), Image.NEAREST).save(dest_sprites_dir / sprite_file.name)
 
     def _export_assets_x2_worker(self, q):
         main_path = pathlib.Path(self.parent_folder)
@@ -310,35 +389,20 @@ class BatchResizer:
             q.put(f"Deleting existing '{dest_dir}'..."); shutil.rmtree(dest_dir)
         dest_dir.mkdir()
 
-        for char_folder in [d for d in source_dir.iterdir() if d.is_dir()]:
-            if self.cancel_operation: q.put("DONE:CANCEL"); return
-            char_name = char_folder.name
-            q.put(f"\n--- Processing: {char_name} ---")
-            dest_char_dir = dest_dir / char_name; dest_char_dir.mkdir()
+        character_folders = [d for d in source_dir.iterdir() if d.is_dir()]
 
-            for json_file in char_folder.glob("*.json"):
-                if self.cancel_operation: q.put("DONE:CANCEL"); return
-                q.put(f"  -> Processing {json_file.name}")
-                with open(json_file, 'r') as f: data = json.load(f)
-                for group in data.get('sprites', {}).values():
-                    group['framewidth'] *= 2; group['frameheight'] *= 2
-                    if group.get('sprite_anchor_offset'):
-                        group['sprite_anchor_offset'] = [v * 2 for v in group['sprite_anchor_offset']]
-                    for frame in group.get('frames', []):
-                        if frame.get('render_offset'):
-                            frame['render_offset'] = [v * 2 for v in frame['render_offset']]
-                with open(dest_char_dir / json_file.name, 'w') as f: json.dump(data, f, indent=4)
-                
-                anim_name = json_file.name.removesuffix("-AnimData.json")
-                source_sprites_dir, dest_sprites_dir = char_folder / anim_name, dest_char_dir / anim_name
-                if source_sprites_dir.is_dir():
-                    dest_sprites_dir.mkdir()
-                    for sprite_file in source_sprites_dir.glob("*.png"):
-                        with Image.open(sprite_file) as img:
-                            img.resize((img.width * 2, img.height * 2), Image.NEAREST).save(dest_sprites_dir / sprite_file.name)
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = [executor.submit(self._process_project_for_x2_export, cf, dest_dir, q) for cf in character_folders]
+            for future in concurrent.futures.as_completed(futures):
+                if self.cancel_operation: break
+                try: future.result()
+                except Exception as e: q.put(f"  -> An error occurred during x2 export: {e}")
         
-        q.put("\n" + "-"*50 + f"\n✅ x2 Export completed. Files are in: {dest_dir}\n" + "-"*50)
-        q.put("DONE:COMPLETE")
+        if self.cancel_operation:
+            q.put("DONE:CANCEL")
+        else:
+            q.put("\n" + "-"*50 + f"\n✅ x2 Export completed. Files are in: {dest_dir}\n" + "-"*50)
+            q.put("DONE:COMPLETE")
 
     def _shadow_generation_worker(self, q):
         main_path = pathlib.Path(self.parent_folder)
