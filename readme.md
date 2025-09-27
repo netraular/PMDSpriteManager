@@ -2,72 +2,77 @@
 
 ## Overview
 
-This is a comprehensive toolset for working with Pokémon Mystery Dungeon (PMD) sprites, designed to streamline the entire pipeline from raw assets to game-ready animations. Built for assets from [PMD Collab](https://sprites.pmdcollab.org/), this manager provides two core workflows:
+This is a comprehensive toolset for working with Pokémon Mystery Dungeon (PMD) sprites, designed to streamline the entire pipeline from raw assets to game-ready **isometric animations**. Built for assets from [PMD Collab](https://sprites.pmdcollab.org/), this manager provides two core workflows integrated into a single powerful application:
 
-1.  **Single Project Editor**: A detailed, hands-on interface for splitting a master spritesheet and meticulously editing, correcting, and previewing animations for a single character.
-2.  **Batch Processor**: A powerful, automated system for processing an entire directory of characters at once, capable of generating sprites and optimized animation data with minimal user intervention.
+1.  **Single Project Editor**: A detailed, hands-on interface for splitting a master spritesheet and meticulously editing, correcting, and previewing animations for a single character, with a strong focus on generating correct isometric render data.
+2.  **Batch Processor**: A powerful, automated system for processing an entire directory of characters at once. It can handle everything from initial asset setup and sprite generation to exporting final, optimized animation packages in both 1x and 2x resolutions.
 
-The manager automates tedious tasks like parsing XML files, matching sprites to animation frames, and calculating positional offsets, allowing creators to focus on building high-quality, efficient animations.
+The manager automates tedious tasks like parsing XML files, matching sprites to animation frames, and calculating complex positional offsets, allowing creators to focus on building high-quality, efficient animations for their projects.
 
 ---
 
 ## Features
 
--  workflow **Two Distinct Workflows**:
-  - **Single Project Mode**: For in-depth editing and fine-tuning.
-  - **Batch Mode**: For processing entire collections of characters automatically.
+-   **Two Distinct Workflows**:
+    -   **Single Project Mode**: For in-depth editing and fine-tuning of individual characters.
+    -   **Batch Mode**: For processing entire collections of characters automatically through a task-based interface.
 
-- 🖼️ **Advanced Animation Editor**:
-  - Load and visualize original animations directly from PMD Collab's `AnimData.xml`.
-  - **AI-Powered Sprite Matching**: Automatically identify and assign your library sprites to animation frames.
-  - **Live Previews**:
-    - **Original Animation**: The source animation for reference.
-    - **Corrected Result**: A real-time preview of your custom animation with automatic position correction.
-    - **Uncorrected Overlay**: A diagnostic view (red/blue) showing the offset between the original sprite and your custom one.
-  - **Automatic Offset Correction**: Calculates the center of mass for original and custom sprites to ensure your animations remain centered and smooth.
+-   🖼️ **Advanced Animation Editor**:
+    -   Load and visualize original animations directly from PMD Collab's `AnimData.xml`.
+    -   **AI-Powered Sprite Matching**: Automatically identify and assign your library sprites to animation frames.
+    -   **Multiple Live Previews**:
+        -   **Originals**: View the source character, shadow, and offset frames.
+        -   **Corrected**: See your custom animation with automatic position correction applied.
+        -   **Overlay**: A diagnostic view (red/blue) showing the displacement between original and custom sprites.
+        -   **Isometric Preview**: A final, in-game preview on an isometric grid, showing world displacement and final render offsets.
 
-- ⚙️ **Powerful Batch Processing**:
-  - **Batch Sprite Generation**: Process spritesheets for dozens of characters in a guided, step-by-step interface.
-  - **Batch Animation Generation**: Automatically generate optimized JSON animation data for all characters in a folder. This process runs in the background and is fully unattended.
-  - **Batch Animation Previewer**: Quickly load and preview the final, optimized animations for any character in your collection.
+-   ⚙️ **Powerful Batch Processing**:
+    -   **Integrated Asset Generator**: A guided UI workflow to create project folders from a `names.txt` file, uncompress ZIPs, and clean up, replacing previous standalone scripts.
+    -   **Batch Sprite Generation**: Process spritesheets for dozens of characters in a guided, step-by-step interface.
+    -   **Batch Animation Generation**: A fully automated, multi-threaded process to generate optimized JSON data for every animation of every character.
+    -   **Batch Asset Exporter (1x & 2x)**: Export clean, distributable `output` and `output x2` packages containing only the animations and sprites common to all characters. The 2x export performs a pixel-perfect upscale of all assets and data.
+    -   **Batch Shadow Generator**: Automatically find and copy the correct base shadow sprite into the final output folders.
 
-- 📦 **Optimized Asset Export**:
-  - Generates lightweight, game-ready JSON files that reference a minimal set of required sprites.
-  - Creates 8-bit indexed PNGs for optimized file size and performance.
-  - Automatically handles mirrored sprites to reduce redundant files.
+-   📐 **Isometric Rendering Core**:
+    -   Calculates `sprite_anchor_offset` (the vector from the shadow's center to the character's anchor point).
+    -   Calculates per-frame `render_offset` (the final vector from the world origin to the sprite's top-left corner).
+    -   This data is essential for accurately positioning sprites within an isometric game engine.
 
-- 🚀 **Helper Scripts**:
-  - **Asset Generator**: A command-line script (`Scripts/generate_assets.py`) to automate the tedious initial setup of downloading, unzipping, and organizing files from PMD Collab.
-  - **Common Asset Exporter**: A script (`Scripts/export_assets.py`) to find animations common to all characters and export them into a clean, distributable package.
+-   📦 **Optimized Asset Export**:
+    -   Generates lightweight, game-ready JSON files that reference a minimal set of required sprites.
+    -   Creates 8-bit indexed PNGs for optimized file size and performance.
+    -   Automatically handles mirrored sprites to reduce redundant files.
+
+-   🚀 **Integrated Previewers**:
+    -   **All Animations Preview**: View all generated animations for a single character in a scrollable grid.
+    -   **Batch Previewer**: After exporting, quickly browse any character in the `output` or `output x2` folders and see their final animations side-by-side.
 
 ---
 
 ## Getting Started
 
-### Method 1: Automated Setup (Recommended)
+### Automated Setup via the GUI (Recommended)
 
-Use the included helper script for a fast, automated setup.
+The tool now includes a built-in workflow to automate the initial, tedious setup of downloading and organizing files.
 
-1.  **Download Assets**: Go to [PMD Collab](https://sprites.pmdcollab.org/) and download the **"all sprites"** `.zip` file for every character you want to process. Place all the zip files in the `Scripts` directory.
-2.  **Create `names.txt`**: Inside the `Scripts` directory, create a file named `names.txt`. List the exact name of each character's folder you want to create, one per line (e.g., `Pikachu`, `Bulbasaur`).
-3.  **Run the Script**: Navigate to the `Scripts` directory and run `generate_assets.py`.
-    ```bash
-    cd Scripts
-    python generate_assets.py
-    ```
-4.  **Follow the Menu**: The script will guide you through:
-    1.  Creating all the character folders.
-    2.  Unzipping the asset files into the correct `Animations` subfolder for each character.
-    3.  Cleaning up the leftover `.zip` files.
+1.  **Download Assets**: Go to [PMD Collab](https://sprites.pmdcollab.org/) and download the **"all sprites"** `.zip` file for every character you want to process. Place all the zip files in a single parent directory (e.g., `MyPMDProjects`).
+2.  **Create `names.txt`**: Inside that same parent directory, create a file named `names.txt`. List the exact name of each character, one per line (e.g., `Pikachu`, `Bulbasaur`). These names must match the folders that will be created.
+3.  **Run the Tool**: Launch the application and choose the **"Batch Process Spritesheets"** workflow, selecting your parent directory.
+4.  **Use the Asset Generator**: From the batch task menu, select **"Generate Assets"**. Follow the on-screen steps:
+    1.  Click **"1. Create Folders from names.txt"**.
+    2.  Click **"2. Uncompress ZIPs"**. This will automatically find the zips and extract them into the correct `Animations` subfolder for each character.
+    3.  Click **"3. Cleanup ZIP files"** to delete the archives.
 
-### Method 2: Manual Setup
+Your project structure is now ready for batch processing.
+
+### Manual Setup
 
 1.  **Obtain Files**: Visit [PMD Collab](https://sprites.pmdcollab.org/) and download for each Pokémon:
-    - The **master sprite sheet PNG**.
-    - The **"all sprites"** `.zip` file containing animation data.
+    -   The **master sprite sheet PNG**.
+    -   The **"all sprites"** `.zip` file containing animation data.
 2.  **Create Folder Structure**: For each character, create a project folder. Place the master spritesheet inside, and unzip the "all sprites" download into a subfolder named `Animations`.
 
-    ```bash
+    ```
     YourPokemonFolder/
     ├── YourPokemon.png       # The master spritesheet file
     └── Animations/
@@ -101,26 +106,20 @@ A pre-built executable is available in the **Releases** section of the repositor
 Select a single character folder (e.g., `PikachuProject`) to access the main menu.
 
 -   **Process Spritesheet**: Loads the master spritesheet. You'll provide the grid dimensions to split it into a library of individual sprites, which are saved to a new `Sprites/` folder.
--   **View/Edit Animations**: Opens the main animation editor. Here you can use the AI identifier, manually assign sprites, and preview your changes in real-time.
--   **Preview Optimized Animations**: Loads the final, generated JSON and sprites for a clean preview of how the animation will look in-game.
+-   **Edit Animations**: Opens the main animation editor. Here you can use the AI identifier, manually assign sprites, and preview your changes in real-time across multiple diagnostic and isometric views.
+-   **All Animations Preview**: Loads the final, generated JSON and sprites for a clean preview of how all animations for that character will look in-game.
 
 ---
 
 ### Workflow 2: Batch Processor
 
-Select a parent folder containing multiple character project folders.
+Select a parent folder containing multiple character project folders to access the task menu.
 
-![Batch Processor Menu](readme/images/02_batch_menu.png)
-
-*The task selection menu for batch operations.*
-
+-   **Generate Assets**: The integrated setup tool described in "Getting Started".
 -   **Generate Sprites**: A guided tool that iterates through each project folder, displays its spritesheet, and prompts you for the grid size to process them all efficiently.
 -   **Generate Optimized Animations**: A fully automated, one-click process that generates JSON data for every animation of every character in the parent folder.
--   **Preview Optimized Animations**: A selection screen to quickly browse all characters and launch a preview of their final animations.
-
-![Batch Previewer Selection](readme/images/03_batch_previewer.png)
-
-*Quickly select any project in the batch to preview its final animations.*
+-   **Export Final Assets (1x & x2)**: Creates clean `output` and `output x2` folders containing only the animations and assets common to all processed characters, ready for distribution or game integration.
+-   **Preview Optimized Animations**: A selection screen to quickly browse all characters in your `output` folders and launch a preview of their final animations.
 
 ---
 
@@ -143,18 +142,18 @@ The tool simplifies the conversion of raw assets into an organized, game-ready s
 *3. The final output is the `AnimationData` folder. It contains the optimized JSON files and sub-folders with only the necessary 8-bit PNG sprites required for each animation.*
 
 ### The Animation Editor
-This is the core of the single-project workflow. It provides all the tools and visual feedback needed to build animations.
+This is the core of the single-project workflow. It provides all the tools and visual feedback needed to build and verify isometric animations.
 
 ![Animation Editor UI](readme/images/04_animation_editor.png)
 
-*The main Animation Editor, showing (from left to right): original animation, offset/corrected previews, and the detailed frame-by-frame inputs.*
+*The main Animation Editor, showing (from left to right): original animation previews, the detailed frame-by-frame sprite editor, and generated previews including the final isometric result.*
 
 ### Final Animation Preview
-Whether in single or batch mode, the final previewer provides a clean, large view of the generated animation, running smoothly with all corrections applied.
+Whether in single or batch mode, the final previewer provides a clean, large view of the generated animation, running smoothly with all corrections applied on an isometric grid.
 
 ![Final Animation Preview](readme/images/05_final_preview.png)
 
-*The final preview screen, which plays the optimized animation as it would appear in-game.*
+*The final preview screen, which plays the optimized animation as it would appear in-game, complete with render offset data.*
 
 ---
 
@@ -164,9 +163,10 @@ Whether in single or batch mode, the final previewer provides a clean, large vie
 -   **Sprite Matching**: Uses **NumPy** for fast, exact pixel-matching of sprites (both normal and mirrored) to automatically assign them to animation frames.
 -   **Animation System**:
     -   Parses PMD Collab's XML animation data to extract frame data, durations, and anchor points.
-    -   Calculates a **center of mass** for sprite visuals to compute positional offsets, ensuring custom sprites move as fluidly as the originals.
+    -   Calculates a **visual bottom-center** for sprites to compute positional corrections, ensuring custom sprites move as fluidly as the originals.
+    -   Calculates all necessary vectors for **isometric rendering**, including static anchor offsets and per-frame render offsets.
     -   Uses **Tkinter** for the GUI and real-time animation rendering.
--   **Batch Operations**: The animation generation process is multi-threaded, allowing the UI to remain responsive while assets are processed in the background.
+-   **Batch Operations**: The animation generation and export processes are **multi-threaded** using Python's `concurrent.futures`, allowing the UI to remain responsive while assets are processed in the background.
 
 ---
 
@@ -203,5 +203,3 @@ MIT License. See the `LICENSE` file for details.
 -   All sprite and animation assets are provided by the incredible team at [PMD Collab](https://sprites.pmdcollab.org/).
 -   Pokémon Mystery Dungeon © Nintendo/Creatures Inc./GAME FREAK inc.
 -   This tool was developed by fans, for fans.
-
-:)
