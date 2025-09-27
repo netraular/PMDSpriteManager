@@ -6,8 +6,55 @@ import xml.etree.ElementTree as ET
 from PIL import Image, ImageOps
 from sprite_sheet_handler import SpriteSheetHandler
 from sprite_matcher import SpriteMatcher
+from ui_components import image_utils
 import shutil
 import math
+
+def calculate_isometric_render_data(corrected_frame_data, group_frames, group_shadow_frames, group_metadata):
+    if not group_shadow_frames or not group_metadata:
+        return None, [None] * len(group_frames)
+
+    sprite_anchor_offset = None
+    shadow_anchor_0 = image_utils.find_white_pixel_anchor(group_shadow_frames[0])
+    offset_anchor_0 = group_metadata[0]['anchors'].get('green')
+
+    if shadow_anchor_0 and offset_anchor_0:
+        sprite_anchor_offset = (offset_anchor_0[0] - shadow_anchor_0[0], offset_anchor_0[1] - shadow_anchor_0[1])
+
+    ref_pos_corrected = None
+    if corrected_frame_data and corrected_frame_data[0] and corrected_frame_data[0]["image"]:
+        ref_pos_corrected = corrected_frame_data[0]["pos"]
+
+    if not ref_pos_corrected:
+        return sprite_anchor_offset, [None] * len(group_frames)
+
+    render_offsets = []
+    for i, frame_data in enumerate(corrected_frame_data):
+        current_render_offset = None
+        if sprite_anchor_offset:
+            total_move_x, total_move_y = 0, 0
+            current_pos_corrected = frame_data["pos"]
+            if current_pos_corrected and frame_data["image"]:
+                total_move_x = current_pos_corrected[0] - ref_pos_corrected[0]
+                total_move_y = current_pos_corrected[1] - ref_pos_corrected[1]
+
+            char_sprite = group_frames[i]
+            current_green_pos = group_metadata[i]['anchors'].get('green')
+            bbox = char_sprite.getbbox()
+
+            if bbox and current_green_pos:
+                paste_x_offset = (total_move_x + sprite_anchor_offset[0]) - current_green_pos[0]
+                paste_y_offset = (total_move_y + sprite_anchor_offset[1]) - current_green_pos[1]
+                
+                render_anchor_x_offset = paste_x_offset + bbox[0]
+                render_anchor_y_offset = paste_y_offset + bbox[1]
+                
+                current_render_offset = (render_anchor_x_offset, render_anchor_y_offset)
+        
+        render_offsets.append(current_render_offset)
+    
+    return sprite_anchor_offset, render_offsets
+
 
 class AnimationDataHandler:
     def __init__(self, project_path):
@@ -148,15 +195,6 @@ class AnimationDataHandler:
             found_anchors["black"] = (width // 2, height // 2 - 1)
         return {"anchors": found_anchors}
 
-    def _get_image_bottom_center(self, image):
-        """Calculates the bottom-center of the visible pixels in an image."""
-        bbox = image.getbbox()
-        if not bbox:
-            return None
-        center_x = (bbox[0] + bbox[2]) / 2
-        bottom_y = bbox[3]
-        return (center_x, bottom_y)
-    
     def _get_default_group_name(self, anim_name, total_groups, group_idx):
         DIRECTIONAL_NAMES_8 = ("down", "down-right", "right", "up-right", "up", "up-left", "left", "down-left")
         if total_groups == 8 and 0 <= group_idx < len(DIRECTIONAL_NAMES_8):
@@ -171,16 +209,9 @@ class AnimationDataHandler:
             sprite_id = value_dict["id"]
             is_mirrored = value_dict["mirrored"]
             
-            sprite_to_paste = None
-            if sprite_id > 0:
-                try:
-                    path = os.path.join(self.sprite_folder, f"sprite_{sprite_id}.png")
-                    sprite_to_paste = Image.open(path).convert('RGBA')
-                except FileNotFoundError: pass
+            sprite_to_paste = image_utils.load_sprite(self.sprite_folder, sprite_id, is_mirrored)
             
             if sprite_to_paste:
-                if is_mirrored: sprite_to_paste = ImageOps.mirror(sprite_to_paste)
-                
                 all_anchors = group_metadata[i]['anchors']
                 sprite_center_target = all_anchors.get("green") or all_anchors.get("black")
                 anchor_x, anchor_y = sprite_center_target
@@ -192,8 +223,8 @@ class AnimationDataHandler:
                 temp_frame = Image.new('RGBA', (frame_width, frame_height), (0, 0, 0, 0))
                 temp_frame.paste(sprite_to_paste, (initial_paste_x, initial_paste_y), sprite_to_paste)
 
-                center_orig = self._get_image_bottom_center(original_frames[i])
-                center_temp = self._get_image_bottom_center(temp_frame)
+                center_orig = image_utils.get_image_bottom_center(original_frames[i])
+                center_temp = image_utils.get_image_bottom_center(temp_frame)
 
                 correction_x, correction_y = (0, 0)
                 if center_orig and center_temp:
@@ -206,71 +237,6 @@ class AnimationDataHandler:
             else:
                 render_data.append({"image": None, "pos": (0, 0)})
         return render_data
-
-    def _get_image_center(self, image):
-        bbox = image.getbbox()
-        return ((bbox[0] + bbox[2]) // 2, (bbox[1] + bbox[3]) // 2) if bbox else None
-
-    def _find_white_pixel_anchor(self, image):
-        if image.mode != 'RGBA':
-            image = image.convert('RGBA')
-        
-        width, height = image.size
-        pixels = image.load()
-        white_pixel_color = (255, 255, 255, 255)
-        
-        for y in range(height):
-            for x in range(width):
-                if pixels[x, y] == white_pixel_color:
-                    return (x, y)
-        
-        return self._get_image_center(image)
-
-    def _calculate_isometric_render_data(self, corrected_frame_data, group_frames, group_shadow_frames, group_metadata):
-        if not group_shadow_frames or not group_metadata:
-            return None, [None] * len(group_frames)
-
-        sprite_anchor_offset = None
-        shadow_anchor_0 = self._find_white_pixel_anchor(group_shadow_frames[0])
-        offset_anchor_0 = group_metadata[0]['anchors'].get('green')
-
-        if shadow_anchor_0 and offset_anchor_0:
-            sprite_anchor_offset = (offset_anchor_0[0] - shadow_anchor_0[0], offset_anchor_0[1] - shadow_anchor_0[1])
-
-        ref_pos_corrected = None
-        if corrected_frame_data and corrected_frame_data[0] and corrected_frame_data[0]["image"]:
-            ref_pos_corrected = corrected_frame_data[0]["pos"]
-
-        if not ref_pos_corrected:
-            return sprite_anchor_offset, [None] * len(group_frames)
-
-        render_offsets = []
-        for i, frame_data in enumerate(corrected_frame_data):
-            current_render_offset = None
-            if sprite_anchor_offset:
-                total_move_x, total_move_y = 0, 0
-                current_pos_corrected = frame_data["pos"]
-                if current_pos_corrected and frame_data["image"]:
-                    total_move_x = current_pos_corrected[0] - ref_pos_corrected[0]
-                    total_move_y = current_pos_corrected[1] - ref_pos_corrected[1]
-
-                char_sprite = group_frames[i]
-                current_green_pos = group_metadata[i]['anchors'].get('green')
-                bbox = char_sprite.getbbox()
-
-                if bbox and current_green_pos:
-                    # Logic adapted from PreviewGenerator, independent of canvas/world_anchor
-                    paste_x = (total_move_x + sprite_anchor_offset[0]) - current_green_pos[0]
-                    paste_y = (total_move_y + sprite_anchor_offset[1]) - current_green_pos[1]
-                    
-                    render_anchor_x = paste_x + bbox[0]
-                    render_anchor_y = paste_y + bbox[1]
-                    
-                    current_render_offset = (render_anchor_x, render_anchor_y)
-            
-            render_offsets.append(current_render_offset)
-        
-        return sprite_anchor_offset, render_offsets
 
     def generate_animation_data(self, index):
         anim = self.anim_data[index]
@@ -308,7 +274,7 @@ class AnimationDataHandler:
                 if not has_visible_sprites:
                     min_x, min_y, max_x, max_y = 0, 0, anim["frame_width"], anim["frame_height"]
                 
-                sprite_anchor_offset, render_offsets = self._calculate_isometric_render_data(
+                sprite_anchor_offset, render_offsets = calculate_isometric_render_data(
                     render_data, group_frames, group_shadow_frames, group_metadata
                 )
 

@@ -4,7 +4,7 @@ from tkinter import Frame, Label, Button, Entry, Canvas, Scrollbar, messagebox, 
 from PIL import Image, ImageTk, ImageOps, ImageDraw
 from sprite_sheet_handler import SpriteSheetHandler
 from ui_components.animation_player import AnimationPlayer
-from ui_components import isometric_renderer
+from ui_components import isometric_renderer, image_utils
 import os
 import json
 import math
@@ -175,7 +175,7 @@ class AnimationCreator:
             
             Label(self.animation_frame, text=f"Preview: {anim_name}", font=('Arial', 16)).pack(pady=10)
             
-            base_shadow = self._load_base_shadow()
+            base_shadow = image_utils.load_base_shadow_sprite(self.folder, is_2x=self.is_2x_preview)
             sprite_map = isometric_renderer.load_sprites_from_json(json_data, sprite_folder)
             preview_data = isometric_renderer.generate_isometric_preview_data(json_data, sprite_map, base_shadow, self.is_2x_preview)
 
@@ -264,7 +264,7 @@ class AnimationCreator:
             row, col = 0, 0
             max_cols = 5
             
-            base_shadow = self._load_base_shadow()
+            base_shadow = image_utils.load_base_shadow_sprite(self.folder, is_2x=self.is_2x_preview)
 
             for json_file in json_files:
                 file_path = os.path.join(optimized_folder, json_file)
@@ -378,27 +378,6 @@ class AnimationCreator:
 
         self.frame_updater_after_id = self.parent_frame.after(100, self._start_frame_counter_updater)
 
-    def _load_base_shadow(self):
-        try:
-            path = os.path.join(self.folder, "Animations", "sprite_base.png")
-            if not os.path.exists(path):
-                 path = os.path.join(self.folder, "sprite_base.png")
-            
-            if os.path.exists(path):
-                return Image.open(path).convert('RGBA')
-        except Exception as e:
-            print(f"Could not load sprite_base.png: {e}")
-        
-        if self.is_2x_preview:
-            shadow = Image.new('RGBA', (64, 32), (0,0,0,0))
-            draw = ImageDraw.Draw(shadow)
-            draw.ellipse([(0,0), (63,31)], fill=(0,0,0,100))
-        else:
-            shadow = Image.new('RGBA', (32, 16), (0,0,0,0))
-            draw = ImageDraw.Draw(shadow)
-            draw.ellipse([(0,0), (31,15)], fill=(0,0,0,100))
-        return shadow
-            
     def clear_frame(self):
         if self.frame_updater_after_id:
             self.parent_frame.after_cancel(self.frame_updater_after_id)
