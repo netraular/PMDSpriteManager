@@ -255,8 +255,22 @@ class AnimationViewer:
 
     def view_sprites(self):
         if not os.path.exists(self.sprite_folder): messagebox.showwarning("Warning", "No 'Sprites' folder found"); return
-        sprite_files = sorted([f for f in os.listdir(self.sprite_folder) if f.lower().endswith('.png')], key=lambda x: int(x.split('_')[-1].split('.')[0]))
+        
+        # Filter for files that strictly match the 'sprite_NUMBER.png' pattern before sorting
+        valid_sprite_files = []
+        for f in os.listdir(self.sprite_folder):
+            if f.lower().endswith('.png') and f.lower().startswith('sprite_'):
+                try:
+                    # Check if the part after 'sprite_' is an integer
+                    int(f.split('_')[-1].split('.')[0])
+                    valid_sprite_files.append(f)
+                except (ValueError, IndexError):
+                    continue # Skip files like 'sprite_shadow.png'
+        
+        sprite_files = sorted(valid_sprite_files, key=lambda x: int(x.split('_')[-1].split('.')[0]))
+
         if not sprite_files: messagebox.showwarning("Warning", "No sprites found in the 'Sprites' folder"); return
+        
         num_sprites = len(sprite_files); grid_size = math.ceil(math.sqrt(num_sprites))
         sprite_window = Toplevel(self.parent_frame); sprite_window.title(f"Sprites Gallery ({num_sprites} sprites)")
         canvas = Canvas(sprite_window); scrollbar = Scrollbar(sprite_window, orient="vertical", command=canvas.yview)

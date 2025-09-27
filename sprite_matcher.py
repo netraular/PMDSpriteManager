@@ -14,8 +14,19 @@ class SpriteMatcher:
         if not os.path.exists(edited_sprites_folder):
             raise FileNotFoundError(f"Sprites folder not found at: {edited_sprites_folder}")
 
+        # Filter for files that strictly match the 'sprite_NUMBER.png' pattern before sorting
+        valid_sprite_files = []
+        for f in os.listdir(edited_sprites_folder):
+            if f.lower().endswith('.png') and f.lower().startswith('sprite_'):
+                try:
+                    # Check if the part after 'sprite_' is an integer
+                    int(f.split('_')[-1].split('.')[0])
+                    valid_sprite_files.append(f)
+                except (ValueError, IndexError):
+                    continue # Skip files like 'sprite_shadow.png'
+
         sprite_files = sorted(
-            [f for f in os.listdir(edited_sprites_folder) if f.lower().endswith('.png')],
+            valid_sprite_files,
             key=lambda x: int(x.split('_')[-1].split('.')[0])
         )
         
