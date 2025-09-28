@@ -6,6 +6,7 @@ import shutil
 import pathlib
 import xml.etree.ElementTree as ET
 from collections import Counter
+from PIL import Image
 
 class ESP32AssetExporter:
     def __init__(self, search_path):
@@ -98,6 +99,7 @@ class ESP32AssetExporter:
         shadow_copied = False
         character_folders = [d for d in source_dir.iterdir() if d.is_dir()]
         
+        # First, try to find the pre-made 2x shadow in the 'output x2' folder
         for char_folder in character_folders:
             source_shadow_path = char_folder / "sprite_shadow.png"
             if source_shadow_path.is_file():
@@ -108,10 +110,31 @@ class ESP32AssetExporter:
                     break 
                 except Exception as e:
                     log_callback(f"  -> ERROR: Could not copy shadow from '{char_folder.name}': {e}")
-                    break
+        
+        # If not found in 'output x2', search the original project folders for a 1x version and resize it
+        if not shadow_copied:
+            log_callback(f"  - INFO: Shadow not found in '{source_dir.name}'. Searching original project folders...")
+            project_folders = [d for d in parent_path.iterdir() if d.is_dir() and not d.name.startswith(('.', 'output', 'esp32_output'))]
+            for project_folder in project_folders:
+                search_paths = [
+                    project_folder / "Sprites" / "sprite_shadow.png",
+                    project_folder / "Animations" / "sprite_shadow.png",
+                    project_folder / "sprite_shadow.png"
+                ]
+                found_1x_path = next((p for p in search_paths if p.is_file()), None)
+                if found_1x_path:
+                    try:
+                        with Image.open(found_1x_path) as img:
+                            img_2x = img.resize((img.width * 2, img.height * 2), Image.NEAREST)
+                            img_2x.save(dest_dir / "sprite_shadow.png")
+                        log_callback(f"  -> Found 1x shadow in '{project_folder.name}', resized and copied.")
+                        shadow_copied = True
+                        break
+                    except Exception as e:
+                        log_callback(f"  -> ERROR: Could not process shadow from '{project_folder.name}': {e}")
 
         if not shadow_copied:
-            log_callback("  - WARNING: 'sprite_shadow.png' not found in any character folder within 'output x2'.")
+            log_callback("  - WARNING: 'sprite_shadow.png' not found in any character folder within 'output x2' or source projects.")
 
         log_callback("\n4. Processing characters and copying assets...")
         
