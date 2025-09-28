@@ -51,9 +51,12 @@ def generate_isometric_preview_data(anim_data, sprite_map, shadow_sprite, is_2x)
     canvas_w, canvas_h = consts['WIDTH'] * 5, consts['HEIGHT'] * 5
 
     all_frames_data = []
+    all_group_ids = []
     for group_id in sorted(anim_data["sprites"].keys(), key=int):
         group_data = anim_data["sprites"][group_id]
-        all_frames_data.extend(group_data.get("frames", []))
+        frames_in_group = group_data.get("frames", [])
+        all_frames_data.extend(frames_in_group)
+        all_group_ids.extend([group_id] * len(frames_in_group))
 
     if not all_frames_data:
         return {"frames": [], "text_data": [], "durations": []}
@@ -66,15 +69,33 @@ def generate_isometric_preview_data(anim_data, sprite_map, shadow_sprite, is_2x)
     text_data = []
 
     for i, frame_info in enumerate(all_frames_data):
+        group_id = all_group_ids[i]
+        group_data = anim_data["sprites"][group_id]
+
         canvas = Image.new('RGBA', (canvas_w, canvas_h), (0, 0, 0, 0))
         world_anchor = (canvas_w // 2, canvas_h // 2)
         grid_origin = (world_anchor[0] - consts['WIDTH_HALF'], world_anchor[1] - consts['HEIGHT_HALF'] * 3)
         draw_iso_grid(canvas, grid_origin, consts)
-        draw = ImageDraw.Draw(canvas)
+        
+        overlay = Image.new('RGBA', canvas.size, (0, 0, 0, 0))
+        draw_overlay = ImageDraw.Draw(overlay)
 
         if shadow_sprite:
             shadow_pos = (world_anchor[0] - shadow_sprite.width // 2, world_anchor[1] - shadow_sprite.height // 2)
             canvas.paste(shadow_sprite, shadow_pos, shadow_sprite)
+
+        frame_w = group_data.get("framewidth")
+        frame_h = group_data.get("frameheight")
+        bbox_anchor = group_data.get("bounding_box_anchor")
+        
+        if frame_w is not None and frame_h is not None and bbox_anchor:
+            min_rx, min_ry = bbox_anchor
+            box_x0 = world_anchor[0] + min_rx
+            box_y0 = world_anchor[1] + min_ry
+            box_x1 = box_x0 + frame_w
+            box_y1 = box_y0 + frame_h
+            yellow_with_alpha = (255, 255, 0, 128)
+            draw_overlay.rectangle([box_x0, box_y0, box_x1-1, box_y1-1], outline=yellow_with_alpha, width=1)
 
         render_offset = frame_info.get("render_offset")
         sprite_id = frame_info.get("id", "0")
@@ -88,12 +109,16 @@ def generate_isometric_preview_data(anim_data, sprite_map, shadow_sprite, is_2x)
             canvas.paste(sprite_img, paste_pos, sprite_img)
 
             s = 3
-            draw.line((paste_pos[0]-s, paste_pos[1], paste_pos[0]+s, paste_pos[1]), fill="purple", width=1)
-            draw.line((paste_pos[0], paste_pos[1]-s, paste_pos[0], paste_pos[1]+s), fill="purple", width=1)
+            draw_overlay.line((paste_pos[0]-s, paste_pos[1], paste_pos[0]+s, paste_pos[1]), fill="purple", width=1)
+            draw_overlay.line((paste_pos[0], paste_pos[1]-s, paste_pos[0], paste_pos[1]+s), fill="purple", width=1)
             current_offset_text = f"Render Offset: ({render_x}, {render_y})"
 
+        canvas = Image.alpha_composite(canvas, overlay)
+        draw = ImageDraw.Draw(canvas)
+
         frame_duration = durations[i] if i < len(durations) else "N/A"
-        final_text_for_frame = f"{current_offset_text}\nDuration: {frame_duration}"
+        fw_text = f"Frame W/H: ({frame_w}, {frame_h})" if frame_w is not None and frame_h is not None else "Frame W/H: (N/A)"
+        final_text_for_frame = f"{current_offset_text}\n{fw_text}\nDuration: {frame_duration}"
 
         s = 3
         draw.line((world_anchor[0]-s, world_anchor[1], world_anchor[0]+s, world_anchor[1]), fill="red", width=1)

@@ -291,7 +291,7 @@ class AnimationDataHandler:
                 if not has_visible_sprites:
                     min_x, min_y, max_x, max_y = 0, 0, anim["frame_width"], anim["frame_height"]
                 
-                sprite_anchor_offset, render_offsets = calculate_isometric_render_data(
+                _, render_offsets = calculate_isometric_render_data(
                     render_data, group_frames, group_shadow_frames, group_metadata
                 )
 
@@ -299,7 +299,6 @@ class AnimationDataHandler:
                 grouped_sprites[str(group_idx + 1)] = {
                     "name": group_name, 
                     "values": values, 
-                    "sprite_anchor_offset": sprite_anchor_offset,
                     "render_offsets": render_offsets,
                     "framewidth": math.ceil(max_x - min_x),
                     "frameheight": math.ceil(max_y - min_y)
@@ -333,11 +332,19 @@ class AnimationDataHandler:
                     'name': group_data.get('name'),
                     'framewidth': group_data.get('framewidth', 2),
                     'frameheight': group_data.get('frameheight', 2),
-                    'sprite_anchor_offset': group_data.get('sprite_anchor_offset'),
-                    'frames': []
                 }
-
+                
                 render_offsets = group_data.get('render_offsets', [])
+                valid_offsets = [ro for ro in render_offsets if ro is not None]
+                if valid_offsets:
+                    min_rx = min(ro[0] for ro in valid_offsets)
+                    min_ry = min(ro[1] for ro in valid_offsets)
+                    simplified_group['bounding_box_anchor'] = [min_rx, min_ry]
+                else:
+                    simplified_group['bounding_box_anchor'] = None
+                
+                simplified_group['frames'] = []
+                
                 for i, value in enumerate(group_data.get('values', [])):
                     original_id, is_mirrored = value.get('id', 0), value.get('mirrored', False)
                     render_offset = render_offsets[i] if i < len(render_offsets) else None
