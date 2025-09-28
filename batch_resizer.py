@@ -372,7 +372,10 @@ class BatchResizer:
             q.put(f"  -> Processing {json_file.name} for {char_name}")
             with open(json_file, 'r') as f: data = json.load(f)
             for group in data.get('sprites', {}).values():
-                group['framewidth'] *= 2; group['frameheight'] *= 2
+                group['framewidth'] *= 2
+                group['frameheight'] *= 2
+                if group.get('bounding_box_anchor'):
+                    group['bounding_box_anchor'] = [v * 2 for v in group['bounding_box_anchor']]
                 if group.get('sprite_anchor_offset'):
                     group['sprite_anchor_offset'] = [v * 2 for v in group['sprite_anchor_offset']]
                 for frame in group.get('frames', []):
