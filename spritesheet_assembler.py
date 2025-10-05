@@ -198,6 +198,12 @@ class SpritesheetAssembler:
                 q.put(f"  [WARNING] No sprite groups found in JSON for '{anim_name}'. Skipping.")
                 return False
             
+            sheet_data = {
+                "name": anim_name,
+                "durations": data.get("durations", []),
+                "groups": {}
+            }
+            
             num_groups = len(groups)
             num_frames, max_fw, max_fh = 0, 0, 0
             
@@ -212,6 +218,11 @@ class SpritesheetAssembler:
                 q.put(f"  [ERROR] Invalid frame dimensions for '{anim_name}'. Skipping.")
                 return False
 
+            sheet_data["frameWidth"] = max_fw
+            sheet_data["frameHeight"] = max_fh
+            sheet_data["framesPerGroup"] = num_frames
+            sheet_data["totalGroups"] = num_groups
+
             sheet_width = max_fw * num_frames
             sheet_height = max_fh * num_groups
             
@@ -223,20 +234,30 @@ class SpritesheetAssembler:
                     q.put(f"  [WARNING] No bounding_box_anchor for group {group_id} in '{anim_name}'. Sprites may be misplaced.")
                     bbox_anchor = [0, 0]
 
+                group_name = group_data.get("name", f"group{group_id}")
+                sheet_data["groups"][group_id] = {
+                    "name": group_name,
+                    "frames": [],
+                    "boundingBoxAnchor": bbox_anchor
+                }
+
                 frames = group_data.get('frames', [])
                 for col_idx, frame_info in enumerate(frames):
                     sprite_id = frame_info.get('id', '0')
                     if sprite_id == '0':
+                        sheet_data["groups"][group_id]["frames"].append(None)
                         continue
 
                     sprite_img = self._load_sprite(sprite_folder, sprite_id)
                     if not sprite_img:
                         q.put(f"  [WARNING] Could not load sprite '{sprite_id}' for '{anim_name}'.")
+                        sheet_data["groups"][group_id]["frames"].append(None)
                         continue
 
                     render_offset = frame_info.get('render_offset')
                     if not render_offset:
                         q.put(f"  [WARNING] No render_offset for sprite '{sprite_id}' in '{anim_name}'.")
+                        sheet_data["groups"][group_id]["frames"].append(None)
                         continue
                     
                     paste_x_in_cell = render_offset[0] - bbox_anchor[0]
@@ -248,9 +269,24 @@ class SpritesheetAssembler:
                     final_paste_pos = (cell_x + paste_x_in_cell, cell_y + paste_y_in_cell)
                     spritesheet.paste(sprite_img, final_paste_pos, sprite_img)
 
+                    sprite_w, sprite_h = sprite_img.size
+                    frame_hitbox_data = {
+                        "x": paste_x_in_cell,
+                        "y": paste_y_in_cell,
+                        "w": sprite_w,
+                        "h": sprite_h
+                    }
+                    sheet_data["groups"][group_id]["frames"].append(frame_hitbox_data)
+
             output_path = os.path.join(self.output_folder, f"{anim_name}-Anim.png")
             spritesheet.save(output_path)
-            q.put(f"  [SUCCESS] Saved to '{pathlib.Path(output_path).relative_to(pathlib.Path(self.folder))}'")
+            q.put(f"  [SUCCESS] Saved spritesheet to '{pathlib.Path(output_path).relative_to(pathlib.Path(self.folder))}'")
+
+            json_output_path = os.path.join(self.output_folder, f"{anim_name}-AnimSheetData.json")
+            with open(json_output_path, 'w') as f:
+                json.dump(sheet_data, f, indent=4)
+            q.put(f"  [SUCCESS] Saved metadata to '{pathlib.Path(json_output_path).relative_to(pathlib.Path(self.folder))}'")
+
             return True
 
         except Exception as e:

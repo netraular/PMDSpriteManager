@@ -8,6 +8,7 @@ from animation_viewer import AnimationViewer
 from animation_creator import AnimationCreator
 from batch_resizer import BatchResizer
 from spritesheet_assembler import SpritesheetAssembler
+from assembled_animation_previewer import AssembledAnimationPreviewer
 
 class MainApplication:
     def __init__(self, root):
@@ -27,6 +28,7 @@ class MainApplication:
         self.animation_creator = None
         self.batch_resizer = None
         self.animation_assembler = None
+        self.assembled_previewer = None
         
         self.show_folder_selection()
 
@@ -73,6 +75,7 @@ class MainApplication:
         Button(self.current_frame, text="Edit Animations", command=self.show_animation_viewer, width=25).pack(pady=10)
         Button(self.current_frame, text="All Animations Preview", command=self.show_json_previewer, width=25).pack(pady=10)
         Button(self.current_frame, text="Assemble Spritesheets", command=self.show_spritesheet_assembler, width=25).pack(pady=10)
+        Button(self.current_frame, text="Preview Assembled Animations", command=self.show_assembled_previewer, width=25, bg="lightyellow").pack(pady=10)
         Button(self.current_frame, text="Back to Workflow Selection", command=self.show_folder_selection).pack(pady=20)
 
     def show_animation_viewer(self):
@@ -131,6 +134,14 @@ class MainApplication:
             (f"Character: {os.path.basename(self.folder)}", self.show_main_menu)
         ]
         self.animation_assembler = SpritesheetAssembler(self.current_frame, self.folder, self.show_main_menu, self.update_breadcrumbs, base_path)
+
+    def show_assembled_previewer(self):
+        self.clear_frame()
+        base_path = [
+            ("Workflow Selection", self.show_folder_selection),
+            (f"Character: {os.path.basename(self.folder)}", self.show_main_menu)
+        ]
+        self.assembled_previewer = AssembledAnimationPreviewer(self.current_frame, self.folder, self.show_main_menu, self.update_breadcrumbs, base_path)
 
     def launch_batch_resizer(self):
         self.clear_frame()
