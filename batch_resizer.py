@@ -571,8 +571,11 @@ class BatchResizer:
         info_text = f"Found {len(self.folders_without_sprites)} valid folders without Sprites subfolder (out of {len(self.valid_project_folders)} valid folders)"
         Label(content_frame, text=info_text, font=('Arial', 10)).pack(pady=10)
         
-        Button(content_frame, text="Process All (skip existing Sprites folders)", 
-               command=self.start_sprite_generation_sequential, font=('Arial', 12), width=40, bg="lightgreen").pack(pady=10)
+        Button(content_frame, text="⚡ Auto Process All (detect sprite size from XML)", 
+               command=self.start_auto_sprite_generation, font=('Arial', 12), width=45, bg="lightyellow").pack(pady=10)
+        
+        Button(content_frame, text="Manual Process All (enter size for each)", 
+               command=self.start_sprite_generation_sequential, font=('Arial', 12), width=45, bg="lightgreen").pack(pady=10)
         
         Label(content_frame, text="— OR —", font=('Arial', 10)).pack(pady=10)
         
@@ -593,6 +596,305 @@ class BatchResizer:
                    font=('Arial', 11)).pack(side='left', padx=5)
         else:
             Label(dropdown_frame, text="No valid folders found (format: 'XXXX Name')", fg="red").pack()
+
+    def start_auto_sprite_generation(self):
+        """Starts automatic sprite generation by detecting sprite boundaries in the image."""
+        self.clear_frame()
+        
+        top_frame = Frame(self.main_frame)
+        top_frame.pack(fill='x', padx=10, pady=5)
+        Button(top_frame, text="Back to Menu", command=self.show_sprite_generation_menu).pack(side='left')
+        
+        content_frame = Frame(self.main_frame)
+        content_frame.pack(pady=10, padx=20, fill='both', expand=True)
+        
+        Label(content_frame, text="Auto Generate Sprites", font=('Arial', 14, 'bold')).pack(pady=(0, 10))
+        Label(content_frame, text="Automatically detecting sprite boundaries by analyzing pixel groups in the image", 
+              font=('Arial', 10)).pack(pady=(0, 10))
+        
+        # Log area
+        log_frame = Frame(content_frame)
+        log_frame.pack(pady=10, fill='both', expand=True)
+        
+        self.auto_log_text = Text(log_frame, height=20, width=90, font=('Courier', 9))
+        scrollbar = Scrollbar(log_frame, command=self.auto_log_text.yview)
+        self.auto_log_text.configure(yscrollcommand=scrollbar.set)
+        self.auto_log_text.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+        
+        def log_auto(msg):
+            self.auto_log_text.insert(END, msg + "\n")
+            self.auto_log_text.see(END)
+        
+        def auto_process_thread():
+            folders_to_process = self.folders_without_sprites.copy()
+            
+            log_auto(f"Starting auto sprite generation for {len(folders_to_process)} folders...\n")
+            
+            success_count = 0
+            fail_count = 0
+            
+            for i, folder_name in enumerate(folders_to_process):
+                self.main_frame.after(0, lambda fn=folder_name, idx=i+1, total=len(folders_to_process): 
+                    log_auto(f"[{idx}/{total}] Processing: {fn}"))
+                
+                project_path = os.path.join(self.parent_folder, folder_name)
+                
+                try:
+                    # Get Pokemon ID from folder name
+                    pokemon_id = folder_name.split(' ', 1)[0]
+                    sprite_recolor_name = f"sprite_recolor-{pokemon_id}-0000-0001.png"
+                    spritesheet_path = os.path.join(project_path, sprite_recolor_name)
+                    
+                    if not os.path.exists(spritesheet_path):
+                        # Try any PNG as fallback
+                        png_files = [f for f in os.listdir(project_path) if f.lower().endswith('.png') and 'portrait' not in f.lower()]
+                        if png_files:
+                            spritesheet_path = os.path.join(project_path, png_files[0])
+                        else:
+                            self.main_frame.after(0, lambda fn=folder_name: 
+                                log_auto(f"  ❌ No spritesheet found for {fn}"))
+                            fail_count += 1
+                            continue
+                    
+                    # First try to detect from image analysis (more accurate for sprite_recolor images)
+                    sprites_per_row_img = self._detect_sprites_per_row_from_image(spritesheet_path)
+                    sprites_per_row_xml = self._get_sprites_per_row_from_xml(project_path, spritesheet_path)
+                    
+                    # Log detection results
+                    self.main_frame.after(0, lambda fn=folder_name, xml=sprites_per_row_xml, img=sprites_per_row_img: 
+                        log_auto(f"  🔍 {fn}: Image={img}, XML={xml}"))
+                    
+                    # Prefer image detection since sprite_recolor has different scale than AnimData.xml
+                    sprites_per_row = sprites_per_row_img if sprites_per_row_img else sprites_per_row_xml
+                    
+                    if sprites_per_row is None or sprites_per_row < 1:
+                        self.main_frame.after(0, lambda fn=folder_name: 
+                            log_auto(f"  ❌ Could not determine sprite count for {fn}"))
+                        fail_count += 1
+                        continue
+                    
+                    # Process sprites
+                    output_folder = os.path.join(project_path, "Sprites")
+                    os.makedirs(output_folder, exist_ok=True)
+                    
+                    # Clear existing sprites
+                    for file in os.listdir(output_folder):
+                        os.unlink(os.path.join(output_folder, file))
+                    
+                    handler = SpriteSheetHandler(spritesheet_path, remove_first_row=True)
+                    # Pass number of sprites per row (assuming square grid)
+                    sprites, _, _ = handler.split_sprites(sprites_per_row, sprites_per_row)
+                    
+                    saved_count = 0
+                    for idx, sprite in enumerate(sprites):
+                        if bbox := sprite.getbbox():
+                            sprite = sprite.crop(bbox)
+                        sprite.save(os.path.join(output_folder, f"sprite_{idx + 1}.png"))
+                        saved_count += 1
+                    
+                    # Calculate cell size for display
+                    with Image.open(spritesheet_path) as img:
+                        cell_size = img.width // sprites_per_row
+                    
+                    self.main_frame.after(0, lambda fn=folder_name, size=cell_size, cnt=saved_count, spr=sprites_per_row: 
+                        log_auto(f"  ✅ {fn} (grid: {spr}x{spr}, cell: {size}x{size}, {cnt} sprites)"))
+                    success_count += 1
+                    
+                except Exception as e:
+                    self.main_frame.after(0, lambda fn=folder_name, err=str(e): 
+                        log_auto(f"  ❌ Error processing {fn}: {err}"))
+                    fail_count += 1
+            
+            self.main_frame.after(0, lambda s=success_count, f=fail_count: 
+                log_auto(f"\n{'='*50}\n✅ Complete! Success: {s}, Failed: {f}"))
+        
+        # Start processing in background thread
+        thread = threading.Thread(target=auto_process_thread, daemon=True)
+        thread.start()
+
+    def _detect_sprites_per_row_from_image(self, image_path):
+        """
+        Detects number of sprites per row by analyzing multiple horizontal slices of the image.
+        Counts transparent/gap columns to find sprite boundaries.
+        """
+        try:
+            with Image.open(image_path) as img:
+                img = img.convert('RGBA')
+                width, height = img.size
+                
+                # We'll analyze several horizontal slices and find gaps (transparent columns)
+                # Skip the first row (palette) and sample multiple bands
+                
+                # A "gap" is a column that is mostly transparent across all sampled rows
+                gap_columns = []
+                
+                # Sample from row 1 to end (skip row 0 which is palette)
+                sample_rows = list(range(1, height))
+                
+                # For each column, count how many sampled rows have transparent pixels
+                for x in range(width):
+                    transparent_count = 0
+                    for y in sample_rows:
+                        pixel = img.getpixel((x, y))
+                        if len(pixel) >= 4 and pixel[3] < 10:  # Transparent
+                            transparent_count += 1
+                    
+                    # If more than 80% of the column is transparent, it's a gap
+                    if transparent_count > len(sample_rows) * 0.8:
+                        gap_columns.append(x)
+                
+                # Find continuous gap regions and sprite regions
+                # A sprite region is between gap regions
+                if not gap_columns:
+                    # No gaps found, maybe entire image is one sprite
+                    return 1
+                
+                # Find the start of each gap sequence
+                gap_regions = []
+                gap_start = gap_columns[0]
+                prev_x = gap_columns[0]
+                
+                for x in gap_columns[1:]:
+                    if x != prev_x + 1:
+                        # End of gap sequence
+                        gap_regions.append((gap_start, prev_x + 1))
+                        gap_start = x
+                    prev_x = x
+                gap_regions.append((gap_start, prev_x + 1))
+                
+                # Calculate gaps between sprite regions
+                # Sprite regions are between gap regions
+                sprite_widths = []
+                
+                # If first gap starts after 0, there's a sprite at the beginning
+                if gap_regions[0][0] > 0:
+                    sprite_widths.append(gap_regions[0][0])
+                
+                # Sprites between gaps
+                for i in range(len(gap_regions) - 1):
+                    current_gap_end = gap_regions[i][1]
+                    next_gap_start = gap_regions[i + 1][0]
+                    sprite_width = next_gap_start - current_gap_end
+                    if sprite_width > 0:
+                        sprite_widths.append(sprite_width)
+                
+                # If last gap ends before width, there's a sprite at the end
+                if gap_regions[-1][1] < width:
+                    sprite_widths.append(width - gap_regions[-1][1])
+                
+                # Number of sprites is the number of sprite regions
+                sprites_per_row = len(sprite_widths)
+                
+                if sprites_per_row < 1:
+                    return None
+                
+                # Validate: check if this creates reasonable sprite cells
+                # Cell size should be roughly image_width / sprites_per_row
+                cell_size = width / sprites_per_row
+                
+                # If cell sizes are too inconsistent, try alternative detection
+                if sprite_widths and sprites_per_row > 0:
+                    avg_width = sum(sprite_widths) / len(sprite_widths)
+                    # Check if most sprites have similar width (within 50% of average)
+                    consistent = all(abs(w - avg_width) / avg_width < 0.5 for w in sprite_widths if avg_width > 0)
+                    
+                    if not consistent:
+                        # Try simpler approach: divide by common grid numbers
+                        for grid_size in [2, 3, 4, 5, 6, 7, 8]:
+                            if width % grid_size == 0 and height % grid_size == 0:
+                                return grid_size
+                
+                return sprites_per_row
+                
+        except Exception as e:
+            print(f"Error detecting sprite count: {e}")
+            return None
+
+    def _get_sprites_per_row_from_xml(self, project_path, spritesheet_path):
+        """
+        Gets number of sprites per row by calculating from Walk frame size and image dimensions.
+        """
+        frame_size = self._get_walk_frame_size(project_path)
+        if frame_size is None:
+            return None
+        
+        try:
+            with Image.open(spritesheet_path) as img:
+                width = img.width
+                sprites_per_row = width // frame_size
+                if sprites_per_row > 0:
+                    return sprites_per_row
+        except:
+            pass
+        
+        return None
+
+    def _get_walk_frame_size(self, project_path):
+        """Gets the Walk animation frame size from AnimData.xml."""
+        import xml.etree.ElementTree as ET
+        
+        animations_folder = os.path.join(project_path, "Animations")
+        animdata_path = os.path.join(animations_folder, "AnimData.xml")
+        
+        if not os.path.exists(animdata_path):
+            return None
+        
+        try:
+            tree = ET.parse(animdata_path)
+            root = tree.getroot()
+            anims_root = root.find("Anims")
+            
+            if anims_root is None:
+                return None
+            
+            # Look for Walk animation
+            for anim in anims_root.findall("Anim"):
+                name_elem = anim.find("Name")
+                if name_elem is not None and name_elem.text == "Walk":
+                    fw_elem = anim.find("FrameWidth")
+                    fh_elem = anim.find("FrameHeight")
+                    
+                    if fw_elem is not None and fh_elem is not None:
+                        fw = int(fw_elem.text)
+                        fh = int(fh_elem.text)
+                        # Return the larger dimension (usually they're equal)
+                        return max(fw, fh)
+                    
+                    # If Walk is a CopyOf another animation, find the source
+                    copy_of = anim.find("CopyOf")
+                    if copy_of is not None:
+                        return self._get_anim_size_by_name(anims_root, copy_of.text)
+            
+            return None
+            
+        except Exception as e:
+            print(f"Error parsing AnimData.xml: {e}")
+            return None
+
+    def _get_anim_size_by_name(self, anims_root, anim_name, visited=None):
+        """Recursively gets animation frame size by name, handling CopyOf references."""
+        if visited is None:
+            visited = set()
+        
+        if anim_name in visited:
+            return None
+        visited.add(anim_name)
+        
+        for anim in anims_root.findall("Anim"):
+            name_elem = anim.find("Name")
+            if name_elem is not None and name_elem.text == anim_name:
+                fw_elem = anim.find("FrameWidth")
+                fh_elem = anim.find("FrameHeight")
+                
+                if fw_elem is not None and fh_elem is not None:
+                    return max(int(fw_elem.text), int(fh_elem.text))
+                
+                copy_of = anim.find("CopyOf")
+                if copy_of is not None:
+                    return self._get_anim_size_by_name(anims_root, copy_of.text, visited)
+        
+        return None
 
     def start_sprite_generation_sequential(self):
         """Starts processing folders sequentially, skipping those with Sprites subfolder."""
