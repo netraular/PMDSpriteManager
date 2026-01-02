@@ -19,6 +19,8 @@ from ui_components.esp32_asset_exporter import ESP32AssetExporter
 from rpg_tile_previewer import RPGTilePreviewer
 
 class BatchResizer:
+    DOWNLOADS_FOLDER_NAME = "downloads"  # Subfolder name for Pokemon data
+    
     def __init__(self, parent_frame, return_to_main_callback, update_breadcrumbs_callback=None, base_path=None):
         self.parent_frame = parent_frame
         self.return_to_main = return_to_main_callback
@@ -26,6 +28,7 @@ class BatchResizer:
         self.base_path = base_path if base_path is not None else []
         
         self.parent_folder = None
+        self.downloads_folder = None  # Subfolder containing Pokemon data
         self.project_folders = []
         self.current_folder_index = 0
         self.cancel_operation = False
@@ -81,8 +84,19 @@ class BatchResizer:
         folder = filedialog.askdirectory(title="Select Parent Folder with Projects")
         if not folder: return
         self.parent_folder = folder
-        self.project_folders = sorted([d for d in os.listdir(folder) if os.path.isdir(os.path.join(folder, d))])
+        self.downloads_folder = os.path.join(folder, self.DOWNLOADS_FOLDER_NAME)
+        # Ensure downloads folder exists
+        os.makedirs(self.downloads_folder, exist_ok=True)
+        self._refresh_project_folders()
         self.show_task_selection_view()
+
+    def _refresh_project_folders(self):
+        """Refresh the list of project folders from the downloads directory."""
+        if self.downloads_folder and os.path.exists(self.downloads_folder):
+            self.project_folders = sorted([d for d in os.listdir(self.downloads_folder) 
+                                          if os.path.isdir(os.path.join(self.downloads_folder, d))])
+        else:
+            self.project_folders = []
 
     def show_task_selection_view(self):
         if self.update_breadcrumbs:
@@ -91,25 +105,23 @@ class BatchResizer:
         self.clear_frame()
         self.cancel_operation = False
         if self.parent_folder:
-            self.project_folders = sorted([d for d in os.listdir(self.parent_folder) if os.path.isdir(os.path.join(self.parent_folder, d))])
+            self._refresh_project_folders()
 
         top_frame = Frame(self.main_frame); top_frame.pack(fill='x', padx=10, pady=5)
         Button(top_frame, text="Main Menu", command=self.return_to_main).pack(side='left')
         content_frame = Frame(self.main_frame); content_frame.pack(pady=50)
         Label(content_frame, text=f"Folder: {os.path.basename(self.parent_folder)}", font=('Arial', 10)).pack(pady=(0, 10))
-        Label(content_frame, text=f"Found {len(self.project_folders)} project subfolders.", font=('Arial', 10)).pack(pady=(0, 20))
+        Label(content_frame, text=f"Found {len(self.project_folders)} projects in 'downloads' subfolder.", font=('Arial', 10)).pack(pady=(0, 20))
         Label(content_frame, text="Choose a batch operation to perform:", font=('Arial', 14)).pack(pady=20)
         
-        Button(content_frame, text="0- Prepare Pokemon Data (Portraits)", command=self.show_prepare_data_view, font=('Arial', 12), width=40, bg="lightcyan").pack(pady=10)
-        Button(content_frame, text="1- Download Sprites from PMDCollab", command=self.show_download_sprites_visual_view, font=('Arial', 12), width=40, bg="lightyellow").pack(pady=10)
+        Button(content_frame, text="0- Prepare Pokemon Data (Portraits)", command=self.show_prepare_data_view, font=('Arial', 12), width=40).pack(pady=10)
+        Button(content_frame, text="1- Download Sprites from PMDCollab", command=self.show_download_sprites_visual_view, font=('Arial', 12), width=40).pack(pady=10)
         Button(content_frame, text="2- Generate Sprites", command=self.show_sprite_generation_menu, font=('Arial', 12), width=40).pack(pady=10)
         Button(content_frame, text="3- Generate Optimized Animations", command=self.start_animation_generation, font=('Arial', 12), width=40).pack(pady=10)
-        Button(content_frame, text="Export Final Assets", command=self.show_export_assets_view, font=('Arial', 12), width=40, bg="lightgreen").pack(pady=10)
-        Button(content_frame, text="Export Final Assets (x2)", command=self.show_export_assets_x2_view, font=('Arial', 12), width=40, bg="lightblue").pack(pady=10)
-        Button(content_frame, text="Generate Shadow Sprites", command=self.show_shadow_generation_view, font=('Arial', 12), width=40).pack(pady=10)
-        Button(content_frame, text="Preview Optimized Animations", command=self.show_optimized_animation_previewer, font=('Arial', 12), width=40).pack(pady=10)
-        Button(content_frame, text="RPG Tile Preview (32x32)", command=self.show_rpg_tile_previewer, font=('Arial', 12), width=40, bg="lightcoral").pack(pady=10)
+        Button(content_frame, text="4- Export Final Assets (1x + 2x + Shadows)", command=self.show_export_assets_combined_view, font=('Arial', 12), width=40).pack(pady=10)
+        Button(content_frame, text="5- Preview Optimized Animations", command=self.show_optimized_animation_previewer, font=('Arial', 12), width=40).pack(pady=10)
         Button(content_frame, text="ESP32 Export", command=self.show_esp32_export_view, font=('Arial', 12), width=40).pack(pady=10)
+        Button(content_frame, text="RPG Tile Preview (32x32)", command=self.show_rpg_tile_previewer, font=('Arial', 12), width=40).pack(pady=10)
 
     # --- Task View Setup Methods (using the generic framework) ---
 
@@ -122,31 +134,13 @@ class BatchResizer:
             worker_function=self._animation_generation_worker
         )
 
-    def show_export_assets_view(self):
-        description = "This will find common animations and copy them with their sprites to a new 'output' folder."
+    def show_export_assets_combined_view(self):
+        description = "This will find common animations and export them with their sprites.\nCreates 'output' folder (1x) and 'output x2' folder (2x pixel-perfect scaled) simultaneously."
         self._setup_task_view(
-            title="Export Final Assets",
+            title="Export Final Assets (1x + 2x)",
             description=description,
             start_button_text="Start Export",
-            worker_function=self._export_assets_worker
-        )
-
-    def show_export_assets_x2_view(self):
-        description = "This will create a new 'output x2' folder based on the existing 'output' folder.\nAll sprites will be resized to 200% (pixel-perfect), and all JSON data (frame sizes, offsets) will be adjusted accordingly."
-        self._setup_task_view(
-            title="Export Final Assets (x2)",
-            description=description,
-            start_button_text="Start x2 Export",
-            worker_function=self._export_assets_x2_worker
-        )
-
-    def show_shadow_generation_view(self):
-        description = "This will find the 'sprite_shadow.png' for each character and copy it into the 'output' folder.\nA 2x version will be created for the 'output x2' folder."
-        self._setup_task_view(
-            title="Generate Shadow Sprites",
-            description=description,
-            start_button_text="Start Generation",
-            worker_function=self._shadow_generation_worker
+            worker_function=self._export_assets_combined_worker
         )
 
     def show_esp32_export_view(self):
@@ -300,7 +294,7 @@ class BatchResizer:
         skipped_has_animdata = 0
         
         for fn in valid_folders:
-            folder_path = os.path.join(self.parent_folder, fn)
+            folder_path = os.path.join(self.downloads_folder, fn)
             sprites_folder = os.path.join(folder_path, "Sprites")
             animdata_folder = os.path.join(folder_path, "AnimationData")
             
@@ -323,7 +317,7 @@ class BatchResizer:
             q.put("DONE:0:0")
             return
         
-        tasks = [(os.path.join(self.parent_folder, fn), fn) for fn in folders_to_process]
+        tasks = [(os.path.join(self.downloads_folder, fn), fn) for fn in folders_to_process]
 
         # Use more workers for better parallelization (default is CPU count, we use CPU count * 2)
         max_workers = min(32, (os.cpu_count() or 4) * 2)
@@ -349,34 +343,14 @@ class BatchResizer:
         else:
             q.put(f"DONE:{total_anims_saved}:{projects_failed}")
 
-    def _process_project_for_export(self, char_folder, common_animations, output_dir, q):
-        if self.cancel_operation: return
-
-        char_name = char_folder.name
-        source_anim_path = char_folder / "AnimationData"
-        q.put(f"\n--- Processing: {char_name} ---")
-        output_char_dir = output_dir / char_name
-        output_char_dir.mkdir()
-        
-        for json_name in sorted(list(common_animations)):
-            if self.cancel_operation: return
-            
-            shutil.copy2(source_anim_path / json_name, output_char_dir / json_name)
-            
-            anim_name = json_name.removesuffix("-AnimData.json")
-            source_sprites_path = source_anim_path / anim_name
-            if source_sprites_path.is_dir():
-                shutil.copytree(source_sprites_path, output_char_dir / anim_name)
-                q.put(f"  ✅ Copied assets for '{anim_name}' from '{char_name}'")
-            else:
-                q.put(f"  - Warning: Sprite folder for '{anim_name}' not found in '{char_name}'.")
-
-    def _export_assets_worker(self, q):
+    def _export_assets_combined_worker(self, q):
+        """Combined worker that exports both 1x and 2x assets in one pass."""
         main_path = pathlib.Path(self.parent_folder)
-        q.put(f"Analyzing folder structure in: {main_path}\n")
-        character_folders = [d for d in main_path.iterdir() if d.is_dir() and not d.name.startswith(('.', 'output'))]
+        downloads_path = pathlib.Path(self.downloads_folder)
+        q.put(f"Analyzing folder structure in: {downloads_path}\n")
+        character_folders = [d for d in downloads_path.iterdir() if d.is_dir()]
         if not character_folders:
-            q.put("Error: No character subfolders found in the specified directory.")
+            q.put("Error: No character subfolders found in the downloads directory.")
             q.put("DONE:ERROR"); return
 
         animations_by_character = {}
@@ -396,15 +370,22 @@ class BatchResizer:
 
         q.put("\n" + "-"*50 + "\n✅ Common animations found:")
         for file_name in sorted(list(common_animations)): q.put(f"   - {file_name}")
-        q.put("-" * 50 + "\n\nStarting export process...")
+        q.put("-" * 50 + "\n\nStarting export process (1x + 2x)...")
 
+        # Setup output directories
         output_dir = main_path / "output"
+        output_dir_x2 = main_path / "output x2"
+        
         if output_dir.exists():
             q.put(f"Deleting existing 'output' folder..."); shutil.rmtree(output_dir)
+        if output_dir_x2.exists():
+            q.put(f"Deleting existing 'output x2' folder..."); shutil.rmtree(output_dir_x2)
+        
         output_dir.mkdir()
+        output_dir_x2.mkdir()
 
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            futures = [executor.submit(self._process_project_for_export, cf, common_animations, output_dir, q) for cf in character_folders]
+            futures = [executor.submit(self._process_project_for_combined_export, cf, common_animations, output_dir, output_dir_x2, q) for cf in character_folders]
             for future in concurrent.futures.as_completed(futures):
                 if self.cancel_operation: break
                 try: future.result()
@@ -412,23 +393,72 @@ class BatchResizer:
 
         if self.cancel_operation:
             q.put("DONE:CANCEL")
-        else:
-            q.put("\n" + "-"*50 + f"\n✅ Process completed. Files are in: {output_dir}\n" + "-"*50)
-            q.put("DONE:COMPLETE")
+            return
+        
+        # Now generate shadow sprites for both output folders
+        q.put("\n" + "-"*50 + "\n--- Generating Shadow Sprites ---")
+        self._generate_shadows_for_export(downloads_path, output_dir, output_dir_x2, q)
+        
+        q.put("\n" + "-"*50 + f"\n✅ Export completed!")
+        q.put(f"   1x files: {output_dir}")
+        q.put(f"   2x files: {output_dir_x2}")
+        q.put("-"*50)
+        q.put("DONE:COMPLETE")
 
-    def _process_project_for_x2_export(self, char_folder, dest_dir, q):
-        if self.cancel_operation: return
+    def _generate_shadows_for_export(self, downloads_path, output_dir, output_dir_x2, q):
+        """Generate shadow sprites for both 1x and 2x output folders."""
+        for scale, output_folder in [("1x", output_dir), ("2x", output_dir_x2)]:
+            if not output_folder.is_dir():
+                continue
             
-        char_name = char_folder.name
-        q.put(f"\n--- Processing: {char_name} ---")
-        dest_char_dir = dest_dir / char_name
-        dest_char_dir.mkdir()
+            for char_folder in [d for d in output_folder.iterdir() if d.is_dir()]:
+                if self.cancel_operation:
+                    return
+                
+                # Look for source shadow in downloads folder
+                char_name = char_folder.name
+                source_shadow_path = downloads_path / char_name / "Sprites" / "sprite_shadow.png"
+                if not source_shadow_path.exists():
+                    source_shadow_path = downloads_path / char_name / "Animations" / "sprite_shadow.png"
+                if not source_shadow_path.exists():
+                    source_shadow_path = downloads_path / char_name / "sprite_shadow.png"
+                
+                if source_shadow_path.exists():
+                    try:
+                        with Image.open(source_shadow_path) as img:
+                            if scale == "2x":
+                                img = img.resize((img.width * 2, img.height * 2), Image.NEAREST)
+                            img.save(char_folder / "sprite_shadow.png")
+                    except Exception as e:
+                        q.put(f"  ⚠ Shadow error for '{char_name}': {e}")
 
-        for json_file in char_folder.glob("*.json"):
+    def _process_project_for_combined_export(self, char_folder, common_animations, output_dir, output_dir_x2, q):
+        """Process a single character folder for both 1x and 2x export."""
+        if self.cancel_operation: return
+        
+        char_name = char_folder.name
+        source_anim_path = char_folder / "AnimationData"
+        
+        if not source_anim_path.is_dir():
+            q.put(f"  - Skipping '{char_name}': No AnimationData folder.")
+            return
+        
+        # Create output folders for this character
+        output_char_dir = output_dir / char_name
+        output_char_dir_x2 = output_dir_x2 / char_name
+        output_char_dir.mkdir()
+        output_char_dir_x2.mkdir()
+        
+        for json_name in sorted(list(common_animations)):
             if self.cancel_operation: return
             
-            q.put(f"  -> Processing {json_file.name} for {char_name}")
-            with open(json_file, 'r') as f: data = json.load(f)
+            source_json = source_anim_path / json_name
+            
+            # Copy 1x JSON
+            shutil.copy2(source_json, output_char_dir / json_name)
+            
+            # Create 2x JSON with scaled values
+            with open(source_json, 'r') as f: data = json.load(f)
             for group in data.get('sprites', {}).values():
                 group['framewidth'] *= 2
                 group['frameheight'] *= 2
@@ -439,80 +469,27 @@ class BatchResizer:
                 for frame in group.get('frames', []):
                     if frame.get('render_offset'):
                         frame['render_offset'] = [v * 2 for v in frame['render_offset']]
-            with open(dest_char_dir / json_file.name, 'w') as f: json.dump(data, f, indent=4)
+            with open(output_char_dir_x2 / json_name, 'w') as f: json.dump(data, f, indent=4)
             
-            anim_name = json_file.name.removesuffix("-AnimData.json")
-            source_sprites_dir, dest_sprites_dir = char_folder / anim_name, dest_char_dir / anim_name
-            if source_sprites_dir.is_dir():
-                dest_sprites_dir.mkdir()
-                for sprite_file in source_sprites_dir.glob("*.png"):
+            # Copy/scale sprites
+            anim_name = json_name.removesuffix("-AnimData.json")
+            source_sprites_path = source_anim_path / anim_name
+            if source_sprites_path.is_dir():
+                # 1x - just copy
+                shutil.copytree(source_sprites_path, output_char_dir / anim_name)
+                
+                # 2x - resize each sprite
+                dest_sprites_dir_x2 = output_char_dir_x2 / anim_name
+                dest_sprites_dir_x2.mkdir()
+                for sprite_file in source_sprites_path.glob("*.png"):
                     if self.cancel_operation: return
                     with Image.open(sprite_file) as img:
-                        img.resize((img.width * 2, img.height * 2), Image.NEAREST).save(dest_sprites_dir / sprite_file.name)
-
-    def _export_assets_x2_worker(self, q):
-        main_path = pathlib.Path(self.parent_folder)
-        source_dir, dest_dir = main_path / "output", main_path / "output x2"
-        if not source_dir.is_dir():
-            q.put(f"❌ ERROR: Source folder '{source_dir}' does not exist. Run 'Export Final Assets' first."); q.put("DONE:ERROR"); return
-
-        q.put(f"Starting x2 export from '{source_dir}' to '{dest_dir}'...")
-        if dest_dir.exists():
-            q.put(f"Deleting existing '{dest_dir}'..."); shutil.rmtree(dest_dir)
-        dest_dir.mkdir()
-
-        character_folders = [d for d in source_dir.iterdir() if d.is_dir()]
-
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            futures = [executor.submit(self._process_project_for_x2_export, cf, dest_dir, q) for cf in character_folders]
-            for future in concurrent.futures.as_completed(futures):
-                if self.cancel_operation: break
-                try: future.result()
-                except Exception as e: q.put(f"  -> An error occurred during x2 export: {e}")
-        
-        if self.cancel_operation:
-            q.put("DONE:CANCEL")
-        else:
-            q.put("\n" + "-"*50 + f"\n✅ x2 Export completed. Files are in: {dest_dir}\n" + "-"*50)
-            q.put("DONE:COMPLETE")
-
-    def _shadow_generation_worker(self, q):
-        main_path = pathlib.Path(self.parent_folder)
-        output_dirs = {"1x": main_path / "output", "2x": main_path / "output x2"}
-        q.put("--- Starting Shadow Sprite Generation ---")
-        
-        for scale, output_dir in output_dirs.items():
-            if not output_dir.is_dir():
-                q.put(f"\n- INFO: Folder '{output_dir.name}' not found. Skipping {scale} shadow generation.")
-                continue
-            
-            q.put(f"\nProcessing {scale} shadows for '{output_dir.name}'...")
-            copied, skipped = 0, 0
-            for char_folder in [d for d in output_dir.iterdir() if d.is_dir()]:
-                if self.cancel_operation: q.put("DONE:CANCEL"); return
+                        img.resize((img.width * 2, img.height * 2), Image.NEAREST).save(dest_sprites_dir_x2 / sprite_file.name)
                 
-                source_shadow_path = main_path / char_folder.name / "Sprites" / "sprite_shadow.png"
-                if not source_shadow_path.exists():
-                    source_shadow_path = main_path / char_folder.name / "Animations" / "sprite_shadow.png"
-                if not source_shadow_path.exists():
-                    source_shadow_path = main_path / char_folder.name / "sprite_shadow.png"
-                
-                if source_shadow_path.exists():
-                    try:
-                        with Image.open(source_shadow_path) as img:
-                            if scale == "2x":
-                                img = img.resize((img.width * 2, img.height * 2), Image.NEAREST)
-                            img.save(char_folder / "sprite_shadow.png")
-                        q.put(f"  ✅ Created {scale} shadow for '{char_folder.name}'")
-                        copied += 1
-                    except Exception as e:
-                        q.put(f"  ❌ Error for '{char_folder.name}': {e}"); skipped += 1
-                else:
-                    q.put(f"  - WARNING: No 'sprite_shadow.png' found for '{char_folder.name}'."); skipped += 1
-        
-        q.put("\n" + "-"*50 + "\n✅ Shadow generation completed.\n" + "-"*50)
-        q.put("DONE:COMPLETE")
-        
+                q.put(f"  ✅ Exported '{anim_name}' for '{char_name}' (1x + 2x)")
+            else:
+                q.put(f"  - Warning: Sprite folder for '{anim_name}' not found in '{char_name}'.")
+
     def _esp32_export_worker(self, q):
         try:
             exporter = ESP32AssetExporter(self.parent_folder)
@@ -565,7 +542,7 @@ class BatchResizer:
         self.valid_project_folders = [f for f in self.project_folders if self._is_valid_pokemon_folder(f)]
         self.folders_without_sprites = [
             f for f in self.valid_project_folders 
-            if not os.path.exists(os.path.join(self.parent_folder, f, "Sprites"))
+            if not os.path.exists(os.path.join(self.downloads_folder, f, "Sprites"))
         ]
         
         info_text = f"Found {len(self.folders_without_sprites)} valid folders without Sprites subfolder (out of {len(self.valid_project_folders)} valid folders)"
@@ -638,7 +615,7 @@ class BatchResizer:
                 self.main_frame.after(0, lambda fn=folder_name, idx=i+1, total=len(folders_to_process): 
                     log_auto(f"[{idx}/{total}] Processing: {fn}"))
                 
-                project_path = os.path.join(self.parent_folder, folder_name)
+                project_path = os.path.join(self.downloads_folder, folder_name)
                 
                 try:
                     # Get Pokemon ID from folder name
@@ -935,7 +912,7 @@ class BatchResizer:
             return
 
         folder_name = self.sprite_gen_folders[self.current_folder_index]
-        self.current_project_path = os.path.join(self.parent_folder, folder_name)
+        self.current_project_path = os.path.join(self.downloads_folder, folder_name)
         
         # Extract Pokemon ID from folder name (format: "XXXX Name")
         folder_parts = folder_name.split(' ', 1)
@@ -1192,8 +1169,8 @@ class BatchResizer:
                     name = pokemon_data.get('name', 'Unknown')
                     folder_name = f"{sprite_id} {name}"
                     
-                    # Create folder
-                    dest_folder = os.path.join(self.parent_folder, folder_name)
+                    # Create folder in downloads subfolder
+                    dest_folder = os.path.join(self.downloads_folder, folder_name)
                     if not os.path.exists(dest_folder):
                         os.makedirs(dest_folder)
                     
@@ -1302,7 +1279,7 @@ class BatchResizer:
         folders_with_portraits = []
         
         for folder in self.project_folders:
-            folder_path = os.path.join(self.parent_folder, folder)
+            folder_path = os.path.join(self.downloads_folder, folder)
             portrait_path = os.path.join(folder_path, "portrait.png")
             
             if os.path.exists(portrait_path) and self._is_valid_pokemon_folder(folder):

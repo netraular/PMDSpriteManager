@@ -125,9 +125,22 @@ class RPGTilePreviewer:
         preview_label.pack(expand=True, pady=10)
         
         text_label = Label(preview_frame, justify="left", font=('Courier', 9))
-        text_label.pack(pady=(5, 10))
+        text_label.pack(pady=(5, 5))
         
         self.player = AnimationPlayer(self.main_frame, preview_label, text_label)
+        
+        # Animation control frame
+        control_frame = Frame(preview_frame)
+        control_frame.pack(pady=(5, 10))
+        
+        self.frame_counter_label = Label(control_frame, text="0 / 0", width=8)
+        self.play_pause_button = Button(control_frame, text="Pause", width=6)
+        
+        Button(control_frame, text="<", width=3, command=self._prev_frame).pack(side='left')
+        self.play_pause_button.config(command=self._toggle_play_pause)
+        self.play_pause_button.pack(side='left', padx=2)
+        Button(control_frame, text=">", width=3, command=self._next_frame).pack(side='left')
+        self.frame_counter_label.pack(side='left', padx=5)
 
         # JSON Preview area (right side)
         json_frame = Frame(content_container, bd=2, relief="groove")
@@ -159,6 +172,9 @@ class RPGTilePreviewer:
         # Initialize with first character
         self.selected_char_var.set(characters[0])
         self._on_character_selected(characters[0])
+        
+        # Start frame counter updater
+        self._start_frame_counter_updater()
 
     def _on_character_selected(self, char_name):
         if self.trace_id:
@@ -230,6 +246,8 @@ class RPGTilePreviewer:
                 self.player.set_animation(**{k: v for k, v in preview_data.items() 
                                             if k != 'rpg_metadata'})
                 self.player.play()
+                self.play_pause_button.config(text="Pause")
+                self._update_frame_counter()
                 
                 # Generate RPG JSON
                 self.current_rpg_json = rpg_tile_renderer.generate_rpg_json_for_animation(
@@ -244,6 +262,7 @@ class RPGTilePreviewer:
                 self.player.set_animation([], [], text_data=[])
                 self.player.image_label.config(text="No data found", fg="grey")
                 self.json_text.config(text="No JSON data available")
+                self.frame_counter_label.config(text="0 / 0")
 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to start preview: {e}")
@@ -419,6 +438,55 @@ class RPGTilePreviewer:
                 result_msg += f"\n... and {len(errors) - 5} more"
         
         messagebox.showinfo("Export Complete", result_msg)
+
+    def _toggle_play_pause(self):
+        """Toggle between play and pause states."""
+        if not self.player:
+            return
+        
+        if self.player.is_playing:
+            self.player.pause()
+            self.play_pause_button.config(text="Play")
+        else:
+            self.player.play()
+            self.play_pause_button.config(text="Pause")
+
+    def _prev_frame(self):
+        """Go to the previous frame and pause."""
+        if not self.player or not self.player.frames:
+            return
+        
+        self.player.pause()
+        self.play_pause_button.config(text="Play")
+        new_index = (self.player.current_frame_index - 1) % len(self.player.frames)
+        self.player.go_to_frame(new_index)
+        self._update_frame_counter()
+
+    def _next_frame(self):
+        """Go to the next frame and pause."""
+        if not self.player or not self.player.frames:
+            return
+        
+        self.player.pause()
+        self.play_pause_button.config(text="Play")
+        new_index = (self.player.current_frame_index + 1) % len(self.player.frames)
+        self.player.go_to_frame(new_index)
+        self._update_frame_counter()
+
+    def _update_frame_counter(self):
+        """Update the frame counter label."""
+        if self.player and self.player.frames:
+            current = self.player.current_frame_index + 1
+            total = len(self.player.frames)
+            self.frame_counter_label.config(text=f"{current} / {total}")
+
+    def _start_frame_counter_updater(self):
+        """Start the periodic frame counter updater."""
+        def update():
+            if hasattr(self, 'main_frame') and self.main_frame.winfo_exists():
+                self._update_frame_counter()
+                self.main_frame.after(100, update)
+        update()
 
     def clear_animation(self):
         """Stop the animation player."""
