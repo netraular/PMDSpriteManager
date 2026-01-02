@@ -14,6 +14,7 @@ from animation_data_handler import AnimationDataHandler
 from animation_creator import AnimationCreator
 from sprite_sheet_handler import SpriteSheetHandler
 from ui_components.esp32_asset_exporter import ESP32AssetExporter
+from rpg_tile_previewer import RPGTilePreviewer
 
 class BatchResizer:
     def __init__(self, parent_frame, return_to_main_callback, update_breadcrumbs_callback=None, base_path=None):
@@ -27,6 +28,7 @@ class BatchResizer:
         self.current_folder_index = 0
         self.cancel_operation = False
         self.animation_creator = None
+        self.rpg_previewer = None
         self.sprite_previews = [] # To hold image references
 
         self.main_frame = Frame(self.parent_frame)
@@ -48,6 +50,9 @@ class BatchResizer:
         if self.animation_creator:
             self.animation_creator.clear_frame()
             self.animation_creator = None
+        if self.rpg_previewer:
+            self.rpg_previewer.clear_frame()
+            self.rpg_previewer = None
         for widget in self.main_frame.winfo_children():
             widget.destroy()
 
@@ -97,6 +102,7 @@ class BatchResizer:
         Button(content_frame, text="Export Final Assets (x2)", command=self.show_export_assets_x2_view, font=('Arial', 12), width=35, bg="lightblue").pack(pady=10)
         Button(content_frame, text="Generate Shadow Sprites", command=self.show_shadow_generation_view, font=('Arial', 12), width=35).pack(pady=10)
         Button(content_frame, text="Preview Optimized Animations", command=self.show_optimized_animation_previewer, font=('Arial', 12), width=35).pack(pady=10)
+        Button(content_frame, text="RPG Tile Preview (32x32)", command=self.show_rpg_tile_previewer, font=('Arial', 12), width=35, bg="lightcoral").pack(pady=10)
         Button(content_frame, text="ESP32 Export", command=self.show_esp32_export_view, font=('Arial', 12), width=35).pack(pady=10)
 
     # --- Task View Setup Methods (using the generic framework) ---
@@ -645,4 +651,19 @@ class BatchResizer:
             start_in_preview_mode=True,
             anim_data_subfolder=None,
             show_navigation=False
+        )
+
+    def show_rpg_tile_previewer(self):
+        """Shows the RPG Tile Previewer for 32x32px tile-based RPG visualization."""
+        self.clear_frame()
+        if self.update_breadcrumbs:
+            path = self.base_path + [("Batch Tasks", self.show_task_selection_view), ("RPG Tile Preview", self.show_rpg_tile_previewer)]
+            self.update_breadcrumbs(path)
+        
+        self.rpg_previewer = RPGTilePreviewer(
+            parent_frame=self.main_frame,
+            parent_folder=self.parent_folder,
+            return_to_main_callback=self.show_task_selection_view,
+            update_breadcrumbs_callback=self.update_breadcrumbs,
+            base_path=self.base_path + [("Batch Tasks", self.show_task_selection_view)]
         )
