@@ -8,6 +8,8 @@ import json
 import threading
 import queue
 import concurrent.futures
+import urllib.request
+import re
 from tkinter import Frame, Label, Button, Entry, messagebox, filedialog, Canvas, Scrollbar, Text, END, Toplevel, StringVar, OptionMenu
 from PIL import Image, ImageTk
 from animation_data_handler import AnimationDataHandler
@@ -30,6 +32,9 @@ class BatchResizer:
         self.animation_creator = None
         self.rpg_previewer = None
         self.sprite_previews = [] # To hold image references
+        
+        # Cache for tracker data (to avoid fetching multiple times)
+        self._tracker_cache = None
 
         self.main_frame = Frame(self.parent_frame)
         self.main_frame.pack(fill='both', expand=True)
@@ -95,15 +100,16 @@ class BatchResizer:
         Label(content_frame, text=f"Found {len(self.project_folders)} project subfolders.", font=('Arial', 10)).pack(pady=(0, 20))
         Label(content_frame, text="Choose a batch operation to perform:", font=('Arial', 14)).pack(pady=20)
         
-        Button(content_frame, text="Generate Assets", command=self.show_asset_generation_view, font=('Arial', 12), width=35).pack(pady=10)
-        Button(content_frame, text="Generate Sprites", command=self.start_sprite_generation, font=('Arial', 12), width=35).pack(pady=10)
-        Button(content_frame, text="Generate Optimized Animations", command=self.start_animation_generation, font=('Arial', 12), width=35).pack(pady=10)
-        Button(content_frame, text="Export Final Assets", command=self.show_export_assets_view, font=('Arial', 12), width=35, bg="lightgreen").pack(pady=10)
-        Button(content_frame, text="Export Final Assets (x2)", command=self.show_export_assets_x2_view, font=('Arial', 12), width=35, bg="lightblue").pack(pady=10)
-        Button(content_frame, text="Generate Shadow Sprites", command=self.show_shadow_generation_view, font=('Arial', 12), width=35).pack(pady=10)
-        Button(content_frame, text="Preview Optimized Animations", command=self.show_optimized_animation_previewer, font=('Arial', 12), width=35).pack(pady=10)
-        Button(content_frame, text="RPG Tile Preview (32x32)", command=self.show_rpg_tile_previewer, font=('Arial', 12), width=35, bg="lightcoral").pack(pady=10)
-        Button(content_frame, text="ESP32 Export", command=self.show_esp32_export_view, font=('Arial', 12), width=35).pack(pady=10)
+        Button(content_frame, text="0- Prepare Pokemon Data (Portraits)", command=self.show_prepare_data_view, font=('Arial', 12), width=40, bg="lightcyan").pack(pady=10)
+        Button(content_frame, text="1- Download Sprites from PMDCollab", command=self.show_download_sprites_visual_view, font=('Arial', 12), width=40, bg="lightyellow").pack(pady=10)
+        Button(content_frame, text="2- Generate Sprites", command=self.show_sprite_generation_menu, font=('Arial', 12), width=40).pack(pady=10)
+        Button(content_frame, text="3- Generate Optimized Animations", command=self.start_animation_generation, font=('Arial', 12), width=40).pack(pady=10)
+        Button(content_frame, text="Export Final Assets", command=self.show_export_assets_view, font=('Arial', 12), width=40, bg="lightgreen").pack(pady=10)
+        Button(content_frame, text="Export Final Assets (x2)", command=self.show_export_assets_x2_view, font=('Arial', 12), width=40, bg="lightblue").pack(pady=10)
+        Button(content_frame, text="Generate Shadow Sprites", command=self.show_shadow_generation_view, font=('Arial', 12), width=40).pack(pady=10)
+        Button(content_frame, text="Preview Optimized Animations", command=self.show_optimized_animation_previewer, font=('Arial', 12), width=40).pack(pady=10)
+        Button(content_frame, text="RPG Tile Preview (32x32)", command=self.show_rpg_tile_previewer, font=('Arial', 12), width=40, bg="lightcoral").pack(pady=10)
+        Button(content_frame, text="ESP32 Export", command=self.show_esp32_export_view, font=('Arial', 12), width=40).pack(pady=10)
 
     # --- Task View Setup Methods (using the generic framework) ---
 
@@ -243,6 +249,18 @@ class BatchResizer:
 
         q.put(f"Processing: {folder_name}")
         try:
+            # Check if Animations folder and AnimData.xml exist
+            animations_folder = os.path.join(project_path, "Animations")
+            animdata_path = os.path.join(animations_folder, "AnimData.xml")
+            
+            if not os.path.exists(animations_folder):
+                q.put(f"  -> Skipping {folder_name}: No Animations folder found.")
+                return 0, 1, False
+            
+            if not os.path.exists(animdata_path):
+                q.put(f"  -> Skipping {folder_name}: AnimData.xml not found in Animations folder.")
+                return 0, 1, False
+            
             handler = AnimationDataHandler(project_path)
             if not handler.anim_data:
                 q.put(f"  -> Skipping {folder_name}: No valid animation data found in XML.")
@@ -273,9 +291,43 @@ class BatchResizer:
     def _animation_generation_worker(self, q):
         total_anims_saved, projects_failed = 0, 0
         
-        tasks = [(os.path.join(self.parent_folder, fn), fn) for fn in self.project_folders]
+        # Filter only valid Pokemon folders (format: "XXXX Name") 
+        valid_folders = [fn for fn in self.project_folders if self._is_valid_pokemon_folder(fn)]
+        
+        # Only process folders that have Sprites folder (step 2 completed) and don't have AnimationData yet
+        folders_to_process = []
+        skipped_no_sprites = 0
+        skipped_has_animdata = 0
+        
+        for fn in valid_folders:
+            folder_path = os.path.join(self.parent_folder, fn)
+            sprites_folder = os.path.join(folder_path, "Sprites")
+            animdata_folder = os.path.join(folder_path, "AnimationData")
+            
+            if not os.path.exists(sprites_folder):
+                skipped_no_sprites += 1
+                continue
+            
+            if os.path.exists(animdata_folder):
+                skipped_has_animdata += 1
+                continue
+                
+            folders_to_process.append(fn)
+        
+        q.put(f"Found {len(folders_to_process)} folders to process (out of {len(valid_folders)} valid folders)")
+        q.put(f"Skipping {skipped_no_sprites} folders without Sprites folder (step 2 not completed)")
+        q.put(f"Skipping {skipped_has_animdata} folders that already have AnimationData\n")
+        
+        if not folders_to_process:
+            q.put("No folders need processing.")
+            q.put("DONE:0:0")
+            return
+        
+        tasks = [(os.path.join(self.parent_folder, fn), fn) for fn in folders_to_process]
 
-        with concurrent.futures.ThreadPoolExecutor() as executor:
+        # Use more workers for better parallelization (default is CPU count, we use CPU count * 2)
+        max_workers = min(32, (os.cpu_count() or 4) * 2)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {executor.submit(self._process_project_for_anim_gen, path, name, q): name for path, name in tasks}
             
             for future in concurrent.futures.as_completed(futures):
@@ -488,99 +540,132 @@ class BatchResizer:
 
     # --- Unique/Interactive Task Handlers ---
 
-    def show_asset_generation_view(self):
+    def _is_valid_pokemon_folder(self, folder_name):
+        """Checks if folder name matches the format 'XXXX Name' (4 digits + space + name)."""
+        if len(folder_name) < 6:  # Minimum: "0000 X"
+            return False
+        # Check if first 4 characters are digits and 5th is a space
+        return folder_name[:4].isdigit() and folder_name[4] == ' ' and len(folder_name) > 5
+
+    def show_sprite_generation_menu(self):
+        """Shows the sprite generation menu with options to process all or select specific folder."""
         if self.update_breadcrumbs:
-            path = self.base_path + [("Batch Tasks", self.show_task_selection_view), ("Generate Assets", self.show_asset_generation_view)]
+            path = self.base_path + [("Batch Tasks", self.show_task_selection_view), ("2- Generate Sprites", self.show_sprite_generation_menu)]
             self.update_breadcrumbs(path)
+        
         self.clear_frame()
+        
         top_frame = Frame(self.main_frame); top_frame.pack(fill='x', padx=10, pady=5)
         Button(top_frame, text="Back to Tasks", command=self.show_task_selection_view).pack(side='left')
-        Label(self.main_frame, text="Asset Generation Workflow", font=('Arial', 14)).pack(pady=10)
         
-        button_frame = Frame(self.main_frame); button_frame.pack(pady=10)
-        Button(button_frame, text="1. Create Folders from names.txt", command=self._create_folders_from_file, width=35).pack(pady=5)
-        Button(button_frame, text="2. Uncompress ZIPs", command=self._uncompress_zips, width=35).pack(pady=5)
-        Button(button_frame, text="3. Cleanup ZIP files", command=self._cleanup_zip_files, width=35).pack(pady=5)
-        Button(button_frame, text="4. Show Asset Download Link", command=self._show_download_link, width=35).pack(pady=5)
+        content_frame = Frame(self.main_frame); content_frame.pack(pady=30)
+        Label(content_frame, text="Generate Sprites", font=('Arial', 14, 'bold')).pack(pady=10)
+        
+        # Filter valid folders (format: "XXXX Name") and those without Sprites subfolder
+        self.valid_project_folders = [f for f in self.project_folders if self._is_valid_pokemon_folder(f)]
+        self.folders_without_sprites = [
+            f for f in self.valid_project_folders 
+            if not os.path.exists(os.path.join(self.parent_folder, f, "Sprites"))
+        ]
+        
+        info_text = f"Found {len(self.folders_without_sprites)} valid folders without Sprites subfolder (out of {len(self.valid_project_folders)} valid folders)"
+        Label(content_frame, text=info_text, font=('Arial', 10)).pack(pady=10)
+        
+        Button(content_frame, text="Process All (skip existing Sprites folders)", 
+               command=self.start_sprite_generation_sequential, font=('Arial', 12), width=40, bg="lightgreen").pack(pady=10)
+        
+        Label(content_frame, text="— OR —", font=('Arial', 10)).pack(pady=10)
+        
+        Label(content_frame, text="Select a specific folder to process:", font=('Arial', 10)).pack(pady=5)
+        
+        # Create dropdown for folder selection (only valid folders)
+        self.selected_folder_var = StringVar()
+        if self.valid_project_folders:
+            self.selected_folder_var.set(self.valid_project_folders[0])
+        
+        dropdown_frame = Frame(content_frame); dropdown_frame.pack(pady=5)
+        if self.valid_project_folders:
+            folder_menu = OptionMenu(dropdown_frame, self.selected_folder_var, *self.valid_project_folders)
+            folder_menu.config(width=30)
+            folder_menu.pack(side='left', padx=5)
+            
+            Button(dropdown_frame, text="Process Selected", command=self.start_sprite_generation_selected, 
+                   font=('Arial', 11)).pack(side='left', padx=5)
+        else:
+            Label(dropdown_frame, text="No valid folders found (format: 'XXXX Name')", fg="red").pack()
 
-        log_frame = Frame(self.main_frame); log_frame.pack(fill='both', expand=True, padx=10, pady=10)
-        self.log_text = Text(log_frame, height=15, wrap='word', state='disabled'); self.log_text.pack(side='left', fill='both', expand=True)
-        log_scroll = Scrollbar(log_frame, command=self.log_text.yview); log_scroll.pack(side='right', fill='y')
-        self.log_text.config(yscrollcommand=log_scroll.set)
-
-    def _create_folders_from_file(self):
-        self._clear_log(); self._log("--- 1. Creating Folders from 'names.txt' ---")
-        names_file = pathlib.Path(self.parent_folder) / "names.txt"
-        if not names_file.exists():
-            self._log(f"!! ERROR: File not found: '{names_file}'."); return
-        created, skipped = 0, 0
-        with open(names_file, 'r') as f:
-            for line in f:
-                folder_name = line.strip()
-                if folder_name:
-                    folder_path = pathlib.Path(self.parent_folder) / folder_name
-                    if not folder_path.exists():
-                        folder_path.mkdir(); self._log(f"-> Created: '{folder_name}'"); created += 1
-                    else:
-                        self._log(f"-> Exists, skipping: '{folder_name}'"); skipped += 1
-        self._log(f"\nFinished. Created: {created}, Skipped: {skipped}")
-
-    def _uncompress_zips(self):
-        self._clear_log(); self._log("--- 2. Uncompressing ZIPs ---")
-        success, skipped = 0, 0
-        for folder in [p for p in pathlib.Path(self.parent_folder).iterdir() if p.is_dir()]:
-            try:
-                zip_file = next(folder.glob('*.zip'))
-                dest_path = folder / "Animations"; dest_path.mkdir(exist_ok=True)
-                with zipfile.ZipFile(zip_file, 'r') as z: z.extractall(dest_path)
-                self._log(f"-> Uncompressed ZIP in '{folder.name}'"); success += 1
-            except StopIteration:
-                self._log(f"-> No ZIP found in '{folder.name}', skipping."); skipped += 1
-            except Exception as e:
-                self._log(f"-> ERROR in '{folder.name}': {e}")
-        self._log(f"\nFinished. Success: {success}, Skipped: {skipped}")
-
-    def _cleanup_zip_files(self):
-        self._clear_log(); self._log("--- 3. Cleaning up ZIP files ---")
-        zips = list(pathlib.Path(self.parent_folder).rglob('*.zip'))
-        if not zips: self._log("No .zip files found to clean up."); return
-        if messagebox.askyesno("Confirm Deletion", f"Found {len(zips)} .zip files. Delete them all?"):
-            for z in zips: z.unlink(); self._log(f"-> Deleted: {z.name}")
-            self._log("\nCleanup complete.")
-        else: self._log("\nOperation cancelled.")
-
-    def _show_download_link(self):
-        url = "https://sprites.pmdcollab.org/"
-        popup = Toplevel(self.parent_frame); popup.title("Asset Download Link")
-        Label(popup, text="Asset download source:", padx=20, pady=10).pack()
-        Entry(popup, width=50, textvariable=StringVar(value=url), state='readonly').pack(padx=20, pady=5)
-        Button(popup, text="Close", command=popup.destroy).pack(pady=10)
-        popup.transient(self.parent_frame); popup.grab_set()
-
-    def start_sprite_generation(self):
+    def start_sprite_generation_sequential(self):
+        """Starts processing folders sequentially, skipping those with Sprites subfolder."""
         if self.update_breadcrumbs:
-            path = self.base_path + [("Batch Tasks", self.show_task_selection_view), ("Generate Sprites", self.start_sprite_generation)]
+            path = self.base_path + [("Batch Tasks", self.show_task_selection_view), ("2- Generate Sprites", self.show_sprite_generation_menu)]
             self.update_breadcrumbs(path)
+        
+        # Use only folders without Sprites subfolder
+        self.sprite_gen_folders = self.folders_without_sprites.copy()
         self.current_folder_index = 0
+        self.sprite_gen_mode = "sequential"
+        self.show_sprite_generation_view()
+
+    def start_sprite_generation_selected(self):
+        """Starts processing a specific selected folder."""
+        if self.update_breadcrumbs:
+            path = self.base_path + [("Batch Tasks", self.show_task_selection_view), ("2- Generate Sprites", self.show_sprite_generation_menu)]
+            self.update_breadcrumbs(path)
+        
+        selected = self.selected_folder_var.get()
+        self.sprite_gen_folders = [selected]
+        self.current_folder_index = 0
+        self.sprite_gen_mode = "single"
         self.show_sprite_generation_view()
 
     def show_sprite_generation_view(self):
         self.clear_frame()
-        if self.current_folder_index >= len(self.project_folders):
-            messagebox.showinfo("Complete", "All project folders have been processed."); self.show_task_selection_view(); return
+        
+        # Check if we have folders to process
+        if not hasattr(self, 'sprite_gen_folders') or not self.sprite_gen_folders:
+            messagebox.showinfo("Complete", "No folders to process.")
+            self.show_sprite_generation_menu()
+            return
+        
+        if self.current_folder_index >= len(self.sprite_gen_folders):
+            messagebox.showinfo("Complete", "All project folders have been processed.")
+            self.show_sprite_generation_menu()
+            return
 
-        folder_name = self.project_folders[self.current_folder_index]
+        folder_name = self.sprite_gen_folders[self.current_folder_index]
         self.current_project_path = os.path.join(self.parent_folder, folder_name)
+        
+        # Extract Pokemon ID from folder name (format: "XXXX Name")
+        folder_parts = folder_name.split(' ', 1)
+        pokemon_id = folder_parts[0] if len(folder_parts) >= 1 else None
+        
+        # Look for the sprite_recolor PNG file first
+        sprite_recolor_path = None
+        if pokemon_id:
+            sprite_recolor_name = f"sprite_recolor-{pokemon_id}-0000-0001.png"
+            potential_path = os.path.join(self.current_project_path, sprite_recolor_name)
+            if os.path.exists(potential_path):
+                sprite_recolor_path = potential_path
+        
         try:
-            self.current_spritesheet_path = os.path.join(self.current_project_path, [f for f in os.listdir(self.current_project_path) if f.lower().endswith('.png')][0])
+            if sprite_recolor_path:
+                self.current_spritesheet_path = sprite_recolor_path
+            else:
+                # Fallback to any PNG in the folder
+                png_files = [f for f in os.listdir(self.current_project_path) if f.lower().endswith('.png')]
+                if not png_files:
+                    raise FileNotFoundError("No PNG files found")
+                self.current_spritesheet_path = os.path.join(self.current_project_path, png_files[0])
         except (FileNotFoundError, IndexError):
-            messagebox.showerror("Error", f"No spritesheet found in '{folder_name}'. Skipping."); self.process_next_folder(); return
+            messagebox.showerror("Error", f"No spritesheet found in '{folder_name}'. Skipping.")
+            self.process_next_folder()
+            return
 
         top_frame = Frame(self.main_frame); top_frame.pack(fill='x', padx=10, pady=5)
-        Button(top_frame, text="Back to Tasks", command=self.show_task_selection_view).pack(side='left')
+        Button(top_frame, text="Back to Menu", command=self.show_sprite_generation_menu).pack(side='left')
         Button(top_frame, text="Skip Folder", command=self.process_next_folder).pack(side='left', padx=5)
         
-        progress = f"Processing {self.current_folder_index + 1}/{len(self.project_folders)}: {folder_name}"
+        progress = f"Processing {self.current_folder_index + 1}/{len(self.sprite_gen_folders)}: {folder_name}"
         Label(self.main_frame, text=progress, font=('Arial', 10, 'bold')).pack(pady=5)
         img = Image.open(self.current_spritesheet_path); img.thumbnail((500, 400)); self.img_tk = ImageTk.PhotoImage(img)
         Label(self.main_frame, image=self.img_tk).pack(pady=10)
@@ -667,3 +752,543 @@ class BatchResizer:
             update_breadcrumbs_callback=self.update_breadcrumbs,
             base_path=self.base_path + [("Batch Tasks", self.show_task_selection_view)]
         )
+
+    def show_prepare_data_view(self):
+        """Shows the view for preparing Pokemon data (download tracker, create folders, download portraits)."""
+        self.clear_frame()
+        if self.update_breadcrumbs:
+            path = self.base_path + [("Batch Tasks", self.show_task_selection_view), ("Prepare Data", self.show_prepare_data_view)]
+            self.update_breadcrumbs(path)
+        
+        top_frame = Frame(self.main_frame)
+        top_frame.pack(fill='x', padx=10, pady=5)
+        Button(top_frame, text="Back to Tasks", command=self.show_task_selection_view).pack(side='left')
+        
+        content_frame = Frame(self.main_frame)
+        content_frame.pack(pady=20, padx=20, fill='both', expand=True)
+        
+        Label(content_frame, text="Prepare Pokemon Data", font=('Arial', 14, 'bold')).pack(pady=(0, 10))
+        Label(content_frame, text="This will download tracker.json, create folders for all Pokemon,\nand download portrait images for visual browsing.", font=('Arial', 10)).pack(pady=(0, 10))
+        
+        # Options frame
+        options_frame = Frame(content_frame)
+        options_frame.pack(pady=10)
+        
+        Label(options_frame, text="ID Range (start - end):").pack(side='left', padx=(0, 5))
+        self.prepare_start_id = Entry(options_frame, width=8, font=('Arial', 11))
+        self.prepare_start_id.insert(0, "0000")
+        self.prepare_start_id.pack(side='left', padx=5)
+        Label(options_frame, text="-").pack(side='left')
+        self.prepare_end_id = Entry(options_frame, width=8, font=('Arial', 11))
+        self.prepare_end_id.insert(0, "0500")
+        self.prepare_end_id.pack(side='left', padx=5)
+        
+        # Buttons frame
+        button_frame = Frame(content_frame)
+        button_frame.pack(pady=15)
+        
+        self.prepare_button = Button(button_frame, text="Start Preparation", command=self._start_prepare_data, 
+                                      bg="lightcyan", font=('Arial', 12), width=20)
+        self.prepare_button.pack(side='left', padx=10)
+        
+        self.cancel_prepare_button = Button(button_frame, text="Cancel", command=self._cancel_prepare_data,
+                                            bg="lightcoral", font=('Arial', 12), width=15, state='disabled')
+        self.cancel_prepare_button.pack(side='left', padx=10)
+        
+        # Progress
+        self.prepare_progress_label = Label(content_frame, text="", font=('Arial', 10))
+        self.prepare_progress_label.pack(pady=5)
+        
+        # Log area
+        log_frame = Frame(content_frame)
+        log_frame.pack(pady=10, fill='both', expand=True)
+        
+        Label(log_frame, text="Preparation Log:", font=('Arial', 10, 'bold')).pack(anchor='w')
+        
+        self.log_text = Text(log_frame, height=18, width=80, font=('Courier', 9))
+        scrollbar = Scrollbar(log_frame, command=self.log_text.yview)
+        self.log_text.configure(yscrollcommand=scrollbar.set)
+        
+        self.log_text.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+
+    def _cancel_prepare_data(self):
+        """Cancels the data preparation process."""
+        self.cancel_operation = True
+        self._log_download("Cancellation requested...")
+
+    def _start_prepare_data(self):
+        """Starts the data preparation process."""
+        try:
+            start_id = int(self.prepare_start_id.get().strip())
+            end_id = int(self.prepare_end_id.get().strip())
+        except ValueError:
+            messagebox.showwarning("Warning", "Please enter valid numeric IDs.")
+            return
+        
+        if start_id > end_id:
+            messagebox.showwarning("Warning", "Start ID must be less than or equal to End ID.")
+            return
+        
+        self.prepare_button.config(state='disabled', text='Preparing...')
+        self.cancel_prepare_button.config(state='normal')
+        self.cancel_operation = False
+        
+        def prepare_thread():
+            try:
+                # Step 1: Download and cache tracker.json
+                self._log_safe("Step 1: Downloading tracker.json from GitHub...")
+                tracker_url = "https://raw.githubusercontent.com/PMDCollab/SpriteCollab/master/tracker.json"
+                
+                req = urllib.request.Request(
+                    tracker_url,
+                    headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+                )
+                
+                with urllib.request.urlopen(req, timeout=60) as response:
+                    self._tracker_cache = json.loads(response.read().decode('utf-8'))
+                
+                # Save tracker.json to parent folder
+                tracker_path = os.path.join(self.parent_folder, "tracker.json")
+                with open(tracker_path, 'w', encoding='utf-8') as f:
+                    json.dump(self._tracker_cache, f, ensure_ascii=False, indent=2)
+                
+                self._log_safe(f"✅ Tracker data saved: {tracker_path}")
+                self._log_safe(f"   Found {len(self._tracker_cache)} Pokemon entries")
+                
+                if self.cancel_operation:
+                    self._log_safe("❌ Cancelled")
+                    return
+                
+                # Step 2: Create folders and download portraits
+                self._log_safe(f"\nStep 2: Creating folders and downloading portraits ({start_id:04d} to {end_id:04d})...")
+                
+                total = end_id - start_id + 1
+                success_count = 0
+                skip_count = 0
+                fail_count = 0
+                
+                for i, poke_id in enumerate(range(start_id, end_id + 1)):
+                    if self.cancel_operation:
+                        self._log_safe(f"\n❌ Cancelled at {poke_id:04d}")
+                        break
+                    
+                    sprite_id = f"{poke_id:04d}"
+                    
+                    # Update progress
+                    self.main_frame.after(0, lambda p=i+1, t=total: self.prepare_progress_label.config(
+                        text=f"Progress: {p}/{t} ({p*100//t}%)"
+                    ))
+                    
+                    # Check if Pokemon exists in tracker
+                    if sprite_id not in self._tracker_cache:
+                        # self._log_safe(f"⚠ {sprite_id}: Not in tracker, skipping")
+                        skip_count += 1
+                        continue
+                    
+                    pokemon_data = self._tracker_cache[sprite_id]
+                    name = pokemon_data.get('name', 'Unknown')
+                    folder_name = f"{sprite_id} {name}"
+                    
+                    # Create folder
+                    dest_folder = os.path.join(self.parent_folder, folder_name)
+                    if not os.path.exists(dest_folder):
+                        os.makedirs(dest_folder)
+                    
+                    # Check if portrait already exists
+                    portrait_path = os.path.join(dest_folder, "portrait.png")
+                    if os.path.exists(portrait_path):
+                        skip_count += 1
+                        continue
+                    
+                    # Download portrait
+                    portrait_url = f"https://raw.githubusercontent.com/PMDCollab/SpriteCollab/master/portrait/{sprite_id}/Normal.png"
+                    
+                    try:
+                        req = urllib.request.Request(portrait_url, headers={'User-Agent': 'Mozilla/5.0'})
+                        with urllib.request.urlopen(req, timeout=15) as response:
+                            with open(portrait_path, 'wb') as f:
+                                f.write(response.read())
+                        success_count += 1
+                        if success_count % 25 == 0:
+                            self._log_safe(f"   Downloaded {success_count} portraits...")
+                    except urllib.error.HTTPError:
+                        fail_count += 1
+                    except Exception as e:
+                        fail_count += 1
+                
+                self._log_safe(f"\n✅ Preparation complete!")
+                self._log_safe(f"   Created/Downloaded: {success_count}")
+                self._log_safe(f"   Skipped (existing/not in tracker): {skip_count}")
+                self._log_safe(f"   Failed: {fail_count}")
+                
+            except Exception as e:
+                self._log_safe(f"\n❌ Error: {str(e)}")
+            finally:
+                self.main_frame.after(0, lambda: self.prepare_button.config(state='normal', text='Start Preparation'))
+                self.main_frame.after(0, lambda: self.cancel_prepare_button.config(state='disabled'))
+        
+        thread = threading.Thread(target=prepare_thread, daemon=True)
+        thread.start()
+
+    def show_download_sprites_visual_view(self):
+        """Shows the visual view for selecting and downloading sprites from PMDCollab."""
+        self.clear_frame()
+        if self.update_breadcrumbs:
+            path = self.base_path + [("Batch Tasks", self.show_task_selection_view), ("Download Sprites", self.show_download_sprites_visual_view)]
+            self.update_breadcrumbs(path)
+        
+        top_frame = Frame(self.main_frame)
+        top_frame.pack(fill='x', padx=10, pady=5)
+        Button(top_frame, text="Back to Tasks", command=self.show_task_selection_view).pack(side='left')
+        
+        content_frame = Frame(self.main_frame)
+        content_frame.pack(pady=10, padx=10, fill='both', expand=True)
+        
+        Label(content_frame, text="Download Sprites from PMDCollab", font=('Arial', 14, 'bold')).pack(pady=(0, 5))
+        Label(content_frame, text="Click on Pokemon portraits to select/deselect them. Selected Pokemon will be highlighted in green.", 
+              font=('Arial', 9)).pack(pady=(0, 10))
+        
+        # Control frame
+        control_frame = Frame(content_frame)
+        control_frame.pack(fill='x', pady=5)
+        
+        # Selection info
+        self.selection_label = Label(control_frame, text="Selected: 0", font=('Arial', 10, 'bold'))
+        self.selection_label.pack(side='left', padx=10)
+        
+        Button(control_frame, text="Select All", command=self._select_all_visual).pack(side='left', padx=5)
+        Button(control_frame, text="Deselect All", command=self._deselect_all_visual).pack(side='left', padx=5)
+        Button(control_frame, text="Select Missing Sprites", command=self._select_missing_sprites).pack(side='left', padx=5)
+        
+        self.download_selected_button = Button(control_frame, text="Download Selected", 
+                                                command=self._download_selected_sprites, 
+                                                bg="lightgreen", font=('Arial', 11))
+        self.download_selected_button.pack(side='right', padx=10)
+        
+        # Create scrollable canvas for the grid
+        canvas_frame = Frame(content_frame)
+        canvas_frame.pack(fill='both', expand=True)
+        
+        self.visual_canvas = Canvas(canvas_frame, bg='white')
+        v_scrollbar = Scrollbar(canvas_frame, orient='vertical', command=self.visual_canvas.yview)
+        
+        self.visual_canvas.configure(yscrollcommand=v_scrollbar.set)
+        
+        v_scrollbar.pack(side='right', fill='y')
+        self.visual_canvas.pack(side='left', fill='both', expand=True)
+        
+        # Create inner frame for grid
+        self.visual_inner_frame = Frame(self.visual_canvas, bg='white')
+        self.canvas_window = self.visual_canvas.create_window((0, 0), window=self.visual_inner_frame, anchor='nw')
+        
+        # Bind scroll events
+        self.visual_inner_frame.bind('<Configure>', lambda e: self.visual_canvas.configure(scrollregion=self.visual_canvas.bbox('all')))
+        self.visual_canvas.bind('<MouseWheel>', lambda e: self.visual_canvas.yview_scroll(int(-1*(e.delta/120)), 'units'))
+        
+        # Storage for selection
+        self.selected_pokemon = set()
+        self.pokemon_frames = {}
+        self.portrait_photos = {}  # Keep references to prevent garbage collection
+        
+        # Load and display portraits after window is rendered to get proper width
+        self.main_frame.after(50, self._load_portrait_grid)
+
+    def _load_portrait_grid(self):
+        """Loads the portrait grid from existing folders."""
+        # Get all valid folders with portraits
+        folders_with_portraits = []
+        
+        for folder in self.project_folders:
+            folder_path = os.path.join(self.parent_folder, folder)
+            portrait_path = os.path.join(folder_path, "portrait.png")
+            
+            if os.path.exists(portrait_path) and self._is_valid_pokemon_folder(folder):
+                parts = folder.split(' ', 1)
+                if len(parts) == 2:
+                    sprite_id = parts[0]
+                    name = parts[1]
+                    folders_with_portraits.append({
+                        'folder': folder,
+                        'id': sprite_id,
+                        'name': name,
+                        'portrait_path': portrait_path,
+                        'folder_path': folder_path
+                    })
+        
+        folders_with_portraits.sort(key=lambda x: x['id'])
+        
+        if not folders_with_portraits:
+            Label(self.visual_inner_frame, text="No portraits found. Run 'Prepare Pokemon Data' first!", 
+                  font=('Arial', 12), bg='white').pack(pady=50)
+            return
+        
+        PORTRAIT_SIZE = 48
+        CELL_WIDTH = 86
+        
+        # Calculate columns based on current canvas width
+        canvas_width = self.visual_canvas.winfo_width()
+        if canvas_width < 100:
+            canvas_width = 1200  # Default for maximized window
+        
+        columns = max(1, canvas_width // CELL_WIDTH)
+        
+        for i, poke_data in enumerate(folders_with_portraits):
+            row = i // columns
+            col = i % columns
+            
+            cell_frame = Frame(self.visual_inner_frame, bg='white', relief='flat', bd=2,
+                              highlightthickness=2, highlightbackground='lightgray')
+            cell_frame.grid(row=row, column=col, padx=2, pady=2, sticky='nw')
+            
+            self.pokemon_frames[poke_data['id']] = {
+                'frame': cell_frame,
+                'data': poke_data
+            }
+            
+            try:
+                img = Image.open(poke_data['portrait_path'])
+                if img.width > PORTRAIT_SIZE or img.height > PORTRAIT_SIZE:
+                    img = img.resize((PORTRAIT_SIZE, PORTRAIT_SIZE), Image.Resampling.NEAREST)
+                
+                photo = ImageTk.PhotoImage(img)
+                self.portrait_photos[poke_data['id']] = photo
+                
+                img_label = Label(cell_frame, image=photo, bg='white', cursor='hand2')
+                img_label.pack(pady=(3, 0))
+                
+                display_name = poke_data['name'][:8] + ".." if len(poke_data['name']) > 10 else poke_data['name']
+                name_label = Label(cell_frame, text=f"{poke_data['id']}\n{display_name}", 
+                                   font=('Arial', 7), bg='white', cursor='hand2')
+                name_label.pack()
+                
+                sprite_id = poke_data['id']
+                img_label.bind('<Button-1>', lambda e, sid=sprite_id: self._toggle_pokemon_selection(sid))
+                name_label.bind('<Button-1>', lambda e, sid=sprite_id: self._toggle_pokemon_selection(sid))
+                cell_frame.bind('<Button-1>', lambda e, sid=sprite_id: self._toggle_pokemon_selection(sid))
+                
+            except Exception as e:
+                Label(cell_frame, text=f"{poke_data['id']}\nError", font=('Arial', 7), bg='white').pack()
+
+    def _toggle_pokemon_selection(self, sprite_id):
+        """Toggles selection for a Pokemon."""
+        if sprite_id in self.selected_pokemon:
+            self.selected_pokemon.discard(sprite_id)
+            if sprite_id in self.pokemon_frames:
+                self.pokemon_frames[sprite_id]['frame'].config(highlightbackground='lightgray', bg='white')
+                for child in self.pokemon_frames[sprite_id]['frame'].winfo_children():
+                    child.config(bg='white')
+        else:
+            self.selected_pokemon.add(sprite_id)
+            if sprite_id in self.pokemon_frames:
+                self.pokemon_frames[sprite_id]['frame'].config(highlightbackground='green', bg='lightgreen')
+                for child in self.pokemon_frames[sprite_id]['frame'].winfo_children():
+                    try:
+                        child.config(bg='lightgreen')
+                    except:
+                        pass
+        
+        self.selection_label.config(text=f"Selected: {len(self.selected_pokemon)}")
+
+    def _select_all_visual(self):
+        """Selects all Pokemon in the visual grid."""
+        for sprite_id in self.pokemon_frames.keys():
+            if sprite_id not in self.selected_pokemon:
+                self._toggle_pokemon_selection(sprite_id)
+
+    def _deselect_all_visual(self):
+        """Deselects all Pokemon in the visual grid."""
+        for sprite_id in list(self.selected_pokemon):
+            self._toggle_pokemon_selection(sprite_id)
+
+    def _select_missing_sprites(self):
+        """Selects Pokemon that don't have sprites downloaded yet."""
+        self._deselect_all_visual()
+        
+        for sprite_id, frame_data in self.pokemon_frames.items():
+            folder_path = frame_data['data']['folder_path']
+            animations_folder = os.path.join(folder_path, "Animations")
+            sprites_zip = os.path.join(folder_path, "sprites.zip")
+            
+            # Check if sprites are missing (no Animations folder or no sprites.zip)
+            if not os.path.exists(animations_folder) or not os.path.exists(sprites_zip):
+                self._toggle_pokemon_selection(sprite_id)
+
+    def _download_selected_sprites(self):
+        """Downloads sprites for all selected Pokemon using parallel downloads."""
+        if not self.selected_pokemon:
+            messagebox.showwarning("Warning", "Please select at least one Pokemon.")
+            return
+        
+        # Create a simple log dialog
+        log_window = Toplevel(self.main_frame)
+        log_window.title("Download Progress")
+        log_window.geometry("650x450")
+        log_window.transient(self.main_frame.winfo_toplevel())
+        
+        total_count = len(self.selected_pokemon)
+        
+        header_label = Label(log_window, text=f"Downloading sprites for {total_count} Pokemon (parallel)...", 
+              font=('Arial', 11, 'bold'))
+        header_label.pack(pady=10)
+        
+        progress_label = Label(log_window, text="Progress: 0/0 (0%)", font=('Arial', 10))
+        progress_label.pack(pady=5)
+        
+        log_text = Text(log_window, height=16, width=75, font=('Courier', 9))
+        scrollbar = Scrollbar(log_window, command=log_text.yview)
+        log_text.configure(yscrollcommand=scrollbar.set)
+        log_text.pack(side='left', fill='both', expand=True, padx=10, pady=10)
+        scrollbar.pack(side='right', fill='y', pady=10)
+        
+        close_button = Button(log_window, text="Close", command=log_window.destroy, state='disabled')
+        close_button.pack(pady=10)
+        
+        def log_msg(msg):
+            log_text.insert(END, msg + "\n")
+            log_text.see(END)
+        
+        self.download_selected_button.config(state='disabled')
+        
+        def download_single_pokemon(sprite_id):
+            """Downloads a single Pokemon's sprites. Returns (sprite_id, success, folder_name, error_msg)."""
+            try:
+                frame_data = self.pokemon_frames.get(sprite_id)
+                if not frame_data:
+                    return (sprite_id, False, sprite_id, "Frame data not found")
+                
+                folder_path = frame_data['data']['folder_path']
+                folder_name = frame_data['data']['folder']
+                animations_folder = os.path.join(folder_path, "Animations")
+                
+                if not os.path.exists(animations_folder):
+                    os.makedirs(animations_folder)
+                
+                # Download sprites.zip
+                zip_url = f"https://spriteserver.pmdcollab.org/assets/{sprite_id}/sprites.zip"
+                zip_path = os.path.join(folder_path, "sprites.zip")
+                
+                req = urllib.request.Request(zip_url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req, timeout=30) as response:
+                    with open(zip_path, 'wb') as f:
+                        f.write(response.read())
+                
+                # Extract
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    zip_ref.extractall(animations_folder)
+                
+                # Download recolor PNG (non-critical, ignore errors)
+                try:
+                    recolor_url = f"https://spriteserver.pmdcollab.org/assets/sprite_recolor-{sprite_id}-0000-0001.png"
+                    recolor_path = os.path.join(folder_path, f"sprite_recolor-{sprite_id}-0000-0001.png")
+                    req = urllib.request.Request(recolor_url, headers={'User-Agent': 'Mozilla/5.0'})
+                    with urllib.request.urlopen(req, timeout=15) as response:
+                        with open(recolor_path, 'wb') as f:
+                            f.write(response.read())
+                except:
+                    pass
+                
+                return (sprite_id, True, folder_name, None)
+                
+            except Exception as e:
+                return (sprite_id, False, sprite_id, str(e))
+        
+        def download_thread():
+            try:
+                sorted_ids = sorted(list(self.selected_pokemon))
+                completed = 0
+                success_count = 0
+                fail_count = 0
+                
+                # Use parallel downloads with ThreadPoolExecutor
+                max_workers = min(10, len(sorted_ids))  # Max 10 parallel downloads
+                
+                log_window.after(0, lambda: log_msg(f"Starting parallel download with {max_workers} workers...\n"))
+                
+                with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    futures = {executor.submit(download_single_pokemon, sid): sid for sid in sorted_ids}
+                    
+                    for future in concurrent.futures.as_completed(futures):
+                        sprite_id, success, folder_name, error_msg = future.result()
+                        completed += 1
+                        
+                        if success:
+                            success_count += 1
+                            log_window.after(0, lambda fn=folder_name: log_msg(f"✅ {fn}"))
+                        else:
+                            fail_count += 1
+                            log_window.after(0, lambda sid=sprite_id, err=error_msg: log_msg(f"❌ {sid}: {err}"))
+                        
+                        # Update progress
+                        pct = completed * 100 // total_count
+                        log_window.after(0, lambda c=completed, p=pct: progress_label.config(
+                            text=f"Progress: {c}/{total_count} ({p}%)"
+                        ))
+                
+                log_window.after(0, lambda: log_msg(f"\n{'='*50}"))
+                log_window.after(0, lambda s=success_count, f=fail_count: log_msg(
+                    f"✅ Download complete! Success: {s}, Failed: {f}"
+                ))
+                
+            except Exception as e:
+                log_window.after(0, lambda: log_msg(f"\n❌ Error: {str(e)}"))
+            finally:
+                log_window.after(0, lambda: close_button.config(state='normal'))
+                self.main_frame.after(0, lambda: self.download_selected_button.config(state='normal'))
+        
+        thread = threading.Thread(target=download_thread, daemon=True)
+        thread.start()
+
+    def _get_pokemon_folder_name(self, sprite_id):
+        """
+        Gets the Pokemon name for the folder by fetching the tracker.json from GitHub.
+        Uses cache to avoid repeated downloads.
+        Returns the folder name in format "0001 Bulbasaur" or None if not found.
+        """
+        try:
+            # Use cached tracker data if available
+            if self._tracker_cache is None:
+                tracker_url = "https://raw.githubusercontent.com/PMDCollab/SpriteCollab/master/tracker.json"
+                self._log_safe(f"Fetching tracker data from GitHub...")
+                
+                req = urllib.request.Request(
+                    tracker_url,
+                    headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+                )
+                
+                with urllib.request.urlopen(req, timeout=30) as response:
+                    self._tracker_cache = json.loads(response.read().decode('utf-8'))
+                
+                self._log_safe(f"Tracker data loaded successfully ({len(self._tracker_cache)} entries)")
+            
+            # The tracker uses 4-digit padded string keys like "0001", "0025", etc.
+            if sprite_id in self._tracker_cache:
+                pokemon_data = self._tracker_cache[sprite_id]
+                name = pokemon_data.get('name', '')
+                if name:
+                    return f"{sprite_id} {name}"
+            
+            # Also try without leading zeros as fallback
+            sprite_id_int = str(int(sprite_id))
+            if sprite_id_int in self._tracker_cache:
+                pokemon_data = self._tracker_cache[sprite_id_int]
+                name = pokemon_data.get('name', '')
+                if name:
+                    return f"{sprite_id} {name}"
+            
+            self._log_safe(f"ID {sprite_id} not found in tracker data")
+            return None
+            
+        except Exception as e:
+            self._log_safe(f"Could not fetch name for {sprite_id}: {e}")
+            return None
+
+    def _log_safe(self, message):
+        """Thread-safe logging."""
+        self.main_frame.after(0, lambda: self._log_download(message))
+
+    def _log_download(self, message):
+        """Logs a message to the download text widget (different from main _log)."""
+        if self.log_text and self.log_text.winfo_exists():
+            self.log_text.insert(END, message + "\n")
+            self.log_text.see(END)
