@@ -3,12 +3,12 @@
 import os
 from tkinter import Tk, filedialog, Frame, Label, Button, messagebox
 from PIL import Image, ImageTk
-from sprite_sheet_handler import SpriteSheetHandler
-from animation_viewer import AnimationViewer
-from animation_creator import AnimationCreator
-from batch_resizer import BatchResizer
-from spritesheet_assembler import SpritesheetAssembler
-from assembled_animation_previewer import AssembledAnimationPreviewer
+from core.sprite_sheet_handler import SpriteSheetHandler
+from individual.animation_viewer import AnimationViewer
+from individual.animation_creator import AnimationCreator
+from batch.batch_resizer import BatchResizer
+from individual.spritesheet_assembler import SpritesheetAssembler
+from individual.assembled_animation_previewer import AssembledAnimationPreviewer
 
 class MainApplication:
     def __init__(self, root):

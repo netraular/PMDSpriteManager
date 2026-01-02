@@ -1,4 +1,4 @@
-# batch_resizer.py
+# batch/batch_resizer.py
 
 import os
 import pathlib
@@ -12,10 +12,10 @@ import urllib.request
 import re
 from tkinter import Frame, Label, Button, Entry, messagebox, filedialog, Canvas, Scrollbar, Text, END, Toplevel, StringVar, OptionMenu, Listbox, SINGLE, BOTH, Y, LEFT, RIGHT
 from PIL import Image, ImageTk
-from animation_data_handler import AnimationDataHandler
-from animation_creator import AnimationCreator
-from sprite_sheet_handler import SpriteSheetHandler
-from ui_components.esp32_asset_exporter import ESP32AssetExporter
+from core.animation_data_handler import AnimationDataHandler
+from individual.animation_creator import AnimationCreator
+from core.sprite_sheet_handler import SpriteSheetHandler
+from batch.esp32_asset_exporter import ESP32AssetExporter
 
 class BatchResizer:
     DOWNLOADS_FOLDER_NAME = "downloads"  # Subfolder name for Pokemon data

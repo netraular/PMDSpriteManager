@@ -1,10 +1,10 @@
-# ui_components/preview_generator.py
+# core/preview_generator.py
 
 import os
 from PIL import Image, ImageDraw
 import math
-from ui_components import isometric_renderer, image_utils
-from animation_data_handler import calculate_isometric_render_data
+from core import isometric_renderer, image_utils
+from core.animation_data_handler import calculate_isometric_render_data
 
 class PreviewGenerator:
     def __init__(self, anim_data, group_frames, group_metadata, group_shadow_frames, sprite_folder, anim_folder):

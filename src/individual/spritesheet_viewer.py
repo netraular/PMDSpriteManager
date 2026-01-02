@@ -1,6 +1,8 @@
+# individual/spritesheet_viewer.py
+
 from tkinter import Frame, Label, Button, Entry, Canvas, Scrollbar, messagebox
 from PIL import Image, ImageTk
-from sprite_sheet_handler import SpriteSheetHandler
+from core.sprite_sheet_handler import SpriteSheetHandler
 import os
 
 class SpritesheetViewer:

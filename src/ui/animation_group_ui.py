@@ -1,12 +1,12 @@
-# animation_group_ui.py
+# ui/animation_group_ui.py
 
 import os
 from tkinter import Frame, Label, Button, Entry, BooleanVar, Checkbutton, StringVar
 from PIL import Image, ImageTk, ImageDraw, ImageOps
 import math
-from ui_components.animation_player import AnimationPlayer
-from ui_components.preview_generator import PreviewGenerator
-from ui_components import image_utils
+from ui.animation_player import AnimationPlayer
+from core.preview_generator import PreviewGenerator
+from core import image_utils
 
 class AnimationGroupUI:
     def __init__(self, parent, viewer, group_idx, anim_data, group_frames, group_offsets_frames, group_shadow_frames, group_metadata, sprite_folder, anim_folder, json_group_data, ai_callback):

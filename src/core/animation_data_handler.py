@@ -1,12 +1,12 @@
-# animation_data_handler.py
+# core/animation_data_handler.py
 
 import os
 import json
 import xml.etree.ElementTree as ET
 from PIL import Image, ImageOps
-from sprite_sheet_handler import SpriteSheetHandler
-from sprite_matcher import SpriteMatcher
-from ui_components import image_utils
+from core.sprite_sheet_handler import SpriteSheetHandler
+from core.sprite_matcher import SpriteMatcher
+from core import image_utils
 import shutil
 import math
 

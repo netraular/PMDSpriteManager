@@ -1,10 +1,10 @@
-# animation_creator.py
+# individual/animation_creator.py
 
 from tkinter import Frame, Label, Button, Entry, Canvas, Scrollbar, messagebox, filedialog, OptionMenu, StringVar
 from PIL import Image, ImageTk, ImageOps, ImageDraw
-from sprite_sheet_handler import SpriteSheetHandler
-from ui_components.animation_player import AnimationPlayer
-from ui_components import isometric_renderer, image_utils
+from core.sprite_sheet_handler import SpriteSheetHandler
+from ui.animation_player import AnimationPlayer
+from core import isometric_renderer, image_utils
 import os
 import json
 import math

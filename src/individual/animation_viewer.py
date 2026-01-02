@@ -1,12 +1,12 @@
-# animation_viewer.py
+# individual/animation_viewer.py
 
 import os
 import json
 from tkinter import Frame, Label, Canvas, Scrollbar, messagebox, Toplevel, Button, OptionMenu, StringVar, BooleanVar
 from PIL import Image, ImageTk, ImageOps
 import math
-from animation_group_ui import AnimationGroupUI
-from animation_data_handler import AnimationDataHandler
+from ui.animation_group_ui import AnimationGroupUI
+from core.animation_data_handler import AnimationDataHandler
 
 class AnimationViewer:
     def __init__(self, parent_frame, anim_folder):
@@ -240,7 +240,7 @@ class AnimationViewer:
     def identify_group_sprites(self, group_ui_instance):
         try:
             if not os.path.exists(self.sprite_folder): return
-            from sprite_matcher import SpriteMatcher
+            from core.sprite_matcher import SpriteMatcher
             matcher = SpriteMatcher(self.sprite_folder)
             match_data = matcher.match_group(group_ui_instance.group_frames)
             group_ui_instance.set_sprite_values(match_data["frame_matches"], match_data["per_frame_mirror"])

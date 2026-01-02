@@ -1,10 +1,10 @@
-# assembled_animation_previewer.py
+# individual/assembled_animation_previewer.py
 
 import os
 import json
 from tkinter import Frame, Label, Button, messagebox, Canvas, Scrollbar
 from PIL import Image, ImageTk, ImageDraw
-from ui_components.animation_player import AnimationPlayer
+from ui.animation_player import AnimationPlayer
 
 class AssembledAnimationPreviewer:
     def __init__(self, parent_frame, folder, return_to_main_callback, update_breadcrumbs_callback=None, base_path=None):

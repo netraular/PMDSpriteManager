@@ -1,11 +1,11 @@
-# isometric_animation_previewer.py
+# individual/isometric_animation_previewer.py
 
 import os
 import json
 from tkinter import Frame, Label, Button, Canvas, messagebox, OptionMenu, StringVar, Entry
 from PIL import Image, ImageTk, ImageDraw
-from ui_components.animation_player import AnimationPlayer
-from ui_components import isometric_renderer
+from ui.animation_player import AnimationPlayer
+from core import isometric_renderer
 
 class IsometricAnimationPreviewer:
     def __init__(self, parent_frame, parent_folder, return_to_main_callback, update_breadcrumbs_callback=None, base_path=None):
