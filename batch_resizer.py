@@ -10,7 +10,7 @@ import queue
 import concurrent.futures
 import urllib.request
 import re
-from tkinter import Frame, Label, Button, Entry, messagebox, filedialog, Canvas, Scrollbar, Text, END, Toplevel, StringVar, OptionMenu
+from tkinter import Frame, Label, Button, Entry, messagebox, filedialog, Canvas, Scrollbar, Text, END, Toplevel, StringVar, OptionMenu, Listbox, SINGLE, BOTH, Y, LEFT, RIGHT
 from PIL import Image, ImageTk
 from animation_data_handler import AnimationDataHandler
 from animation_creator import AnimationCreator
@@ -985,13 +985,55 @@ class BatchResizer:
         if not characters:
             Label(self.main_frame, text="No characters found in output folder.", fg="red").pack(pady=50); return
 
-        Label(top_frame, text="Character:").pack(side='left', padx=(20, 5))
-        self.selected_char_var = StringVar(value=characters[0])
-        OptionMenu(top_frame, self.selected_char_var, *characters, command=self._on_character_selected_for_preview).pack(side='left')
+        # Main container with left panel (character list) and right panel (preview)
+        main_container = Frame(self.main_frame)
+        main_container.pack(fill='both', expand=True, padx=10, pady=5)
         
-        self.preview_content_frame = Frame(self.main_frame)
-        self.preview_content_frame.pack(fill='both', expand=True)
+        # Left panel - Character list with scrollbar
+        left_panel = Frame(main_container, width=200)
+        left_panel.pack(side='left', fill='y', padx=(0, 10))
+        left_panel.pack_propagate(False)
+        
+        Label(left_panel, text="Characters:", font=('Arial', 10, 'bold')).pack(pady=(0, 5))
+        
+        # Listbox with scrollbar for character selection
+        list_frame = Frame(left_panel)
+        list_frame.pack(fill='both', expand=True)
+        
+        scrollbar = Scrollbar(list_frame)
+        scrollbar.pack(side='right', fill='y')
+        
+        self.char_listbox = Listbox(list_frame, selectmode=SINGLE, yscrollcommand=scrollbar.set, 
+                                     font=('Arial', 10), exportselection=False)
+        self.char_listbox.pack(side='left', fill='both', expand=True)
+        scrollbar.config(command=self.char_listbox.yview)
+        
+        # Enable mousewheel scrolling
+        def _on_mousewheel(event):
+            self.char_listbox.yview_scroll(-1 * (event.delta // 120), "units")
+        self.char_listbox.bind("<MouseWheel>", _on_mousewheel)
+        
+        # Populate listbox
+        for char in characters:
+            self.char_listbox.insert('end', char)
+        
+        # Bind selection event
+        self.char_listbox.bind('<<ListboxSelect>>', self._on_listbox_char_selected)
+        
+        # Right panel - Animation preview
+        self.preview_content_frame = Frame(main_container)
+        self.preview_content_frame.pack(side='left', fill='both', expand=True)
+        
+        # Select first character
+        self.char_listbox.selection_set(0)
         self._on_character_selected_for_preview(characters[0])
+    
+    def _on_listbox_char_selected(self, event):
+        """Handle character selection from the listbox."""
+        selection = self.char_listbox.curselection()
+        if selection:
+            char_name = self.char_listbox.get(selection[0])
+            self._on_character_selected_for_preview(char_name)
 
     def _on_character_selected_for_preview(self, char_name):
         if self.animation_creator: self.animation_creator.clear_frame()
