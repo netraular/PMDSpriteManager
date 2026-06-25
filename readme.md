@@ -81,6 +81,30 @@ Your project structure is now ready for batch processing.
         └── ...               # Other files from the ZIP
     ```
 
+### Command-line bulk download
+
+To fetch many Pokémon at once without the GUI, use the headless downloader. It
+replicates the in-app "Prepare Data" + "Download Sprites" steps and produces a
+`downloads/` layout compatible with the Batch tool ("Select Parent Folder").
+
+```bash
+# First 151 Pokémon -> ./pmd_projects/downloads/<id Name>/Animations/
+python Scripts/download_pmd_sprites.py --start 1 --end 151 --out pmd_projects
+```
+
+### Firmware Export (lv_port_pc_vscode overworld format)
+
+Converts each character's PMD **Walk** animation into the simple single-sheet
+format used by the `lv_port_pc_vscode` firmware (`graphics/species/pokemon`):
+one **128×256** PNG per creature, a **2×4** grid of **64×64** cells with the
+creature centered, holding DOWN/UP/LEFT/RIGHT × 2 walk frames (frame 0 + middle
+frame). A matching `_layout.json` (`style: pokemon`) is written next to the sheets.
+
+-   **CLI**: `python Scripts/export_firmware_sheets.py --downloads pmd_projects/downloads --out firmware_output`
+-   **GUI**: Batch tool → **"Firmware Export (1 sheet 2x4)"** (writes `firmware_output/` next to `downloads/`).
+
+The conversion logic lives in `src/core/firmware_exporter.py` (Pillow-only, GUI-agnostic).
+
 ---
 
 ## Usage Guide

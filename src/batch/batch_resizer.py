@@ -16,6 +16,7 @@ from core.animation_data_handler import AnimationDataHandler
 from individual.animation_creator import AnimationCreator
 from core.sprite_sheet_handler import SpriteSheetHandler
 from batch.esp32_asset_exporter import ESP32AssetExporter
+from core.firmware_exporter import export_all as firmware_export_all
 
 class BatchResizer:
     DOWNLOADS_FOLDER_NAME = "downloads"  # Subfolder name for Pokemon data
@@ -116,6 +117,7 @@ class BatchResizer:
         Button(content_frame, text="4- Export Final Assets (1x + 2x + Shadows)", command=self.show_export_assets_combined_view, font=('Arial', 12), width=40).pack(pady=10)
         Button(content_frame, text="5- Preview Optimized Animations", command=self.show_optimized_animation_previewer, font=('Arial', 12), width=40).pack(pady=10)
         Button(content_frame, text="ESP32 Export", command=self.show_esp32_export_view, font=('Arial', 12), width=40).pack(pady=10)
+        Button(content_frame, text="Firmware Export (1 sheet 2x4)", command=self.start_firmware_export, font=('Arial', 12), width=40).pack(pady=10)
 
     # --- Task View Setup Methods (using the generic framework) ---
 
@@ -145,6 +147,32 @@ class BatchResizer:
             start_button_text="Start ESP32 Export",
             worker_function=self._esp32_export_worker
         )
+
+    def start_firmware_export(self):
+        description = ("Converts each character's PMD 'Walk' animation into the lv_port_pc_vscode\n"
+                       "firmware overworld format: one 128x256 spritesheet per creature (2x4 grid,\n"
+                       "64x64 cells, DOWN/UP/LEFT/RIGHT x 2 walk frames). Output goes to a new\n"
+                       "'firmware_output' folder next to 'downloads'.")
+        self._setup_task_view(
+            title="Firmware Export (1 sheet 2x4)",
+            description=description,
+            start_button_text="Start Firmware Export",
+            worker_function=self._firmware_export_worker
+        )
+
+    def _firmware_export_worker(self, q):
+        try:
+            if not self.downloads_folder or not os.path.isdir(self.downloads_folder):
+                q.put("ERROR: 'downloads' subfolder not found in the selected parent folder.")
+                q.put("DONE:ERROR")
+                return
+            output_dir = os.path.join(self.parent_folder, "firmware_output")
+            q.put(f"Exporting firmware sheets -> {output_dir}\n")
+            ok, fail = firmware_export_all(self.downloads_folder, output_dir, log=q.put)
+            q.put(f"DONE:{ok}:{fail}")
+        except Exception as e:
+            q.put(f"ERROR: {e}")
+            q.put("DONE:ERROR")
 
     # --- Generic Task Execution Framework ---
 

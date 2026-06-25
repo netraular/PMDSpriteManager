@@ -5,3 +5,7 @@ main.spec
 dist
 __pycache__
 .vscode
+
+# Bulk-downloaded PMD assets (reproducible via Scripts/download_pmd_sprites.py)
+pmd_projects/
+test_assets/

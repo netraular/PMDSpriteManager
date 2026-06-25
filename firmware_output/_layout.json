@@ -1,0 +1,6 @@
+{
+  "style": "pokemon",
+  "cols": 2,
+  "rows": 4,
+  "description": "HeartGold overworld layout: 2 frames per direction in a 2x2 sub-block. col0=UP/DOWN, col1=LEFT/RIGHT; rows 0-1 top pair, rows 2-3 bottom pair."
+}
