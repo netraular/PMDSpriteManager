@@ -54,6 +54,10 @@ DEFAULT_CELL = 64
 # to fill the cell. Content that exceeds the cell after scaling is clipped at the
 # edges -- at 2x, 113/151 creatures fit fully and 38 are clipped (mostly 1-5px).
 DEFAULT_SCALE = 2
+# Empty pixels left below the sprite when it is bottom-aligned in the cell. 0 keeps
+# the creature's feet at the very bottom of the tile (small creatures sit on the
+# floor, large ones extend upward). Raise it to lift every sprite off the floor.
+DEFAULT_BOTTOM_MARGIN = 0
 # Walk frames per direction in the output sheet. 8 == firmware PET_MAX_WALK_FRAMES,
 # which captures the full native cycle of all but a handful of creatures losslessly
 # (the few with >8 native frames are evenly resampled down to 8).
@@ -169,22 +173,29 @@ def _parse_anim_frame_size(animdata_path, anim_name="Walk"):
     return None
 
 
-def _centered(frame, cell, scale=DEFAULT_SCALE, crop_box=None):
+def _place_in_cell(frame, cell, scale=DEFAULT_SCALE, crop_box=None,
+                   bottom_margin=DEFAULT_BOTTOM_MARGIN):
     """
     Optionally crop `frame` to `crop_box`, magnify it by `scale` (integer, nearest-
-    neighbour for crisp pixel-art) and center it in a `cell`x`cell` canvas.
+    neighbour for crisp pixel-art) and place it in a `cell`x`cell` canvas, centered
+    horizontally and bottom-aligned vertically.
 
     `crop_box` is the creature's shared content bounding box (union over all of its
     frames, in native frame coordinates). Cropping every frame to the SAME box
     removes the large empty margin PMD reserves below the sprite (and any side/top
     margin) while preserving the relative motion between frames (e.g. the walk
-    bounce), so the character sits centered in the cell instead of floating high
-    with a gap underneath.
+    bounce / jumps): it is a single fixed crop per creature, so frames keep their
+    positions relative to each other. The frame is then anchored to the bottom of
+    the cell (minus `bottom_margin`), so small creatures sit near the floor with no
+    dead space underneath and large creatures extend upward to show more of the
+    body. The union box's lowest point touches the floor; higher frames float up by
+    exactly their native amount, so the vertical bounce is preserved.
 
     If the scaled frame is still larger than the cell in some dimension its content
-    is clipped at the edges (paste clips to the canvas bounds). A frame that would
-    exceed the cell even at scale 1 is first shrunk to fit before scaling, so
-    `scale` acts as a magnification of the fit-to-cell size.
+    is clipped at the edges (paste clips to the canvas bounds; with bottom alignment
+    the overflow is clipped at the top). A frame that would exceed the cell even at
+    scale 1 is first shrunk to fit before scaling, so `scale` acts as a
+    magnification of the fit-to-cell size.
     """
     if crop_box is not None:
         frame = frame.crop(crop_box)
@@ -198,8 +209,9 @@ def _centered(frame, cell, scale=DEFAULT_SCALE, crop_box=None):
         frame = frame.resize((max(1, fw * scale), max(1, fh * scale)), Image.NEAREST)
         fw, fh = frame.size
     canvas = Image.new("RGBA", (cell, cell), (0, 0, 0, 0))
-    # paste() clips to the canvas, so content larger than the cell is cropped.
-    canvas.paste(frame, ((cell - fw) // 2, (cell - fh) // 2), frame)
+    # Center horizontally, bottom-align vertically. paste() clips to the canvas, so
+    # content taller than the cell overflows (and is clipped) at the top.
+    canvas.paste(frame, ((cell - fw) // 2, cell - fh - bottom_margin), frame)
     return canvas
 
 
@@ -285,7 +297,7 @@ def export_project(project_path, output_png, cell=DEFAULT_CELL,
 
     out = Image.new("RGBA", (cell * frames, cell * 4), (0, 0, 0, 0))
     for out_row, out_col, raw in placed:
-        frame = _centered(raw, cell, scale, box)
+        frame = _place_in_cell(raw, cell, scale, box)
         out.paste(frame, (out_col * cell, out_row * cell), frame)
 
     os.makedirs(os.path.dirname(output_png), exist_ok=True)
