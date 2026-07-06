@@ -151,11 +151,12 @@ class BatchResizer:
     def start_firmware_export(self):
         description = ("Converts each character's PMD 'Walk' animation into the hibitomo\n"
                        "overworld format used by BOTH the web content-editor and the\n"
-                       "lv_port_pc_vscode firmware: one 512x256 spritesheet per creature\n"
-                       "(8x4 grid, 64x64 cells; each row is a direction DOWN/LEFT/RIGHT/UP\n"
-                       "and each column a walk frame - the full native walk cycle resampled\n"
-                       "to 8 frames, each sprite magnified 2x to fill the cell) plus a\n"
-                       "data-driven '_layout.json' (style: explicit).\n\n"
+                       "lv_port_pc_vscode firmware: one spritesheet per creature (8x4 grid;\n"
+                       "each row is a direction DOWN/LEFT/RIGHT/UP and each column a walk\n"
+                       "frame - the full native walk cycle resampled to 8 frames). The cell\n"
+                       "size is per-species (the creature's content bbox magnified 2x), so\n"
+                       "sheets vary in size and nothing is clipped. Plus a data-driven\n"
+                       "'_layout.json' (style: explicit).\n\n"
                        "Output goes to a 'firmware_output' folder next to 'downloads', with\n"
                        "copy-ready 'firmware/' and 'web/' subtrees to drop into each repo.")
         self._setup_task_view(

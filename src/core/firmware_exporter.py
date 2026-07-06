@@ -5,8 +5,12 @@ Converts a PMD Collab character (8-direction isometric `Walk` animation) into th
 single-sheet "overworld" spritesheet format shared by the hibitomo web content
 editor and the lv_port_pc_vscode firmware (`graphics/species/pokemon`):
 
-  * One PNG per creature, N columns x 4 rows, fixed cell size (64x64 by default;
-    N = DEFAULT_FRAMES = 8 -> a 512x256 sheet), creature centered in each cell.
+  * One PNG per creature, N columns x 4 rows. The cell size is PER-SPECIES: it is
+    the creature's content bounding box (union over all walk frames) magnified by
+    DEFAULT_SCALE, so every creature fills its cell with no dead margin and is never
+    clipped (N = DEFAULT_FRAMES = 8 columns). Sheets are therefore variable-sized
+    (and may be non-square) from one creature to the next; both consumers derive the
+    cell pixel size from the sheet dimensions and grid.
   * Row = direction, column = walk frame (the FULL walk cycle, resampled to the
     fixed column count so every creature shares one grid):
 
@@ -47,17 +51,14 @@ PMD_ROW_LEFT = 6   # West
 # 3=UP); this maps each output row to the PMD source row it is cropped from.
 OUT_ROW_SOURCE = [PMD_ROW_DOWN, PMD_ROW_LEFT, PMD_ROW_RIGHT, PMD_ROW_UP]
 
-DEFAULT_CELL = 64
-# Integer magnification applied to each native PMD frame before it is centered in
-# the output cell. The PMD overworld frames are small pixel-art (~16-32px of actual
-# content in a 64px cell), so they are scaled up (nearest-neighbour, pixel-perfect)
-# to fill the cell. Content that exceeds the cell after scaling is clipped at the
-# edges -- at 2x, 113/151 creatures fit fully and 38 are clipped (mostly 1-5px).
+# Integer magnification applied to each creature's cropped walk frame (nearest-
+# neighbour, pixel-perfect). The output CELL SIZE IS PER-SPECIES: it is the
+# creature's content bounding box (union over all of its walk frames) times `scale`,
+# so no creature is ever clipped and small/large creatures keep their natural
+# relative size. Both consumers (web + firmware) derive the cell pixel size from the
+# sheet dimensions / grid, so a per-creature (and non-square) cell size just works;
+# the firmware bottom-anchors the cell to the tile floor.
 DEFAULT_SCALE = 2
-# Empty pixels left below the sprite when it is bottom-aligned in the cell. 0 keeps
-# the creature's feet at the very bottom of the tile (small creatures sit on the
-# floor, large ones extend upward). Raise it to lift every sprite off the floor.
-DEFAULT_BOTTOM_MARGIN = 0
 # Walk frames per direction in the output sheet. 8 == firmware PET_MAX_WALK_FRAMES,
 # which captures the full native cycle of all but a handful of creatures losslessly
 # (the few with >8 native frames are evenly resampled down to 8).
@@ -94,8 +95,7 @@ def build_layout_dict(cols, rows=4, frames=DEFAULT_FRAMES):
             "(0=DOWN, 1=LEFT, 2=RIGHT, 3=UP), columns 0.."
             f"{frames - 1} are the full walk cycle (resampled to {frames} frames); "
             "idle = column 0. Continuous stride. Cell size derived from the sheet "
-            f"({DEFAULT_CELL}x{DEFAULT_CELL} in the shipped "
-            f"{cols * DEFAULT_CELL}x{rows * DEFAULT_CELL} sheets)."
+            "(per-species: the creature's content bbox times the export scale)."
         ),
     }
 
@@ -173,46 +173,27 @@ def _parse_anim_frame_size(animdata_path, anim_name="Walk"):
     return None
 
 
-def _place_in_cell(frame, cell, scale=DEFAULT_SCALE, crop_box=None,
-                   bottom_margin=DEFAULT_BOTTOM_MARGIN):
+def _prepare_frame(frame, crop_box, scale=DEFAULT_SCALE):
     """
-    Optionally crop `frame` to `crop_box`, magnify it by `scale` (integer, nearest-
-    neighbour for crisp pixel-art) and place it in a `cell`x`cell` canvas, centered
-    horizontally and bottom-aligned vertically.
+    Crop `frame` to `crop_box` and magnify it by `scale` (integer, nearest-neighbour
+    for crisp pixel-art). Returns the resulting image.
 
     `crop_box` is the creature's shared content bounding box (union over all of its
-    frames, in native frame coordinates). Cropping every frame to the SAME box
-    removes the large empty margin PMD reserves below the sprite (and any side/top
-    margin) while preserving the relative motion between frames (e.g. the walk
-    bounce / jumps): it is a single fixed crop per creature, so frames keep their
-    positions relative to each other. The frame is then anchored to the bottom of
-    the cell (minus `bottom_margin`), so small creatures sit near the floor with no
-    dead space underneath and large creatures extend upward to show more of the
-    body. The union box's lowest point touches the floor; higher frames float up by
-    exactly their native amount, so the vertical bounce is preserved.
-
-    If the scaled frame is still larger than the cell in some dimension its content
-    is clipped at the edges (paste clips to the canvas bounds; with bottom alignment
-    the overflow is clipped at the top). A frame that would exceed the cell even at
-    scale 1 is first shrunk to fit before scaling, so `scale` acts as a
-    magnification of the fit-to-cell size.
+    frames, in native frame coordinates), so every frame is cropped to the SAME box
+    and therefore comes out the SAME pixel size -- which is exactly the per-species
+    cell size used to tile the output sheet. Because the crop is a single fixed box
+    per creature, frames keep their positions relative to each other, preserving the
+    walk bounce / jumps. Nothing is centered or padded: the cell IS the content box,
+    so no creature is clipped and there is no dead margin around it. `crop_box` may
+    be None (fully transparent creature), in which case the native frame is used
+    as-is.
     """
     if crop_box is not None:
         frame = frame.crop(crop_box)
-    fw, fh = frame.size
-    fit = min(1.0, cell / max(fw, fh))
-    if fit < 1.0:
-        frame = frame.resize((max(1, int(fw * fit)), max(1, int(fh * fit))),
-                             Image.NEAREST)
-        fw, fh = frame.size
     if scale != 1:
-        frame = frame.resize((max(1, fw * scale), max(1, fh * scale)), Image.NEAREST)
         fw, fh = frame.size
-    canvas = Image.new("RGBA", (cell, cell), (0, 0, 0, 0))
-    # Center horizontally, bottom-align vertically. paste() clips to the canvas, so
-    # content taller than the cell overflows (and is clipped) at the top.
-    canvas.paste(frame, ((cell - fw) // 2, cell - fh - bottom_margin), frame)
-    return canvas
+        frame = frame.resize((max(1, fw * scale), max(1, fh * scale)), Image.NEAREST)
+    return frame
 
 
 def _union_bbox(frames):
@@ -246,16 +227,18 @@ def _resample_indices(native_count, target_count):
             for i in range(target_count)]
 
 
-def export_project(project_path, output_png, cell=DEFAULT_CELL,
-                   frames=DEFAULT_FRAMES, scale=DEFAULT_SCALE):
+def export_project(project_path, output_png, frames=DEFAULT_FRAMES,
+                   scale=DEFAULT_SCALE):
     """
     Convert one PMD character folder into an overworld spritesheet.
 
     Produces a `frames` x 4 grid (columns = full walk cycle resampled to `frames`,
-    rows = DOWN/LEFT/RIGHT/UP), each cell `cell`x`cell` with the creature centered
-    and magnified by `scale` (nearest-neighbour). `project_path` must contain an
-    `Animations/` subfolder with `AnimData.xml` and `Walk-Anim.png`. Returns the
-    output path on success or raises ValueError.
+    rows = DOWN/LEFT/RIGHT/UP). The CELL SIZE IS PER-SPECIES: it equals the
+    creature's content bounding box (union over all frames) magnified by `scale`
+    (nearest-neighbour), so the sheet is exactly `cell_w*frames` x `cell_h*4` with no
+    dead margin and no clipping. `project_path` must contain an `Animations/`
+    subfolder with `AnimData.xml` and `Walk-Anim.png`. Returns the output path on
+    success or raises ValueError.
     """
     animations = os.path.join(project_path, "Animations")
     animdata = os.path.join(animations, ANIM_DATA_FILE)
@@ -286,19 +269,26 @@ def export_project(project_path, output_png, cell=DEFAULT_CELL,
     src_cols = _resample_indices(cols, frames)
 
     # Gather every frame we will actually place, then crop them all to a single
-    # shared content bbox. This strips the large empty margin PMD reserves below
-    # each sprite (and any top/side margin) so the creature is centered in the cell
-    # rather than floating high with a gap underneath. Using the union over all
-    # frames keeps the walk bounce and left/right lean intact.
+    # shared content bbox. This strips the large empty margin PMD reserves around
+    # each sprite so the per-species cell is exactly the creature's real footprint.
+    # Using the union over all frames keeps the walk bounce and left/right lean
+    # intact (every frame is cropped to the same box, so relative motion is kept).
     placed = [(out_row, out_col, crop(pmd_row, src_col))
               for out_row, pmd_row in enumerate(OUT_ROW_SOURCE)
               for out_col, src_col in enumerate(src_cols)]
     box = _union_bbox(fr for _, _, fr in placed)
 
-    out = Image.new("RGBA", (cell * frames, cell * 4), (0, 0, 0, 0))
+    # Per-species cell size = content bbox (or the native frame if fully blank) * scale.
+    if box is not None:
+        cell_w = (box[2] - box[0]) * scale
+        cell_h = (box[3] - box[1]) * scale
+    else:
+        cell_w, cell_h = fw * scale, fh * scale
+
+    out = Image.new("RGBA", (cell_w * frames, cell_h * 4), (0, 0, 0, 0))
     for out_row, out_col, raw in placed:
-        frame = _place_in_cell(raw, cell, scale, box)
-        out.paste(frame, (out_col * cell, out_row * cell), frame)
+        frame = _prepare_frame(raw, box, scale)
+        out.paste(frame, (out_col * cell_w, out_row * cell_h), frame)
 
     os.makedirs(os.path.dirname(output_png), exist_ok=True)
     out.save(output_png)
@@ -339,19 +329,19 @@ def _stage_target(base_dir, sheets, target, cols, frames, log):
         f"  (copy its contents into the repo root: {relpath}/)")
 
 
-def export_all(downloads_dir, output_dir, cell=DEFAULT_CELL, log=print,
+def export_all(downloads_dir, output_dir, log=print,
                targets=("firmware", "web"), frames=DEFAULT_FRAMES,
                scale=DEFAULT_SCALE):
     """
     Convert every project subfolder of `downloads_dir` into `output_dir`.
 
     Each creature becomes a `frames` x 4 sheet (full walk cycle resampled to
-    `frames` columns), each cell magnified by `scale`. The raw sheets + explicit
-    `_layout.json` are written flat into `output_dir`. For every name in `targets`
-    (a subset of TARGET_RELPATHS, e.g. "firmware", "web"), a copy-ready tree is
-    additionally staged under `<output_dir>/<target>/<repo-relative-path>/` so it
-    can be dropped straight into the corresponding repository. Pass `targets=()`
-    for the flat output only.
+    `frames` columns), with a per-species cell size (content bbox * `scale`). The raw
+    sheets + explicit `_layout.json` are written flat into `output_dir`. For every
+    name in `targets` (a subset of TARGET_RELPATHS, e.g. "firmware", "web"), a
+    copy-ready tree is additionally staged under
+    `<output_dir>/<target>/<repo-relative-path>/` so it can be dropped straight into
+    the corresponding repository. Pass `targets=()` for the flat output only.
 
     Returns (success_count, fail_count). `log` is called with progress strings.
     """
@@ -364,7 +354,7 @@ def export_all(downloads_dir, output_dir, cell=DEFAULT_CELL, log=print,
         project = os.path.join(downloads_dir, folder)
         out_png = os.path.join(output_dir, _output_name(folder) + ".png")
         try:
-            export_project(project, out_png, cell, frames, scale)
+            export_project(project, out_png, frames, scale)
             ok += 1
             generated.append(out_png)
             log(f"  OK  {folder} -> {os.path.basename(out_png)}")

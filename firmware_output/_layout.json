@@ -15,5 +15,5 @@
     "right": [{ "col": 0, "row": 2 }],
     "up": [{ "col": 0, "row": 3 }]
   },
-  "description": "PMD Collab overworld, fully data-driven: one row per direction (0=DOWN, 1=LEFT, 2=RIGHT, 3=UP), columns 0..7 are the full walk cycle (resampled to 8 frames); idle = column 0. Continuous stride. Cell size derived from the sheet (64x64 in the shipped 512x256 sheets)."
+  "description": "PMD Collab overworld, fully data-driven: one row per direction (0=DOWN, 1=LEFT, 2=RIGHT, 3=UP), columns 0..7 are the full walk cycle (resampled to 8 frames); idle = column 0. Continuous stride. Cell size derived from the sheet (per-species: the creature's content bbox times the export scale)."
 }

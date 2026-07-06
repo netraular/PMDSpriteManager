@@ -9,7 +9,7 @@ folder, plus copy-ready `firmware/` and `web/` subtrees.
 Usage:
     python Scripts/export_firmware_sheets.py
     python Scripts/export_firmware_sheets.py --downloads pmd_projects/downloads --out firmware_output
-    python Scripts/export_firmware_sheets.py --cell 64 --frames 8
+    python Scripts/export_firmware_sheets.py --frames 8 --scale 2
     python Scripts/export_firmware_sheets.py --target firmware
     python Scripts/export_firmware_sheets.py --target web
     python Scripts/export_firmware_sheets.py --target none
@@ -32,14 +32,13 @@ def main():
                     help="Folder with project subfolders (default pmd_projects/downloads)")
     ap.add_argument("--out", default="firmware_output",
                     help="Output folder for converted sheets (default firmware_output)")
-    ap.add_argument("--cell", type=int, default=64, help="Cell size in px (default 64)")
     ap.add_argument("--frames", type=int, default=DEFAULT_FRAMES,
                     help=f"Walk frames per direction / sheet columns (default {DEFAULT_FRAMES}; "
                          "8 == firmware PET_MAX_WALK_FRAMES)")
     ap.add_argument("--scale", type=int, default=DEFAULT_SCALE,
-                    help=f"Integer magnification of each sprite within its cell "
-                         f"(default {DEFAULT_SCALE}; nearest-neighbour, content larger "
-                         "than the cell is clipped)")
+                    help=f"Integer magnification of each sprite (default {DEFAULT_SCALE}; "
+                         "nearest-neighbour). The per-species cell size is the creature's "
+                         "content bbox times this scale.")
     ap.add_argument("--target", choices=["firmware", "web", "both", "none"], default="both",
                     help="Stage copy-ready trees for the hibitomo web, the firmware, "
                          "both (default), or none (flat output only).")
@@ -59,9 +58,9 @@ def main():
     }[args.target]
 
     print(f"Exporting from {downloads}\n"
-          f"            to {out} (cell={args.cell}, frames={args.frames}, "
+          f"            to {out} (per-species cell, frames={args.frames}, "
           f"scale={args.scale}x, target={args.target})\n")
-    ok, fail = export_all(downloads, out, cell=args.cell, targets=targets,
+    ok, fail = export_all(downloads, out, targets=targets,
                           frames=args.frames, scale=args.scale)
     return 0 if fail == 0 else 1
 
