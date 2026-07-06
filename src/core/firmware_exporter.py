@@ -169,17 +169,25 @@ def _parse_anim_frame_size(animdata_path, anim_name="Walk"):
     return None
 
 
-def _centered(frame, cell, scale=DEFAULT_SCALE):
+def _centered(frame, cell, scale=DEFAULT_SCALE, crop_box=None):
     """
-    Magnify a frame by `scale` (integer, nearest-neighbour for crisp pixel-art) and
-    center it in a `cell`x`cell` transparent canvas.
+    Optionally crop `frame` to `crop_box`, magnify it by `scale` (integer, nearest-
+    neighbour for crisp pixel-art) and center it in a `cell`x`cell` canvas.
 
-    The PMD overworld frames are small, so they are scaled up to better fill the
-    cell. If the scaled frame is still larger than the cell in some dimension its
-    content is clipped at the edges (paste clips to the canvas bounds). A frame that
-    would exceed the cell even at scale 1 is first shrunk to fit before scaling, so
+    `crop_box` is the creature's shared content bounding box (union over all of its
+    frames, in native frame coordinates). Cropping every frame to the SAME box
+    removes the large empty margin PMD reserves below the sprite (and any side/top
+    margin) while preserving the relative motion between frames (e.g. the walk
+    bounce), so the character sits centered in the cell instead of floating high
+    with a gap underneath.
+
+    If the scaled frame is still larger than the cell in some dimension its content
+    is clipped at the edges (paste clips to the canvas bounds). A frame that would
+    exceed the cell even at scale 1 is first shrunk to fit before scaling, so
     `scale` acts as a magnification of the fit-to-cell size.
     """
+    if crop_box is not None:
+        frame = frame.crop(crop_box)
     fw, fh = frame.size
     fit = min(1.0, cell / max(fw, fh))
     if fit < 1.0:
@@ -193,6 +201,21 @@ def _centered(frame, cell, scale=DEFAULT_SCALE):
     # paste() clips to the canvas, so content larger than the cell is cropped.
     canvas.paste(frame, ((cell - fw) // 2, (cell - fh) // 2), frame)
     return canvas
+
+
+def _union_bbox(frames):
+    """Union of the non-transparent bounding boxes of `frames` (or None if empty)."""
+    union = None
+    for fr in frames:
+        bb = fr.getbbox()
+        if bb is None:
+            continue
+        if union is None:
+            union = bb
+        else:
+            union = (min(union[0], bb[0]), min(union[1], bb[1]),
+                     max(union[2], bb[2]), max(union[3], bb[3]))
+    return union
 
 
 def _resample_indices(native_count, target_count):
@@ -250,11 +273,20 @@ def export_project(project_path, output_png, cell=DEFAULT_CELL,
     # Resample this creature's native walk cycle (cols frames) to `frames`.
     src_cols = _resample_indices(cols, frames)
 
+    # Gather every frame we will actually place, then crop them all to a single
+    # shared content bbox. This strips the large empty margin PMD reserves below
+    # each sprite (and any top/side margin) so the creature is centered in the cell
+    # rather than floating high with a gap underneath. Using the union over all
+    # frames keeps the walk bounce and left/right lean intact.
+    placed = [(out_row, out_col, crop(pmd_row, src_col))
+              for out_row, pmd_row in enumerate(OUT_ROW_SOURCE)
+              for out_col, src_col in enumerate(src_cols)]
+    box = _union_bbox(fr for _, _, fr in placed)
+
     out = Image.new("RGBA", (cell * frames, cell * 4), (0, 0, 0, 0))
-    for out_row, pmd_row in enumerate(OUT_ROW_SOURCE):
-        for out_col, src_col in enumerate(src_cols):
-            frame = _centered(crop(pmd_row, src_col), cell, scale)
-            out.paste(frame, (out_col * cell, out_row * cell), frame)
+    for out_row, out_col, raw in placed:
+        frame = _centered(raw, cell, scale, box)
+        out.paste(frame, (out_col * cell, out_row * cell), frame)
 
     os.makedirs(os.path.dirname(output_png), exist_ok=True)
     out.save(output_png)

@@ -104,7 +104,11 @@ fixed **8** columns, so the complete movement is preserved rather than the old
 2-frame approximation. Each sprite is magnified **2×** (nearest-neighbour) to
 better fill the 64×64 cell — the PMD overworld art is small pixel-art (~16–32px of
 content), so ~113/151 creatures fit fully and the larger ~38 are clipped a few px
-at the cell edge. A matching **data-driven** `_layout.json`
+at the cell edge. Each creature's frames are also cropped to their shared content
+bounding box before centering, which removes the large empty margin PMD reserves
+below the sprite so the creature is centered in the cell instead of floating high
+with a gap underneath (the walk bounce is preserved by using the union box over
+all frames). A matching **data-driven** `_layout.json`
 (`style: explicit`, listing every per-direction walk cell) is written next to the
 sheets, so no packing knowledge is hard-coded on either consumer — both read the
 walk cells straight from the JSON.
