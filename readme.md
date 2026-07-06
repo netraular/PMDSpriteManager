@@ -101,14 +101,18 @@ creature, an **8×4** grid of **64×64** cells with the creature centered. Each
 **row is a direction** (0=DOWN, 1=LEFT, 2=RIGHT, 3=UP) and each **column is a walk
 frame** — the creature's **full native walk cycle** (3–12 frames) resampled to the
 fixed **8** columns, so the complete movement is preserved rather than the old
-2-frame approximation. A matching **data-driven** `_layout.json`
+2-frame approximation. Each sprite is magnified **2×** (nearest-neighbour) to
+better fill the 64×64 cell — the PMD overworld art is small pixel-art (~16–32px of
+content), so ~113/151 creatures fit fully and the larger ~38 are clipped a few px
+at the cell edge. A matching **data-driven** `_layout.json`
 (`style: explicit`, listing every per-direction walk cell) is written next to the
 sheets, so no packing knowledge is hard-coded on either consumer — both read the
 walk cells straight from the JSON.
 
 > The column count is configurable (`--frames`, default **8** = the firmware
 > `PET_MAX_WALK_FRAMES`). Creatures with fewer native frames repeat within the
-> cycle; the handful with more are evenly subsampled.
+> cycle; the handful with more are evenly subsampled. The per-sprite magnification
+> is configurable too (`--scale`, default **2**).
 
 The web and firmware sheets are byte-identical; only the folder each project
 stores them in differs. The exporter therefore also stages two **copy-ready
@@ -129,7 +133,7 @@ firmware_output/
 
 -   **CLI**: `python Scripts/export_firmware_sheets.py --downloads pmd_projects/downloads --out firmware_output`
     -   `--target firmware` / `--target web` / `--target both` (default) / `--target none` (flat only)
-    -   `--frames 8` walk frames per direction / sheet columns · `--cell 64` cell size
+    -   `--frames 8` walk frames per direction / sheet columns · `--cell 64` cell size · `--scale 2` sprite magnification
 -   **GUI**: Batch tool → **"Firmware / Web Export (1 sheet 8×4)"** (writes `firmware_output/` next to `downloads/`, with the `firmware/` and `web/` subtrees).
 
 The conversion logic lives in `src/core/firmware_exporter.py` (Pillow-only, GUI-agnostic).

@@ -23,7 +23,7 @@ SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
 
-from core.firmware_exporter import export_all, DEFAULT_FRAMES  # noqa: E402
+from core.firmware_exporter import export_all, DEFAULT_FRAMES, DEFAULT_SCALE  # noqa: E402
 
 
 def main():
@@ -36,6 +36,10 @@ def main():
     ap.add_argument("--frames", type=int, default=DEFAULT_FRAMES,
                     help=f"Walk frames per direction / sheet columns (default {DEFAULT_FRAMES}; "
                          "8 == firmware PET_MAX_WALK_FRAMES)")
+    ap.add_argument("--scale", type=int, default=DEFAULT_SCALE,
+                    help=f"Integer magnification of each sprite within its cell "
+                         f"(default {DEFAULT_SCALE}; nearest-neighbour, content larger "
+                         "than the cell is clipped)")
     ap.add_argument("--target", choices=["firmware", "web", "both", "none"], default="both",
                     help="Stage copy-ready trees for the hibitomo web, the firmware, "
                          "both (default), or none (flat output only).")
@@ -55,8 +59,10 @@ def main():
     }[args.target]
 
     print(f"Exporting from {downloads}\n"
-          f"            to {out} (cell={args.cell}, frames={args.frames}, target={args.target})\n")
-    ok, fail = export_all(downloads, out, cell=args.cell, targets=targets, frames=args.frames)
+          f"            to {out} (cell={args.cell}, frames={args.frames}, "
+          f"scale={args.scale}x, target={args.target})\n")
+    ok, fail = export_all(downloads, out, cell=args.cell, targets=targets,
+                          frames=args.frames, scale=args.scale)
     return 0 if fail == 0 else 1
 
 

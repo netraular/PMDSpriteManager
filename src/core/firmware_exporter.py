@@ -48,6 +48,12 @@ PMD_ROW_LEFT = 6   # West
 OUT_ROW_SOURCE = [PMD_ROW_DOWN, PMD_ROW_LEFT, PMD_ROW_RIGHT, PMD_ROW_UP]
 
 DEFAULT_CELL = 64
+# Integer magnification applied to each native PMD frame before it is centered in
+# the output cell. The PMD overworld frames are small pixel-art (~16-32px of actual
+# content in a 64px cell), so they are scaled up (nearest-neighbour, pixel-perfect)
+# to fill the cell. Content that exceeds the cell after scaling is clipped at the
+# edges -- at 2x, 113/151 creatures fit fully and 38 are clipped (mostly 1-5px).
+DEFAULT_SCALE = 2
 # Walk frames per direction in the output sheet. 8 == firmware PET_MAX_WALK_FRAMES,
 # which captures the full native cycle of all but a handful of creatures losslessly
 # (the few with >8 native frames are evenly resampled down to 8).
@@ -163,15 +169,28 @@ def _parse_anim_frame_size(animdata_path, anim_name="Walk"):
     return None
 
 
-def _centered(frame, cell):
-    """Scale a frame to fit inside `cell`x`cell` (only if larger) and center it."""
+def _centered(frame, cell, scale=DEFAULT_SCALE):
+    """
+    Magnify a frame by `scale` (integer, nearest-neighbour for crisp pixel-art) and
+    center it in a `cell`x`cell` transparent canvas.
+
+    The PMD overworld frames are small, so they are scaled up to better fill the
+    cell. If the scaled frame is still larger than the cell in some dimension its
+    content is clipped at the edges (paste clips to the canvas bounds). A frame that
+    would exceed the cell even at scale 1 is first shrunk to fit before scaling, so
+    `scale` acts as a magnification of the fit-to-cell size.
+    """
     fw, fh = frame.size
-    scale = min(1.0, cell / max(fw, fh))
-    if scale < 1.0:
-        frame = frame.resize((max(1, int(fw * scale)), max(1, int(fh * scale))),
+    fit = min(1.0, cell / max(fw, fh))
+    if fit < 1.0:
+        frame = frame.resize((max(1, int(fw * fit)), max(1, int(fh * fit))),
                              Image.NEAREST)
         fw, fh = frame.size
+    if scale != 1:
+        frame = frame.resize((max(1, fw * scale), max(1, fh * scale)), Image.NEAREST)
+        fw, fh = frame.size
     canvas = Image.new("RGBA", (cell, cell), (0, 0, 0, 0))
+    # paste() clips to the canvas, so content larger than the cell is cropped.
     canvas.paste(frame, ((cell - fw) // 2, (cell - fh) // 2), frame)
     return canvas
 
@@ -193,14 +212,15 @@ def _resample_indices(native_count, target_count):
 
 
 def export_project(project_path, output_png, cell=DEFAULT_CELL,
-                   frames=DEFAULT_FRAMES):
+                   frames=DEFAULT_FRAMES, scale=DEFAULT_SCALE):
     """
     Convert one PMD character folder into an overworld spritesheet.
 
     Produces a `frames` x 4 grid (columns = full walk cycle resampled to `frames`,
-    rows = DOWN/LEFT/RIGHT/UP), each cell `cell`x`cell` with the creature centered.
-    `project_path` must contain an `Animations/` subfolder with `AnimData.xml`
-    and `Walk-Anim.png`. Returns the output path on success or raises ValueError.
+    rows = DOWN/LEFT/RIGHT/UP), each cell `cell`x`cell` with the creature centered
+    and magnified by `scale` (nearest-neighbour). `project_path` must contain an
+    `Animations/` subfolder with `AnimData.xml` and `Walk-Anim.png`. Returns the
+    output path on success or raises ValueError.
     """
     animations = os.path.join(project_path, "Animations")
     animdata = os.path.join(animations, ANIM_DATA_FILE)
@@ -233,7 +253,7 @@ def export_project(project_path, output_png, cell=DEFAULT_CELL,
     out = Image.new("RGBA", (cell * frames, cell * 4), (0, 0, 0, 0))
     for out_row, pmd_row in enumerate(OUT_ROW_SOURCE):
         for out_col, src_col in enumerate(src_cols):
-            frame = _centered(crop(pmd_row, src_col), cell)
+            frame = _centered(crop(pmd_row, src_col), cell, scale)
             out.paste(frame, (out_col * cell, out_row * cell), frame)
 
     os.makedirs(os.path.dirname(output_png), exist_ok=True)
@@ -276,16 +296,18 @@ def _stage_target(base_dir, sheets, target, cols, frames, log):
 
 
 def export_all(downloads_dir, output_dir, cell=DEFAULT_CELL, log=print,
-               targets=("firmware", "web"), frames=DEFAULT_FRAMES):
+               targets=("firmware", "web"), frames=DEFAULT_FRAMES,
+               scale=DEFAULT_SCALE):
     """
     Convert every project subfolder of `downloads_dir` into `output_dir`.
 
     Each creature becomes a `frames` x 4 sheet (full walk cycle resampled to
-    `frames` columns). The raw sheets + explicit `_layout.json` are written flat
-    into `output_dir`. For every name in `targets` (a subset of TARGET_RELPATHS,
-    e.g. "firmware", "web"), a copy-ready tree is additionally staged under
-    `<output_dir>/<target>/<repo-relative-path>/` so it can be dropped straight
-    into the corresponding repository. Pass `targets=()` for the flat output only.
+    `frames` columns), each cell magnified by `scale`. The raw sheets + explicit
+    `_layout.json` are written flat into `output_dir`. For every name in `targets`
+    (a subset of TARGET_RELPATHS, e.g. "firmware", "web"), a copy-ready tree is
+    additionally staged under `<output_dir>/<target>/<repo-relative-path>/` so it
+    can be dropped straight into the corresponding repository. Pass `targets=()`
+    for the flat output only.
 
     Returns (success_count, fail_count). `log` is called with progress strings.
     """
@@ -298,7 +320,7 @@ def export_all(downloads_dir, output_dir, cell=DEFAULT_CELL, log=print,
         project = os.path.join(downloads_dir, folder)
         out_png = os.path.join(output_dir, _output_name(folder) + ".png")
         try:
-            export_project(project, out_png, cell, frames)
+            export_project(project, out_png, cell, frames, scale)
             ok += 1
             generated.append(out_png)
             log(f"  OK  {folder} -> {os.path.basename(out_png)}")
