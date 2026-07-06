@@ -23,7 +23,9 @@ SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
 
-from core.firmware_exporter import export_all, DEFAULT_FRAMES, DEFAULT_SCALE  # noqa: E402
+from core.firmware_exporter import (  # noqa: E402
+    export_all, DEFAULT_FRAMES, DEFAULT_SCALE, DEFAULT_IDLE_FRAMES,
+)
 
 
 def main():
@@ -39,6 +41,10 @@ def main():
                     help=f"Integer magnification of each sprite (default {DEFAULT_SCALE}; "
                          "nearest-neighbour). The per-species cell size is the creature's "
                          "content bbox times this scale.")
+    ap.add_argument("--idle-frames", type=int, default=DEFAULT_IDLE_FRAMES,
+                    help=f"Idle (breathing) frames per direction, baked into rows 4..7 "
+                         f"(default {DEFAULT_IDLE_FRAMES}; resampled from the creature's "
+                         "native Idle animation).")
     ap.add_argument("--target", choices=["firmware", "web", "both", "none"], default="both",
                     help="Stage copy-ready trees for the hibitomo web, the firmware, "
                          "both (default), or none (flat output only).")
@@ -59,9 +65,10 @@ def main():
 
     print(f"Exporting from {downloads}\n"
           f"            to {out} (per-species cell, frames={args.frames}, "
-          f"scale={args.scale}x, target={args.target})\n")
+          f"scale={args.scale}x, idle_frames={args.idle_frames}, target={args.target})\n")
     ok, fail = export_all(downloads, out, targets=targets,
-                          frames=args.frames, scale=args.scale)
+                          frames=args.frames, scale=args.scale,
+                          idle_frames=args.idle_frames)
     return 0 if fail == 0 else 1
 
 

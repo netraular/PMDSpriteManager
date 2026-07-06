@@ -66,7 +66,27 @@ DEFAULT_SCALE = 2
 # (the few with >8 native frames are evenly resampled down to 8).
 DEFAULT_FRAMES = 8
 WALK_ANIM_FILE = "Walk-Anim.png"
+IDLE_ANIM_FILE = "Idle-Anim.png"
 ANIM_DATA_FILE = "AnimData.xml"
+
+# --- Animated idle -----------------------------------------------------------
+# The PMD `Idle` animation (a subtle breathing/blink loop) is baked into extra
+# sheet rows below the walk rows so the pet visibly "breathes" while standing
+# still instead of freezing on a single frame. Because every creature shares one
+# `_layout.json`, the idle is standardized to a fixed column count (resampled from
+# each creature's native idle cycle) laid out at rows 4..7 (one per direction):
+#
+#     row0..3: DOWN/LEFT/RIGHT/UP  walk  (cols 0..DEFAULT_FRAMES-1)
+#     row4..7: DOWN/LEFT/RIGHT/UP  idle  (cols 0..DEFAULT_IDLE_FRAMES-1)
+#
+# 8 == firmware PET_MAX_IDLE_FRAMES. Creatures with no `Idle-Anim.png` fall back
+# to a static idle (walk frame 0 replicated) so the grid stays uniform.
+DEFAULT_IDLE_FRAMES = 4
+# First sheet row of the idle block (idle rows = IDLE_ROW_BASE .. IDLE_ROW_BASE+3).
+IDLE_ROW_BASE = 4
+# Per-frame idle duration (ms) written to the layout; the device cycles the idle
+# cells at this rate. ~1.2s for a 4-frame loop reads as a calm breathing.
+DEFAULT_IDLE_FRAME_MS = 300
 
 # --- Data-driven layout descriptor -------------------------------------------
 # The `_layout.json` shipped next to the sheets is generated from the actual grid
@@ -76,28 +96,37 @@ ANIM_DATA_FILE = "AnimData.xml"
 DIR_ROWS = [("down", 0), ("left", 1), ("right", 2), ("up", 3)]
 
 
-def build_layout_dict(cols, rows=4, frames=DEFAULT_FRAMES):
+def build_layout_dict(cols, rows=8, frames=DEFAULT_FRAMES,
+                      idle_frames=DEFAULT_IDLE_FRAMES,
+                      idle_frame_ms=DEFAULT_IDLE_FRAME_MS):
     """
-    Build the explicit, data-driven layout descriptor for an
-    `cols` x `rows` sheet whose rows are DOWN/LEFT/RIGHT/UP and whose columns
-    are the `frames` walk frames of that direction (idle = column 0).
+    Build the explicit, data-driven layout descriptor for a `cols` x `rows` sheet
+    whose top rows (0..3) are the DOWN/LEFT/RIGHT/UP walk cycles and whose idle
+    rows (IDLE_ROW_BASE..IDLE_ROW_BASE+3) are the matching animated idle loops.
+    `idle_frames` >= 2 makes the device play an animated idle (breathing) instead
+    of a static standing pose.
     """
     walk = {name: [{"col": c, "row": row} for c in range(frames)]
             for name, row in DIR_ROWS}
-    idle = {name: [{"col": 0, "row": row}] for name, row in DIR_ROWS}
+    idle = {name: [{"col": c, "row": IDLE_ROW_BASE + row}
+                   for c in range(idle_frames)]
+            for name, row in DIR_ROWS}
     return {
         "style": "explicit",
         "cols": cols,
         "rows": rows,
         "walk_style": "stride",
+        "idle_frame_ms": idle_frame_ms,
         "walk": walk,
         "idle": idle,
         "description": (
-            "PMD Collab overworld, fully data-driven: one row per direction "
-            "(0=DOWN, 1=LEFT, 2=RIGHT, 3=UP), columns 0.."
-            f"{frames - 1} are the full walk cycle (resampled to {frames} frames); "
-            "idle = column 0. Continuous stride. Cell size derived from the sheet "
-            "(per-species: the creature's content bbox times the export scale)."
+            "PMD Collab overworld, fully data-driven: rows 0..3 are the walk "
+            "cycle (0=DOWN, 1=LEFT, 2=RIGHT, 3=UP), columns 0.."
+            f"{frames - 1} resampled to {frames} frames (continuous stride); rows "
+            f"{IDLE_ROW_BASE}..{IDLE_ROW_BASE + 3} are the matching animated idle "
+            f"(breathing) loop, columns 0..{idle_frames - 1} cycled every "
+            f"{idle_frame_ms}ms. Cell size derived from the sheet (per-species: "
+            "the creature's content bbox times the export scale)."
         ),
     }
 
@@ -127,6 +156,7 @@ def dumps_layout(layout):
         f'  "cols": {layout["cols"]},\n'
         f'  "rows": {layout["rows"]},\n'
         f'  "walk_style": {json.dumps(layout["walk_style"])},\n'
+        f'  "idle_frame_ms": {layout["idle_frame_ms"]},\n'
         f'  "walk": {dir_map(layout["walk"], 2)},\n'
         f'  "idle": {dir_map(layout["idle"], 2)},\n'
         f'  "description": {json.dumps(layout["description"])}\n'
@@ -229,18 +259,50 @@ def _resample_indices(native_count, target_count):
             for i in range(target_count)]
 
 
+def _paste_anchored(out, frame, cell_x, cell_y, cell_w, cell_h):
+    """
+    Paste `frame` into the cell at (cell_x, cell_y) of size (cell_w, cell_h),
+    horizontally centered and bottom-anchored. Anchoring the feet to the cell
+    bottom keeps the walk and idle blocks aligned even when their content boxes
+    differ in size (the idle animation often has a slightly different footprint
+    than walk), and matches how the firmware bottom-anchors the cell to the tile
+    floor.
+    """
+    fw, fh = frame.size
+    px = cell_x + (cell_w - fw) // 2
+    py = cell_y + (cell_h - fh)
+    out.paste(frame, (px, py), frame)
+
+
+def _crop_grid(sheet, fw, fh):
+    """Return a `crop(dir_row, frame_col)` closure over a PMD `-Anim.png` sheet."""
+    sw, sh = sheet.size
+    cols = max(1, sw // fw)
+    rows = max(1, sh // fh)
+
+    def crop(dir_row, frame_col):
+        r = min(dir_row, rows - 1)
+        c = min(frame_col, cols - 1)
+        return sheet.crop((c * fw, r * fh, (c + 1) * fw, (r + 1) * fh))
+
+    return crop, cols, rows
+
+
 def export_project(project_path, output_png, frames=DEFAULT_FRAMES,
-                   scale=DEFAULT_SCALE):
+                   scale=DEFAULT_SCALE, idle_frames=DEFAULT_IDLE_FRAMES):
     """
     Convert one PMD character folder into an overworld spritesheet.
 
-    Produces a `frames` x 4 grid (columns = full walk cycle resampled to `frames`,
-    rows = DOWN/LEFT/RIGHT/UP). The CELL SIZE IS PER-SPECIES: it equals the
-    creature's content bounding box (union over all frames) magnified by `scale`
-    (nearest-neighbour), so the sheet is exactly `cell_w*frames` x `cell_h*4` with no
-    dead margin and no clipping. `project_path` must contain an `Animations/`
-    subfolder with `AnimData.xml` and `Walk-Anim.png`. Returns the output path on
-    success or raises ValueError.
+    Produces a grid of `max(frames, idle_frames)` columns x 8 rows: rows 0..3 are
+    the DOWN/LEFT/RIGHT/UP walk cycles (resampled to `frames` columns) and rows
+    4..7 are the matching animated idle loops (resampled to `idle_frames` columns
+    from the creature's native `Idle` animation, or a static walk-frame-0 fallback
+    when the creature ships no `Idle-Anim.png`). The CELL SIZE IS PER-SPECIES: it
+    equals the union content bounding box over every placed walk AND idle frame,
+    magnified by `scale` (nearest-neighbour), so neither block is clipped and both
+    share one cell size. `project_path` must contain an `Animations/` subfolder
+    with `AnimData.xml` and `Walk-Anim.png`. Returns the output path on success or
+    raises ValueError.
     """
     animations = os.path.join(project_path, "Animations")
     animdata = os.path.join(animations, ANIM_DATA_FILE)
@@ -254,43 +316,63 @@ def export_project(project_path, output_png, frames=DEFAULT_FRAMES,
     size = _parse_anim_frame_size(animdata, "Walk")
     if not size:
         raise ValueError("Walk frame size not found in AnimData.xml")
-    fw, fh = size
+    wfw, wfh = size
+    walk_img = Image.open(walk_sheet).convert("RGBA")
+    walk_crop, walk_cols, _ = _crop_grid(walk_img, wfw, wfh)
 
-    sheet = Image.open(walk_sheet).convert("RGBA")
-    sw, sh = sheet.size
-    cols = max(1, sw // fw)
-    rows = max(1, sh // fh)
+    # Resample this creature's native walk cycle (walk_cols frames) to `frames`.
+    src_cols = _resample_indices(walk_cols, frames)
 
-    def crop(dir_row, frame_col):
-        r = min(dir_row, rows - 1)
-        c = min(frame_col, cols - 1)
-        box = (c * fw, r * fh, (c + 1) * fw, (r + 1) * fh)
-        return sheet.crop(box)
+    # (out_row, out_col, native_frame, crop_box) tuples for every placed cell. The
+    # crop box (per animation) is applied later so the walk and idle blocks are
+    # each cropped to their own union footprint, then bottom-anchored into a shared
+    # per-species cell.
+    walk_placed = [(out_row, out_col, walk_crop(pmd_row, src_col))
+                   for out_row, pmd_row in enumerate(OUT_ROW_SOURCE)
+                   for out_col, src_col in enumerate(src_cols)]
+    walk_box = _union_bbox(fr for _, _, fr in walk_placed)
 
-    # Resample this creature's native walk cycle (cols frames) to `frames`.
-    src_cols = _resample_indices(cols, frames)
-
-    # Gather every frame we will actually place, then crop them all to a single
-    # shared content bbox. This strips the large empty margin PMD reserves around
-    # each sprite so the per-species cell is exactly the creature's real footprint.
-    # Using the union over all frames keeps the walk bounce and left/right lean
-    # intact (every frame is cropped to the same box, so relative motion is kept).
-    placed = [(out_row, out_col, crop(pmd_row, src_col))
-              for out_row, pmd_row in enumerate(OUT_ROW_SOURCE)
-              for out_col, src_col in enumerate(src_cols)]
-    box = _union_bbox(fr for _, _, fr in placed)
-
-    # Per-species cell size = content bbox (or the native frame if fully blank) * scale.
-    if box is not None:
-        cell_w = (box[2] - box[0]) * scale
-        cell_h = (box[3] - box[1]) * scale
+    # Idle block (rows IDLE_ROW_BASE..+3). Use the creature's native Idle
+    # animation when present; otherwise fall back to a static idle (walk frame 0)
+    # so every creature keeps the same 8-row grid.
+    idle_path = os.path.join(animations, IDLE_ANIM_FILE)
+    idle_size = _parse_anim_frame_size(animdata, "Idle") if os.path.exists(idle_path) else None
+    if idle_size:
+        ifw, ifh = idle_size
+        idle_img = Image.open(idle_path).convert("RGBA")
+        idle_crop, idle_cols, _ = _crop_grid(idle_img, ifw, ifh)
+        idle_src = _resample_indices(idle_cols, idle_frames)
+        idle_placed = [(IDLE_ROW_BASE + out_row, out_col, idle_crop(pmd_row, isrc))
+                       for out_row, pmd_row in enumerate(OUT_ROW_SOURCE)
+                       for out_col, isrc in enumerate(idle_src)]
     else:
-        cell_w, cell_h = fw * scale, fh * scale
+        # Static fallback: replicate walk frame 0 across the idle columns.
+        idle_placed = [(IDLE_ROW_BASE + out_row, out_col, walk_crop(pmd_row, 0))
+                       for out_row, pmd_row in enumerate(OUT_ROW_SOURCE)
+                       for out_col in range(idle_frames)]
+    idle_box = _union_bbox(fr for _, _, fr in idle_placed)
 
-    out = Image.new("RGBA", (cell_w * frames, cell_h * 4), (0, 0, 0, 0))
-    for out_row, out_col, raw in placed:
-        frame = _prepare_frame(raw, box, scale)
-        out.paste(frame, (out_col * cell_w, out_row * cell_h), frame)
+    # Per-species cell size = union of the walk and idle content boxes * scale.
+    def _dims(box, fallback_w, fallback_h):
+        if box is None:
+            return fallback_w, fallback_h
+        return box[2] - box[0], box[3] - box[1]
+
+    ww, wh = _dims(walk_box, wfw, wfh)
+    iw, ih = _dims(idle_box, 0, 0)
+    cell_w = max(ww, iw) * scale
+    cell_h = max(wh, ih) * scale
+
+    out_cols = max(frames, idle_frames)
+    out_rows = IDLE_ROW_BASE + 4
+    out = Image.new("RGBA", (cell_w * out_cols, cell_h * out_rows), (0, 0, 0, 0))
+
+    for out_row, out_col, raw in walk_placed:
+        frame = _prepare_frame(raw, walk_box, scale)
+        _paste_anchored(out, frame, out_col * cell_w, out_row * cell_h, cell_w, cell_h)
+    for out_row, out_col, raw in idle_placed:
+        frame = _prepare_frame(raw, idle_box, scale)
+        _paste_anchored(out, frame, out_col * cell_w, out_row * cell_h, cell_w, cell_h)
 
     os.makedirs(os.path.dirname(output_png), exist_ok=True)
     out.save(output_png)
@@ -306,14 +388,16 @@ def _output_name(folder_name):
         return folder_name.replace(" ", "_")
 
 
-def _write_layout(folder, cols, frames=DEFAULT_FRAMES):
+def _write_layout(folder, cols, frames=DEFAULT_FRAMES,
+                  idle_frames=DEFAULT_IDLE_FRAMES):
     """Write the explicit `_layout.json` descriptor into `folder`."""
-    layout = build_layout_dict(cols, rows=4, frames=frames)
+    layout = build_layout_dict(cols, rows=IDLE_ROW_BASE + 4, frames=frames,
+                               idle_frames=idle_frames)
     with open(os.path.join(folder, "_layout.json"), "w", encoding="utf-8") as f:
         f.write(dumps_layout(layout))
 
 
-def _stage_target(base_dir, sheets, target, cols, frames, log):
+def _stage_target(base_dir, sheets, target, cols, frames, idle_frames, log):
     """
     Mirror the generated sheets + `_layout.json` under `<base_dir>/<target>/<relpath>`
     so the tree can be copied straight into the matching repository root.
@@ -326,14 +410,14 @@ def _stage_target(base_dir, sheets, target, cols, frames, log):
     os.makedirs(dest, exist_ok=True)
     for png in sheets:
         shutil.copy2(png, os.path.join(dest, os.path.basename(png)))
-    _write_layout(dest, cols, frames)
+    _write_layout(dest, cols, frames, idle_frames)
     log(f"  target '{target}' -> {os.path.join(base_dir, target)}"
         f"  (copy its contents into the repo root: {relpath}/)")
 
 
 def export_all(downloads_dir, output_dir, log=print,
                targets=("firmware", "web"), frames=DEFAULT_FRAMES,
-               scale=DEFAULT_SCALE):
+               scale=DEFAULT_SCALE, idle_frames=DEFAULT_IDLE_FRAMES):
     """
     Convert every project subfolder of `downloads_dir` into `output_dir`.
 
@@ -356,7 +440,7 @@ def export_all(downloads_dir, output_dir, log=print,
         project = os.path.join(downloads_dir, folder)
         out_png = os.path.join(output_dir, _output_name(folder) + ".png")
         try:
-            export_project(project, out_png, frames, scale)
+            export_project(project, out_png, frames, scale, idle_frames)
             ok += 1
             generated.append(out_png)
             log(f"  OK  {folder} -> {os.path.basename(out_png)}")
@@ -365,13 +449,13 @@ def export_all(downloads_dir, output_dir, log=print,
             log(f"  SKIP {folder}: {e}")
 
     # Write the data-driven layout descriptor alongside the flat sheets.
-    _write_layout(output_dir, frames, frames)
+    _write_layout(output_dir, frames, frames, idle_frames)
 
     # Stage copy-ready trees for each requested target (web / firmware).
     if generated and targets:
         log("")
         for target in targets:
-            _stage_target(output_dir, generated, target, frames, frames, log)
+            _stage_target(output_dir, generated, target, frames, frames, idle_frames, log)
 
     log(f"\nDone. Success: {ok}, Failed: {fail}")
     return ok, fail
