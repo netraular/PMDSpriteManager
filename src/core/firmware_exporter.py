@@ -57,10 +57,10 @@ OUT_ROW_SOURCE = [PMD_ROW_DOWN, PMD_ROW_LEFT, PMD_ROW_RIGHT, PMD_ROW_UP]
 # so no creature is ever clipped and small/large creatures keep their natural
 # relative size. Both consumers (web + firmware) derive the cell pixel size from the
 # sheet dimensions / grid, so a per-creature (and non-square) cell size just works;
-# the firmware bottom-anchors the cell to the tile floor. Kept at 1 (native size):
-# the sheets ship at the creatures' true pixel size and each consumer scales as
-# needed for its own display, so no zoom is baked into the assets.
-DEFAULT_SCALE = 1
+# the firmware bottom-anchors the cell to the tile floor. The 2x magnification is
+# baked into the exported PNGs on purpose: web and firmware then render them 1:1
+# (no software zoom), so both display the sprites at the exact same size.
+DEFAULT_SCALE = 2
 # Walk frames per direction in the output sheet. 8 == firmware PET_MAX_WALK_FRAMES,
 # which captures the full native cycle of all but a handful of creatures losslessly
 # (the few with >8 native frames are evenly resampled down to 8).
