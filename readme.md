@@ -92,16 +92,37 @@ replicates the in-app "Prepare Data" + "Download Sprites" steps and produces a
 python Scripts/download_pmd_sprites.py --start 1 --end 151 --out pmd_projects
 ```
 
-### Firmware Export (lv_port_pc_vscode overworld format)
+### Firmware / Web Export (hibitomo overworld format)
 
-Converts each character's PMD **Walk** animation into the simple single-sheet
-format used by the `lv_port_pc_vscode` firmware (`graphics/species/pokemon`):
-one **128×256** PNG per creature, a **2×4** grid of **64×64** cells with the
-creature centered, holding DOWN/UP/LEFT/RIGHT × 2 walk frames (frame 0 + middle
-frame). A matching `_layout.json` (`style: pokemon`) is written next to the sheets.
+Converts each character's PMD **Walk** animation into the single-sheet overworld
+format shared by **both** the hibitomo web content-editor and the
+`lv_port_pc_vscode` firmware (`graphics/species/pokemon`): one **128×256** PNG per
+creature, a **2×4** grid of **64×64** cells with the creature centered, holding
+DOWN/UP/LEFT/RIGHT × 2 walk frames (frame 0 + middle frame). A matching
+**data-driven** `_layout.json` (`style: explicit`, describing the per-direction
+cells) is written next to the sheets — identical to the descriptor both repos
+ship, so no packing knowledge is hard-coded on either consumer.
+
+The web and firmware sheets are byte-identical; only the folder each project
+stores them in differs. The exporter therefore also stages two **copy-ready
+subtrees** so you can drop them straight into the right repo root:
+
+```
+firmware_output/
+├── 001.png … 151.png        # flat sheets + _layout.json (sample)
+├── _layout.json
+├── firmware/shared/services/pet/assets/graphics/species/pokemon/…   # -> lv_port_pc_vscode
+└── web/local-content/projects/default/shared/services/pet/assets/graphics/species/pokemon/…  # -> hibitomo-content-editor
+```
+
+> **Art note:** these sheets use **PMD Collab** source art, which is a different
+> style from the HeartGold overworld rips currently shipped in the repos. Copying
+> them in replaces the creature art (in the correct packing) — that is the intended
+> use of this exporter, not a bug.
 
 -   **CLI**: `python Scripts/export_firmware_sheets.py --downloads pmd_projects/downloads --out firmware_output`
--   **GUI**: Batch tool → **"Firmware Export (1 sheet 2x4)"** (writes `firmware_output/` next to `downloads/`).
+    -   `--target firmware` / `--target web` / `--target both` (default) / `--target none` (flat only)
+-   **GUI**: Batch tool → **"Firmware / Web Export (1 sheet 2x4)"** (writes `firmware_output/` next to `downloads/`, with the `firmware/` and `web/` subtrees).
 
 The conversion logic lives in `src/core/firmware_exporter.py` (Pillow-only, GUI-agnostic).
 

@@ -21,6 +21,7 @@ reused from a CLI script and from the Tkinter app.
 """
 
 import os
+import shutil
 import xml.etree.ElementTree as ET
 
 from PIL import Image
@@ -36,6 +37,41 @@ PMD_ROW_LEFT = 6   # West
 DEFAULT_CELL = 64
 WALK_ANIM_FILE = "Walk-Anim.png"
 ANIM_DATA_FILE = "AnimData.xml"
+
+# The data-driven layout descriptor shipped next to the sheets. This is the
+# single source of truth and is byte-identical to the `_layout.json` that both
+# the hibitomo web content-editor and the lv_port_pc_vscode firmware ship in
+# their `graphics/species/pokemon/` folders (style: "explicit").
+EXPLICIT_LAYOUT_JSON = """{
+  "style": "explicit",
+  "cols": 2,
+  "rows": 4,
+  "walk_style": "stride",
+  "walk": {
+    "up":    [{ "col": 0, "row": 0 }, { "col": 0, "row": 1 }],
+    "down":  [{ "col": 0, "row": 2 }, { "col": 0, "row": 3 }],
+    "left":  [{ "col": 1, "row": 0 }, { "col": 1, "row": 1 }],
+    "right": [{ "col": 1, "row": 2 }, { "col": 1, "row": 3 }]
+  },
+  "idle": {
+    "up":    [{ "col": 0, "row": 0 }],
+    "down":  [{ "col": 0, "row": 2 }],
+    "left":  [{ "col": 1, "row": 0 }],
+    "right": [{ "col": 1, "row": 2 }]
+  },
+  "description": "HeartGold overworld, fully data-driven: 2 walk frames per direction stacked vertically in a 2x2 sub-block. col0 = UP (rows 0-1) / DOWN (rows 2-3); col1 = LEFT (rows 0-1) / RIGHT (rows 2-3). Cell size derived from the sheet (64x64 in the shipped 128x256 sheets)."
+}
+"""
+
+# Repo-relative destination for each generation target. The exporter mirrors this
+# path under `<output>/<target>/` so the resulting tree can be copied straight
+# into the corresponding repository root. Both targets receive identical assets
+# (the web and firmware pokemon sheets are byte-identical); only the folder the
+# sheets live in differs between the two projects.
+TARGET_RELPATHS = {
+    "firmware": "shared/services/pet/assets/graphics/species/pokemon",
+    "web": "local-content/projects/default/shared/services/pet/assets/graphics/species/pokemon",
+}
 
 
 def _parse_anim_frame_size(animdata_path, anim_name="Walk"):
@@ -152,9 +188,40 @@ def _output_name(folder_name):
         return folder_name.replace(" ", "_")
 
 
-def export_all(downloads_dir, output_dir, cell=DEFAULT_CELL, log=print):
+def _write_layout(folder):
+    """Write the explicit `_layout.json` descriptor into `folder`."""
+    with open(os.path.join(folder, "_layout.json"), "w", encoding="utf-8") as f:
+        f.write(EXPLICIT_LAYOUT_JSON)
+
+
+def _stage_target(base_dir, sheets, target, log):
+    """
+    Mirror the generated sheets + `_layout.json` under `<base_dir>/<target>/<relpath>`
+    so the tree can be copied straight into the matching repository root.
+    """
+    relpath = TARGET_RELPATHS.get(target)
+    if not relpath:
+        log(f"  WARN unknown target '{target}', skipped")
+        return
+    dest = os.path.join(base_dir, target, *relpath.split("/"))
+    os.makedirs(dest, exist_ok=True)
+    for png in sheets:
+        shutil.copy2(png, os.path.join(dest, os.path.basename(png)))
+    _write_layout(dest)
+    log(f"  target '{target}' -> {os.path.join(base_dir, target)}"
+        f"  (copy its contents into the repo root: {relpath}/)")
+
+
+def export_all(downloads_dir, output_dir, cell=DEFAULT_CELL, log=print,
+               targets=("firmware", "web")):
     """
     Convert every project subfolder of `downloads_dir` into `output_dir`.
+
+    The raw sheets + explicit `_layout.json` are written flat into `output_dir`.
+    For every name in `targets` (a subset of TARGET_RELPATHS, e.g. "firmware",
+    "web"), a copy-ready tree is additionally staged under
+    `<output_dir>/<target>/<repo-relative-path>/` so it can be dropped straight
+    into the corresponding repository. Pass `targets=()` for the flat output only.
 
     Returns (success_count, fail_count). `log` is called with progress strings.
     """
@@ -162,30 +229,27 @@ def export_all(downloads_dir, output_dir, cell=DEFAULT_CELL, log=print):
     ok = fail = 0
     folders = sorted(d for d in os.listdir(downloads_dir)
                      if os.path.isdir(os.path.join(downloads_dir, d)))
+    generated = []
     for folder in folders:
         project = os.path.join(downloads_dir, folder)
         out_png = os.path.join(output_dir, _output_name(folder) + ".png")
         try:
             export_project(project, out_png, cell)
             ok += 1
+            generated.append(out_png)
             log(f"  OK  {folder} -> {os.path.basename(out_png)}")
         except Exception as e:
             fail += 1
             log(f"  SKIP {folder}: {e}")
 
-    # Write the firmware layout descriptor alongside the sheets.
-    layout_path = os.path.join(output_dir, "_layout.json")
-    if not os.path.exists(layout_path):
-        with open(layout_path, "w", encoding="utf-8") as f:
-            f.write(
-                '{\n'
-                '  "style": "pokemon",\n'
-                '  "cols": 2,\n'
-                '  "rows": 4,\n'
-                '  "description": "HeartGold overworld layout: 2 frames per direction '
-                'in a 2x2 sub-block. col0=UP/DOWN, col1=LEFT/RIGHT; rows 0-1 top pair, '
-                'rows 2-3 bottom pair."\n'
-                '}\n'
-            )
+    # Write the data-driven layout descriptor alongside the flat sheets.
+    _write_layout(output_dir)
+
+    # Stage copy-ready trees for each requested target (web / firmware).
+    if generated and targets:
+        log("")
+        for target in targets:
+            _stage_target(output_dir, generated, target, log)
+
     log(f"\nDone. Success: {ok}, Failed: {fail}")
     return ok, fail

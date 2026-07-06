@@ -9,3 +9,8 @@ __pycache__
 # Bulk-downloaded PMD assets (reproducible via Scripts/download_pmd_sprites.py)
 pmd_projects/
 test_assets/
+
+# Copy-ready staging subtrees produced by the Firmware/Web export
+# (regenerable; only the flat firmware_output/ sheets are tracked as a sample)
+firmware_output/firmware/
+firmware_output/web/

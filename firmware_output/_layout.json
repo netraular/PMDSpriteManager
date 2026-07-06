@@ -1,6 +1,19 @@
 {
-  "style": "pokemon",
+  "style": "explicit",
   "cols": 2,
   "rows": 4,
-  "description": "HeartGold overworld layout: 2 frames per direction in a 2x2 sub-block. col0=UP/DOWN, col1=LEFT/RIGHT; rows 0-1 top pair, rows 2-3 bottom pair."
+  "walk_style": "stride",
+  "walk": {
+    "up":    [{ "col": 0, "row": 0 }, { "col": 0, "row": 1 }],
+    "down":  [{ "col": 0, "row": 2 }, { "col": 0, "row": 3 }],
+    "left":  [{ "col": 1, "row": 0 }, { "col": 1, "row": 1 }],
+    "right": [{ "col": 1, "row": 2 }, { "col": 1, "row": 3 }]
+  },
+  "idle": {
+    "up":    [{ "col": 0, "row": 0 }],
+    "down":  [{ "col": 0, "row": 2 }],
+    "left":  [{ "col": 1, "row": 0 }],
+    "right": [{ "col": 1, "row": 2 }]
+  },
+  "description": "HeartGold overworld, fully data-driven: 2 walk frames per direction stacked vertically in a 2x2 sub-block. col0 = UP (rows 0-1) / DOWN (rows 2-3); col1 = LEFT (rows 0-1) / RIGHT (rows 2-3). Cell size derived from the sheet (64x64 in the shipped 128x256 sheets)."
 }

@@ -9,6 +9,9 @@ Usage:
     python Scripts/export_firmware_sheets.py
     python Scripts/export_firmware_sheets.py --downloads pmd_projects/downloads --out firmware_output
     python Scripts/export_firmware_sheets.py --cell 64
+    python Scripts/export_firmware_sheets.py --target firmware
+    python Scripts/export_firmware_sheets.py --target web
+    python Scripts/export_firmware_sheets.py --target none
 """
 
 import argparse
@@ -23,12 +26,15 @@ from core.firmware_exporter import export_all  # noqa: E402
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Export PMD sprites to firmware 2x4 format.")
+    ap = argparse.ArgumentParser(description="Export PMD sprites to firmware/web 2x4 format.")
     ap.add_argument("--downloads", default="pmd_projects/downloads",
                     help="Folder with project subfolders (default pmd_projects/downloads)")
     ap.add_argument("--out", default="firmware_output",
                     help="Output folder for converted sheets (default firmware_output)")
     ap.add_argument("--cell", type=int, default=64, help="Cell size in px (default 64)")
+    ap.add_argument("--target", choices=["firmware", "web", "both", "none"], default="both",
+                    help="Stage copy-ready trees for the hibitomo web, the firmware, "
+                         "both (default), or none (flat output only).")
     args = ap.parse_args()
 
     downloads = os.path.abspath(args.downloads)
@@ -37,8 +43,16 @@ def main():
         print(f"ERROR: downloads folder not found: {downloads}")
         return 1
 
-    print(f"Exporting from {downloads}\n            to {out} (cell={args.cell})\n")
-    ok, fail = export_all(downloads, out, cell=args.cell)
+    targets = {
+        "firmware": ("firmware",),
+        "web": ("web",),
+        "both": ("firmware", "web"),
+        "none": (),
+    }[args.target]
+
+    print(f"Exporting from {downloads}\n"
+          f"            to {out} (cell={args.cell}, target={args.target})\n")
+    ok, fail = export_all(downloads, out, cell=args.cell, targets=targets)
     return 0 if fail == 0 else 1
 
 

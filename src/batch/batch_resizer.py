@@ -117,7 +117,7 @@ class BatchResizer:
         Button(content_frame, text="4- Export Final Assets (1x + 2x + Shadows)", command=self.show_export_assets_combined_view, font=('Arial', 12), width=40).pack(pady=10)
         Button(content_frame, text="5- Preview Optimized Animations", command=self.show_optimized_animation_previewer, font=('Arial', 12), width=40).pack(pady=10)
         Button(content_frame, text="ESP32 Export", command=self.show_esp32_export_view, font=('Arial', 12), width=40).pack(pady=10)
-        Button(content_frame, text="Firmware Export (1 sheet 2x4)", command=self.start_firmware_export, font=('Arial', 12), width=40).pack(pady=10)
+        Button(content_frame, text="Firmware / Web Export (1 sheet 2x4)", command=self.start_firmware_export, font=('Arial', 12), width=40).pack(pady=10)
 
     # --- Task View Setup Methods (using the generic framework) ---
 
@@ -149,14 +149,17 @@ class BatchResizer:
         )
 
     def start_firmware_export(self):
-        description = ("Converts each character's PMD 'Walk' animation into the lv_port_pc_vscode\n"
-                       "firmware overworld format: one 128x256 spritesheet per creature (2x4 grid,\n"
-                       "64x64 cells, DOWN/UP/LEFT/RIGHT x 2 walk frames). Output goes to a new\n"
-                       "'firmware_output' folder next to 'downloads'.")
+        description = ("Converts each character's PMD 'Walk' animation into the hibitomo\n"
+                       "overworld format used by BOTH the web content-editor and the\n"
+                       "lv_port_pc_vscode firmware: one 128x256 spritesheet per creature\n"
+                       "(2x4 grid, 64x64 cells, DOWN/UP/LEFT/RIGHT x 2 walk frames) plus a\n"
+                       "data-driven '_layout.json' (style: explicit).\n\n"
+                       "Output goes to a 'firmware_output' folder next to 'downloads', with\n"
+                       "copy-ready 'firmware/' and 'web/' subtrees to drop into each repo.")
         self._setup_task_view(
-            title="Firmware Export (1 sheet 2x4)",
+            title="Firmware / Web Export (1 sheet 2x4)",
             description=description,
-            start_button_text="Start Firmware Export",
+            start_button_text="Start Export",
             worker_function=self._firmware_export_worker
         )
 
@@ -167,8 +170,10 @@ class BatchResizer:
                 q.put("DONE:ERROR")
                 return
             output_dir = os.path.join(self.parent_folder, "firmware_output")
-            q.put(f"Exporting firmware sheets -> {output_dir}\n")
-            ok, fail = firmware_export_all(self.downloads_folder, output_dir, log=q.put)
+            q.put(f"Exporting overworld sheets -> {output_dir}\n")
+            ok, fail = firmware_export_all(
+                self.downloads_folder, output_dir, log=q.put,
+                targets=("firmware", "web"))
             q.put(f"DONE:{ok}:{fail}")
         except Exception as e:
             q.put(f"ERROR: {e}")
