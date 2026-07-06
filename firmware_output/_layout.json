@@ -1,19 +1,19 @@
 {
   "style": "explicit",
-  "cols": 2,
+  "cols": 8,
   "rows": 4,
   "walk_style": "stride",
   "walk": {
-    "up":    [{ "col": 0, "row": 0 }, { "col": 0, "row": 1 }],
-    "down":  [{ "col": 0, "row": 2 }, { "col": 0, "row": 3 }],
-    "left":  [{ "col": 1, "row": 0 }, { "col": 1, "row": 1 }],
-    "right": [{ "col": 1, "row": 2 }, { "col": 1, "row": 3 }]
+    "down": [{ "col": 0, "row": 0 }, { "col": 1, "row": 0 }, { "col": 2, "row": 0 }, { "col": 3, "row": 0 }, { "col": 4, "row": 0 }, { "col": 5, "row": 0 }, { "col": 6, "row": 0 }, { "col": 7, "row": 0 }],
+    "left": [{ "col": 0, "row": 1 }, { "col": 1, "row": 1 }, { "col": 2, "row": 1 }, { "col": 3, "row": 1 }, { "col": 4, "row": 1 }, { "col": 5, "row": 1 }, { "col": 6, "row": 1 }, { "col": 7, "row": 1 }],
+    "right": [{ "col": 0, "row": 2 }, { "col": 1, "row": 2 }, { "col": 2, "row": 2 }, { "col": 3, "row": 2 }, { "col": 4, "row": 2 }, { "col": 5, "row": 2 }, { "col": 6, "row": 2 }, { "col": 7, "row": 2 }],
+    "up": [{ "col": 0, "row": 3 }, { "col": 1, "row": 3 }, { "col": 2, "row": 3 }, { "col": 3, "row": 3 }, { "col": 4, "row": 3 }, { "col": 5, "row": 3 }, { "col": 6, "row": 3 }, { "col": 7, "row": 3 }]
   },
   "idle": {
-    "up":    [{ "col": 0, "row": 0 }],
-    "down":  [{ "col": 0, "row": 2 }],
-    "left":  [{ "col": 1, "row": 0 }],
-    "right": [{ "col": 1, "row": 2 }]
+    "down": [{ "col": 0, "row": 0 }],
+    "left": [{ "col": 0, "row": 1 }],
+    "right": [{ "col": 0, "row": 2 }],
+    "up": [{ "col": 0, "row": 3 }]
   },
-  "description": "HeartGold overworld, fully data-driven: 2 walk frames per direction stacked vertically in a 2x2 sub-block. col0 = UP (rows 0-1) / DOWN (rows 2-3); col1 = LEFT (rows 0-1) / RIGHT (rows 2-3). Cell size derived from the sheet (64x64 in the shipped 128x256 sheets)."
+  "description": "PMD Collab overworld, fully data-driven: one row per direction (0=DOWN, 1=LEFT, 2=RIGHT, 3=UP), columns 0..7 are the full walk cycle (resampled to 8 frames); idle = column 0. Continuous stride. Cell size derived from the sheet (64x64 in the shipped 512x256 sheets)."
 }

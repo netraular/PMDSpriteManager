@@ -96,12 +96,19 @@ python Scripts/download_pmd_sprites.py --start 1 --end 151 --out pmd_projects
 
 Converts each character's PMD **Walk** animation into the single-sheet overworld
 format shared by **both** the hibitomo web content-editor and the
-`lv_port_pc_vscode` firmware (`graphics/species/pokemon`): one **128×256** PNG per
-creature, a **2×4** grid of **64×64** cells with the creature centered, holding
-DOWN/UP/LEFT/RIGHT × 2 walk frames (frame 0 + middle frame). A matching
-**data-driven** `_layout.json` (`style: explicit`, describing the per-direction
-cells) is written next to the sheets — identical to the descriptor both repos
-ship, so no packing knowledge is hard-coded on either consumer.
+`lv_port_pc_vscode` firmware (`graphics/species/pokemon`): one **512×256** PNG per
+creature, an **8×4** grid of **64×64** cells with the creature centered. Each
+**row is a direction** (0=DOWN, 1=LEFT, 2=RIGHT, 3=UP) and each **column is a walk
+frame** — the creature's **full native walk cycle** (3–12 frames) resampled to the
+fixed **8** columns, so the complete movement is preserved rather than the old
+2-frame approximation. A matching **data-driven** `_layout.json`
+(`style: explicit`, listing every per-direction walk cell) is written next to the
+sheets, so no packing knowledge is hard-coded on either consumer — both read the
+walk cells straight from the JSON.
+
+> The column count is configurable (`--frames`, default **8** = the firmware
+> `PET_MAX_WALK_FRAMES`). Creatures with fewer native frames repeat within the
+> cycle; the handful with more are evenly subsampled.
 
 The web and firmware sheets are byte-identical; only the folder each project
 stores them in differs. The exporter therefore also stages two **copy-ready
@@ -122,7 +129,8 @@ firmware_output/
 
 -   **CLI**: `python Scripts/export_firmware_sheets.py --downloads pmd_projects/downloads --out firmware_output`
     -   `--target firmware` / `--target web` / `--target both` (default) / `--target none` (flat only)
--   **GUI**: Batch tool → **"Firmware / Web Export (1 sheet 2x4)"** (writes `firmware_output/` next to `downloads/`, with the `firmware/` and `web/` subtrees).
+    -   `--frames 8` walk frames per direction / sheet columns · `--cell 64` cell size
+-   **GUI**: Batch tool → **"Firmware / Web Export (1 sheet 8×4)"** (writes `firmware_output/` next to `downloads/`, with the `firmware/` and `web/` subtrees).
 
 The conversion logic lives in `src/core/firmware_exporter.py` (Pillow-only, GUI-agnostic).
 

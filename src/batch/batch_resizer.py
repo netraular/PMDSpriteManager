@@ -117,7 +117,7 @@ class BatchResizer:
         Button(content_frame, text="4- Export Final Assets (1x + 2x + Shadows)", command=self.show_export_assets_combined_view, font=('Arial', 12), width=40).pack(pady=10)
         Button(content_frame, text="5- Preview Optimized Animations", command=self.show_optimized_animation_previewer, font=('Arial', 12), width=40).pack(pady=10)
         Button(content_frame, text="ESP32 Export", command=self.show_esp32_export_view, font=('Arial', 12), width=40).pack(pady=10)
-        Button(content_frame, text="Firmware / Web Export (1 sheet 2x4)", command=self.start_firmware_export, font=('Arial', 12), width=40).pack(pady=10)
+        Button(content_frame, text="Firmware / Web Export (1 sheet 8x4)", command=self.start_firmware_export, font=('Arial', 12), width=40).pack(pady=10)
 
     # --- Task View Setup Methods (using the generic framework) ---
 
@@ -151,13 +151,14 @@ class BatchResizer:
     def start_firmware_export(self):
         description = ("Converts each character's PMD 'Walk' animation into the hibitomo\n"
                        "overworld format used by BOTH the web content-editor and the\n"
-                       "lv_port_pc_vscode firmware: one 128x256 spritesheet per creature\n"
-                       "(2x4 grid, 64x64 cells, DOWN/UP/LEFT/RIGHT x 2 walk frames) plus a\n"
-                       "data-driven '_layout.json' (style: explicit).\n\n"
+                       "lv_port_pc_vscode firmware: one 512x256 spritesheet per creature\n"
+                       "(8x4 grid, 64x64 cells; each row is a direction DOWN/LEFT/RIGHT/UP\n"
+                       "and each column a walk frame - the full native walk cycle resampled\n"
+                       "to 8 frames) plus a data-driven '_layout.json' (style: explicit).\n\n"
                        "Output goes to a 'firmware_output' folder next to 'downloads', with\n"
                        "copy-ready 'firmware/' and 'web/' subtrees to drop into each repo.")
         self._setup_task_view(
-            title="Firmware / Web Export (1 sheet 2x4)",
+            title="Firmware / Web Export (1 sheet 8x4)",
             description=description,
             start_button_text="Start Export",
             worker_function=self._firmware_export_worker

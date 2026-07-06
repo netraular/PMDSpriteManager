@@ -1,25 +1,34 @@
 """
-Firmware sprite exporter.
+Firmware / web sprite exporter.
 
 Converts a PMD Collab character (8-direction isometric `Walk` animation) into the
-simple "overworld" spritesheet format used by the lv_port_pc_vscode firmware
-(`graphics/species/pokemon`):
+single-sheet "overworld" spritesheet format shared by the hibitomo web content
+editor and the lv_port_pc_vscode firmware (`graphics/species/pokemon`):
 
-  * One PNG per creature, 2 columns x 4 rows, fixed cell size (64x64 by default
-    -> a 128x256 sheet), creature centered in each cell.
-  * Cell layout (matches firmware `PetSpriteLayout::make_pokemon_layout`):
+  * One PNG per creature, N columns x 4 rows, fixed cell size (64x64 by default;
+    N = DEFAULT_FRAMES = 8 -> a 512x256 sheet), creature centered in each cell.
+  * Row = direction, column = walk frame (the FULL walk cycle, resampled to the
+    fixed column count so every creature shares one grid):
 
-        row0: [ UP   f0 ][ LEFT  f0 ]
-        row1: [ UP   f1 ][ LEFT  f1 ]
-        row2: [ DOWN f0 ][ RIGHT f0 ]
-        row3: [ DOWN f1 ][ RIGHT f1 ]
+        row0: DOWN   f0 f1 f2 f3 f4 f5 f6 f7
+        row1: LEFT   f0 f1 f2 f3 f4 f5 f6 f7
+        row2: RIGHT  f0 f1 f2 f3 f4 f5 f6 f7
+        row3: UP     f0 f1 f2 f3 f4 f5 f6 f7
 
-    where f0 = first walk frame, f1 = middle walk frame.
+    Direction rows match the firmware convention (0=DOWN, 1=LEFT, 2=RIGHT, 3=UP).
+    The walk cycle is resampled from the creature's native frame count (3..12) to
+    the fixed column count, so the full movement is preserved for every creature
+    while keeping a single shared, data-driven `_layout.json` (style: explicit).
+
+Because the layout is fully data-driven, both consumers read the per-direction
+walk cells straight from the JSON -- no packing knowledge is hard-coded in the
+web editor or the firmware.
 
 The module is GUI-agnostic (only depends on Pillow + the std library) so it can be
 reused from a CLI script and from the Tkinter app.
 """
 
+import json
 import os
 import shutil
 import xml.etree.ElementTree as ET
@@ -34,34 +43,83 @@ PMD_ROW_RIGHT = 2  # East
 PMD_ROW_UP = 4     # North
 PMD_ROW_LEFT = 6   # West
 
+# Output rows follow the firmware direction convention (0=DOWN, 1=LEFT, 2=RIGHT,
+# 3=UP); this maps each output row to the PMD source row it is cropped from.
+OUT_ROW_SOURCE = [PMD_ROW_DOWN, PMD_ROW_LEFT, PMD_ROW_RIGHT, PMD_ROW_UP]
+
 DEFAULT_CELL = 64
+# Walk frames per direction in the output sheet. 8 == firmware PET_MAX_WALK_FRAMES,
+# which captures the full native cycle of all but a handful of creatures losslessly
+# (the few with >8 native frames are evenly resampled down to 8).
+DEFAULT_FRAMES = 8
 WALK_ANIM_FILE = "Walk-Anim.png"
 ANIM_DATA_FILE = "AnimData.xml"
 
-# The data-driven layout descriptor shipped next to the sheets. This is the
-# single source of truth and is byte-identical to the `_layout.json` that both
-# the hibitomo web content-editor and the lv_port_pc_vscode firmware ship in
-# their `graphics/species/pokemon/` folders (style: "explicit").
-EXPLICIT_LAYOUT_JSON = """{
-  "style": "explicit",
-  "cols": 2,
-  "rows": 4,
-  "walk_style": "stride",
-  "walk": {
-    "up":    [{ "col": 0, "row": 0 }, { "col": 0, "row": 1 }],
-    "down":  [{ "col": 0, "row": 2 }, { "col": 0, "row": 3 }],
-    "left":  [{ "col": 1, "row": 0 }, { "col": 1, "row": 1 }],
-    "right": [{ "col": 1, "row": 2 }, { "col": 1, "row": 3 }]
-  },
-  "idle": {
-    "up":    [{ "col": 0, "row": 0 }],
-    "down":  [{ "col": 0, "row": 2 }],
-    "left":  [{ "col": 1, "row": 0 }],
-    "right": [{ "col": 1, "row": 2 }]
-  },
-  "description": "HeartGold overworld, fully data-driven: 2 walk frames per direction stacked vertically in a 2x2 sub-block. col0 = UP (rows 0-1) / DOWN (rows 2-3); col1 = LEFT (rows 0-1) / RIGHT (rows 2-3). Cell size derived from the sheet (64x64 in the shipped 128x256 sheets)."
-}
-"""
+# --- Data-driven layout descriptor -------------------------------------------
+# The `_layout.json` shipped next to the sheets is generated from the actual grid
+# so it always matches the packing. It is the single source of truth read by both
+# the hibitomo web content-editor and the lv_port_pc_vscode firmware
+# (style: "explicit", one row per direction, `frames` walk cells per row).
+DIR_ROWS = [("down", 0), ("left", 1), ("right", 2), ("up", 3)]
+
+
+def build_layout_dict(cols, rows=4, frames=DEFAULT_FRAMES):
+    """
+    Build the explicit, data-driven layout descriptor for an
+    `cols` x `rows` sheet whose rows are DOWN/LEFT/RIGHT/UP and whose columns
+    are the `frames` walk frames of that direction (idle = column 0).
+    """
+    walk = {name: [{"col": c, "row": row} for c in range(frames)]
+            for name, row in DIR_ROWS}
+    idle = {name: [{"col": 0, "row": row}] for name, row in DIR_ROWS}
+    return {
+        "style": "explicit",
+        "cols": cols,
+        "rows": rows,
+        "walk_style": "stride",
+        "walk": walk,
+        "idle": idle,
+        "description": (
+            "PMD Collab overworld, fully data-driven: one row per direction "
+            "(0=DOWN, 1=LEFT, 2=RIGHT, 3=UP), columns 0.."
+            f"{frames - 1} are the full walk cycle (resampled to {frames} frames); "
+            "idle = column 0. Continuous stride. Cell size derived from the sheet "
+            f"({DEFAULT_CELL}x{DEFAULT_CELL} in the shipped "
+            f"{cols * DEFAULT_CELL}x{rows * DEFAULT_CELL} sheets)."
+        ),
+    }
+
+
+def dumps_layout(layout):
+    """
+    Serialize a layout dict to JSON, keeping each {col,row} cell on a single line
+    (compact, human-readable) while still emitting standard JSON that both the web
+    (zod) and firmware (rapidjson) parsers accept.
+    """
+    def cell(c):
+        return f'{{ "col": {c["col"]}, "row": {c["row"]} }}'
+
+    def dir_map(m, indent):
+        pad = " " * indent
+        inner = " " * (indent + 2)
+        lines = []
+        for i, (name, cells) in enumerate(m.items()):
+            arr = ", ".join(cell(c) for c in cells)
+            comma = "," if i < len(m) - 1 else ""
+            lines.append(f'{inner}"{name}": [{arr}]{comma}')
+        return "{\n" + "\n".join(lines) + "\n" + pad + "}"
+
+    return (
+        "{\n"
+        f'  "style": {json.dumps(layout["style"])},\n'
+        f'  "cols": {layout["cols"]},\n'
+        f'  "rows": {layout["rows"]},\n'
+        f'  "walk_style": {json.dumps(layout["walk_style"])},\n'
+        f'  "walk": {dir_map(layout["walk"], 2)},\n'
+        f'  "idle": {dir_map(layout["idle"], 2)},\n'
+        f'  "description": {json.dumps(layout["description"])}\n'
+        "}\n"
+    )
 
 # Repo-relative destination for each generation target. The exporter mirrors this
 # path under `<output>/<target>/` so the resulting tree can be copied straight
@@ -118,10 +176,29 @@ def _centered(frame, cell):
     return canvas
 
 
-def export_project(project_path, output_png, cell=DEFAULT_CELL):
+def _resample_indices(native_count, target_count):
     """
-    Convert one PMD character folder into a firmware overworld spritesheet.
+    Map `target_count` output frames onto `native_count` source frames, evenly.
 
+    When native <= target the cycle is stretched (frames repeat) so no motion is
+    lost; when native > target it is evenly subsampled. Always returns a list of
+    length `target_count` of valid source indices in [0, native_count).
+    """
+    if native_count <= 0:
+        return [0] * target_count
+    if native_count == target_count:
+        return list(range(native_count))
+    return [min(native_count - 1, (i * native_count) // target_count)
+            for i in range(target_count)]
+
+
+def export_project(project_path, output_png, cell=DEFAULT_CELL,
+                   frames=DEFAULT_FRAMES):
+    """
+    Convert one PMD character folder into an overworld spritesheet.
+
+    Produces a `frames` x 4 grid (columns = full walk cycle resampled to `frames`,
+    rows = DOWN/LEFT/RIGHT/UP), each cell `cell`x`cell` with the creature centered.
     `project_path` must contain an `Animations/` subfolder with `AnimData.xml`
     and `Walk-Anim.png`. Returns the output path on success or raises ValueError.
     """
@@ -150,29 +227,14 @@ def export_project(project_path, output_png, cell=DEFAULT_CELL):
         box = (c * fw, r * fh, (c + 1) * fw, (r + 1) * fh)
         return sheet.crop(box)
 
-    f0 = 0
-    f1 = cols // 2 if cols > 1 else 0
+    # Resample this creature's native walk cycle (cols frames) to `frames`.
+    src_cols = _resample_indices(cols, frames)
 
-    # Build the 8 cells we need.
-    up_f0 = _centered(crop(PMD_ROW_UP, f0), cell)
-    up_f1 = _centered(crop(PMD_ROW_UP, f1), cell)
-    left_f0 = _centered(crop(PMD_ROW_LEFT, f0), cell)
-    left_f1 = _centered(crop(PMD_ROW_LEFT, f1), cell)
-    down_f0 = _centered(crop(PMD_ROW_DOWN, f0), cell)
-    down_f1 = _centered(crop(PMD_ROW_DOWN, f1), cell)
-    right_f0 = _centered(crop(PMD_ROW_RIGHT, f0), cell)
-    right_f1 = _centered(crop(PMD_ROW_RIGHT, f1), cell)
-
-    out = Image.new("RGBA", (cell * 2, cell * 4), (0, 0, 0, 0))
-    # col0 (x=0) = UP/DOWN, col1 (x=cell) = LEFT/RIGHT
-    out.paste(up_f0, (0, 0), up_f0)
-    out.paste(left_f0, (cell, 0), left_f0)
-    out.paste(up_f1, (0, cell), up_f1)
-    out.paste(left_f1, (cell, cell), left_f1)
-    out.paste(down_f0, (0, cell * 2), down_f0)
-    out.paste(right_f0, (cell, cell * 2), right_f0)
-    out.paste(down_f1, (0, cell * 3), down_f1)
-    out.paste(right_f1, (cell, cell * 3), right_f1)
+    out = Image.new("RGBA", (cell * frames, cell * 4), (0, 0, 0, 0))
+    for out_row, pmd_row in enumerate(OUT_ROW_SOURCE):
+        for out_col, src_col in enumerate(src_cols):
+            frame = _centered(crop(pmd_row, src_col), cell)
+            out.paste(frame, (out_col * cell, out_row * cell), frame)
 
     os.makedirs(os.path.dirname(output_png), exist_ok=True)
     out.save(output_png)
@@ -188,13 +250,14 @@ def _output_name(folder_name):
         return folder_name.replace(" ", "_")
 
 
-def _write_layout(folder):
+def _write_layout(folder, cols, frames=DEFAULT_FRAMES):
     """Write the explicit `_layout.json` descriptor into `folder`."""
+    layout = build_layout_dict(cols, rows=4, frames=frames)
     with open(os.path.join(folder, "_layout.json"), "w", encoding="utf-8") as f:
-        f.write(EXPLICIT_LAYOUT_JSON)
+        f.write(dumps_layout(layout))
 
 
-def _stage_target(base_dir, sheets, target, log):
+def _stage_target(base_dir, sheets, target, cols, frames, log):
     """
     Mirror the generated sheets + `_layout.json` under `<base_dir>/<target>/<relpath>`
     so the tree can be copied straight into the matching repository root.
@@ -207,19 +270,20 @@ def _stage_target(base_dir, sheets, target, log):
     os.makedirs(dest, exist_ok=True)
     for png in sheets:
         shutil.copy2(png, os.path.join(dest, os.path.basename(png)))
-    _write_layout(dest)
+    _write_layout(dest, cols, frames)
     log(f"  target '{target}' -> {os.path.join(base_dir, target)}"
         f"  (copy its contents into the repo root: {relpath}/)")
 
 
 def export_all(downloads_dir, output_dir, cell=DEFAULT_CELL, log=print,
-               targets=("firmware", "web")):
+               targets=("firmware", "web"), frames=DEFAULT_FRAMES):
     """
     Convert every project subfolder of `downloads_dir` into `output_dir`.
 
-    The raw sheets + explicit `_layout.json` are written flat into `output_dir`.
-    For every name in `targets` (a subset of TARGET_RELPATHS, e.g. "firmware",
-    "web"), a copy-ready tree is additionally staged under
+    Each creature becomes a `frames` x 4 sheet (full walk cycle resampled to
+    `frames` columns). The raw sheets + explicit `_layout.json` are written flat
+    into `output_dir`. For every name in `targets` (a subset of TARGET_RELPATHS,
+    e.g. "firmware", "web"), a copy-ready tree is additionally staged under
     `<output_dir>/<target>/<repo-relative-path>/` so it can be dropped straight
     into the corresponding repository. Pass `targets=()` for the flat output only.
 
@@ -234,7 +298,7 @@ def export_all(downloads_dir, output_dir, cell=DEFAULT_CELL, log=print,
         project = os.path.join(downloads_dir, folder)
         out_png = os.path.join(output_dir, _output_name(folder) + ".png")
         try:
-            export_project(project, out_png, cell)
+            export_project(project, out_png, cell, frames)
             ok += 1
             generated.append(out_png)
             log(f"  OK  {folder} -> {os.path.basename(out_png)}")
@@ -243,13 +307,13 @@ def export_all(downloads_dir, output_dir, cell=DEFAULT_CELL, log=print,
             log(f"  SKIP {folder}: {e}")
 
     # Write the data-driven layout descriptor alongside the flat sheets.
-    _write_layout(output_dir)
+    _write_layout(output_dir, frames, frames)
 
     # Stage copy-ready trees for each requested target (web / firmware).
     if generated and targets:
         log("")
         for target in targets:
-            _stage_target(output_dir, generated, target, log)
+            _stage_target(output_dir, generated, target, frames, frames, log)
 
     log(f"\nDone. Success: {ok}, Failed: {fail}")
     return ok, fail
