@@ -82,8 +82,8 @@ ANIM_DATA_FILE = "AnimData.xml"
 # sheet rows below the walk rows so the pet visibly "breathes" while standing
 # still instead of freezing on a single frame. Each creature keeps its OWN native
 # idle frame count (NO resampling to a shared grid) so the real breathing cadence
-# is preserved; the exact per-direction cells are described in a per-creature
-# `_layouts.json` entry. Idle is laid out at rows 4..7 (one per direction):
+# is preserved; the exact per-direction cells are described in the creature's
+# `<id>.json`. Idle is laid out at rows 4..7 (one per direction):
 #
 #     row0..3: DOWN/LEFT/RIGHT/UP  walk  (cols 0..walk_n-1)
 #     row4..7: DOWN/LEFT/RIGHT/UP  idle  (cols 0..idle_n-1)
