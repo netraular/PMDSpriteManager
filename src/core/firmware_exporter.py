@@ -25,13 +25,14 @@ hibitomo web content editor and the lv_port_pc_vscode firmware
 
     Direction rows match the firmware convention (0=DOWN, 1=LEFT, 2=RIGHT, 3=UP).
     Because frame counts differ per creature, each creature carries its OWN
-    explicit layout in a per-creature `_layouts.json` map (keyed by id); a
-    companion `_timings.json` carries the real PMD per-frame cadence (1:1 with the
-    native frames) for the web preview.
+    self-contained data file, `<id>.json`, written next to its sheet: an explicit
+    layout (native walk/idle cells) plus the REAL PMD per-frame cadence
+    (`walk_durations` / `idle_durations`, taken 1:1 from `AnimData.xml` in game
+    ticks), so both consumers reproduce the exact Pokémon Mystery Dungeon timing.
 
-Because the layout is fully data-driven, both consumers index `_layouts.json` by
-id and read the per-direction walk/idle cells straight from the JSON -- no packing
-knowledge is hard-coded in the web editor or the firmware.
+Because the layout is fully data-driven, both consumers read each creature's
+`<id>.json` and use the per-direction walk/idle cells + durations straight from
+the JSON -- no packing knowledge is hard-coded in the web editor or the firmware.
 
 The module is GUI-agnostic (only depends on Pillow + the std library) so it can be
 reused from a CLI script and from the Tkinter app.
@@ -99,28 +100,39 @@ DEFAULT_IDLE_FRAME_MS = 300
 
 # PMD `AnimData.xml` stores per-frame durations in game *ticks*. The sprites are
 # authored/played at a fixed ~30 FPS by convention (SkyTemple/PMD), so one tick
-# is ~33 ms. Nothing in the XML asserts this; it is the well-known default. Used
-# only for the `_timings.json` companion (see below) that lets the web editor
-# preview the *real* per-frame cadence next to the uniform device playback.
+# is ~33 ms. Nothing in the XML asserts this; it is the well-known default. It is
+# written as `tick_ms` into each `<id>.json` (alongside the raw tick durations) so
+# the web renders the *real* per-frame cadence and the 30 FPS device holds each
+# frame for exactly that many ticks.
 PMD_TICK_MS = 33
 
 # --- Data-driven layout descriptor -------------------------------------------
-# The `_layout.json` shipped next to the sheets is generated from the actual grid
-# so it always matches the packing. It is the single source of truth read by both
-# the hibitomo web content-editor and the lv_port_pc_vscode firmware
-# (style: "explicit", one row per direction, `frames` walk cells per row).
+# Each creature's `<id>.json` (written next to its sheet) is generated from the
+# actual grid so it always matches the packing. It is the single source of truth
+# read by both the hibitomo web content-editor and the lv_port_pc_vscode firmware
+# (style: "explicit", one row per direction, `frames` walk cells per row, plus the
+# real PMD walk/idle tick durations).
 DIR_ROWS = [("down", 0), ("left", 1), ("right", 2), ("up", 3)]
 
 
 def build_layout_dict(cols, rows=8, frames=DEFAULT_FRAMES,
                       idle_frames=DEFAULT_IDLE_FRAMES,
-                      idle_frame_ms=DEFAULT_IDLE_FRAME_MS):
+                      idle_frame_ms=DEFAULT_IDLE_FRAME_MS,
+                      walk_durations=None, idle_durations=None,
+                      tick_ms=PMD_TICK_MS):
     """
-    Build the explicit, data-driven layout descriptor for a `cols` x `rows` sheet
-    whose top rows (0..3) are the DOWN/LEFT/RIGHT/UP walk cycles and whose idle
-    rows (IDLE_ROW_BASE..IDLE_ROW_BASE+3) are the matching animated idle loops.
-    `idle_frames` >= 2 makes the device play an animated idle (breathing) instead
-    of a static standing pose.
+    Build the explicit, data-driven per-creature layout descriptor for a
+    `cols` x `rows` sheet whose top rows (0..3) are the DOWN/LEFT/RIGHT/UP walk
+    cycles and whose idle rows (IDLE_ROW_BASE..IDLE_ROW_BASE+3) are the matching
+    animated idle loops. `idle_frames` >= 2 makes the device play an animated idle
+    (breathing) instead of a static standing pose.
+
+    `walk_durations` / `idle_durations` are the REAL PMD per-frame cadences in game
+    **ticks** (one entry per walk / idle frame, shared across all four directions),
+    taken 1:1 from `AnimData.xml`. Both consumers preserve Pokémon Mystery Dungeon
+    timing from these: the 30 FPS device holds each frame for that many ticks; the
+    web renders each tick as `tick_ms`. Written straight into the per-creature
+    `<id>.json`.
     """
     walk = {name: [{"col": c, "row": row} for c in range(frames)]
             for name, row in DIR_ROWS}
@@ -132,26 +144,31 @@ def build_layout_dict(cols, rows=8, frames=DEFAULT_FRAMES,
         "cols": cols,
         "rows": rows,
         "walk_style": "stride",
+        "tick_ms": tick_ms,
         "idle_frame_ms": idle_frame_ms,
         "walk": walk,
         "idle": idle,
+        "walk_durations": list(walk_durations) if walk_durations else None,
+        "idle_durations": list(idle_durations) if idle_durations else None,
         "description": (
             "PMD Collab overworld, fully data-driven: rows 0..3 are the walk "
             "cycle (0=DOWN, 1=LEFT, 2=RIGHT, 3=UP), columns 0.."
             f"{frames - 1} (this creature's native walk frames, continuous "
             f"stride); rows {IDLE_ROW_BASE}..{IDLE_ROW_BASE + 3} are the matching "
-            f"native idle (breathing) loop, columns 0..{idle_frames - 1} cycled "
-            f"every {idle_frame_ms}ms. Cell size derived from the sheet "
-            "(per-species: the creature's content bbox times the export scale)."
+            f"native idle (breathing) loop, columns 0..{idle_frames - 1}. "
+            "walk_durations/idle_durations are the real PMD per-frame cadence in "
+            f"{tick_ms}ms ticks. Cell size derived from the sheet (per-species: "
+            "the creature's content bbox times the export scale)."
         ),
     }
 
 
 def dumps_layout(layout):
     """
-    Serialize a layout dict to JSON, keeping each {col,row} cell on a single line
-    (compact, human-readable) while still emitting standard JSON that both the web
-    (zod) and firmware (rapidjson) parsers accept.
+    Serialize a per-creature layout dict to JSON, keeping each {col,row} cell (and
+    each duration array) on a single line (compact, human-readable) while still
+    emitting standard JSON that both the web (zod) and firmware (rapidjson) parsers
+    accept. Optional keys (durations) are omitted when absent.
     """
     def cell(c):
         return f'{{ "col": {c["col"]}, "row": {c["row"]} }}'
@@ -166,18 +183,24 @@ def dumps_layout(layout):
             lines.append(f'{inner}"{name}": [{arr}]{comma}')
         return "{\n" + "\n".join(lines) + "\n" + pad + "}"
 
-    return (
-        "{\n"
-        f'  "style": {json.dumps(layout["style"])},\n'
-        f'  "cols": {layout["cols"]},\n'
-        f'  "rows": {layout["rows"]},\n'
-        f'  "walk_style": {json.dumps(layout["walk_style"])},\n'
-        f'  "idle_frame_ms": {layout["idle_frame_ms"]},\n'
-        f'  "walk": {dir_map(layout["walk"], 2)},\n'
-        f'  "idle": {dir_map(layout["idle"], 2)},\n'
-        f'  "description": {json.dumps(layout["description"])}\n'
-        "}\n"
-    )
+    lines = [
+        "{",
+        f'  "style": {json.dumps(layout["style"])},',
+        f'  "cols": {layout["cols"]},',
+        f'  "rows": {layout["rows"]},',
+        f'  "walk_style": {json.dumps(layout["walk_style"])},',
+        f'  "tick_ms": {layout["tick_ms"]},',
+        f'  "idle_frame_ms": {layout["idle_frame_ms"]},',
+        f'  "walk": {dir_map(layout["walk"], 2)},',
+        f'  "idle": {dir_map(layout["idle"], 2)},',
+    ]
+    if layout.get("walk_durations"):
+        lines.append(f'  "walk_durations": {json.dumps(layout["walk_durations"])},')
+    if layout.get("idle_durations"):
+        lines.append(f'  "idle_durations": {json.dumps(layout["idle_durations"])},')
+    lines.append(f'  "description": {json.dumps(layout["description"])}')
+    lines.append("}")
+    return "\n".join(lines) + "\n"
 
 # Repo-relative destination for each generation target. The exporter mirrors this
 # path under `<output>/<target>/` so the resulting tree can be copied straight
@@ -253,28 +276,17 @@ def _parse_anim_durations(animdata_path, anim_name):
     return None
 
 
-def _column_durations_ms(native_durs, src_indices, tick_ms=PMD_TICK_MS,
-                         fallback_ticks=4):
-    """Per-output-column durations (ms) for a sheet whose columns are the
-    `src_indices` resample of an animation's native frames.
-
-    Each native frame's tick budget is split evenly across the (contiguous)
-    output columns that reuse it, so the summed output time equals the native
-    animation's total — i.e. playing the sheet columns at these durations
-    reproduces the real PMD cadence even though frames were duplicated/subsampled
-    to a fixed column count. `native_durs=None` (no timing data) yields a uniform
-    `fallback_ticks` per column."""
-    n = len(src_indices)
+def _column_durations_ticks(native_durs, n, fallback_ticks=4):
+    """Per-output-column durations in PMD game *ticks* for a sheet whose `n`
+    columns are the creature's native frames 0..n-1 (no resampling, so this is a
+    1:1 slice of the animation's `<Durations>`). Storing the raw ticks (not ms)
+    keeps the real Pokémon Mystery Dungeon cadence exact for the 30 FPS device,
+    which holds each frame for that many ticks. `native_durs=None` (no timing
+    data) yields a uniform `fallback_ticks` per column so the clip still plays."""
     if not native_durs:
-        return [round(fallback_ticks * tick_ms)] * n
-    counts = {}
-    for s in src_indices:
-        counts[s] = counts.get(s, 0) + 1
-    out = []
-    for s in src_indices:
-        idx = min(s, len(native_durs) - 1)
-        out.append(round(native_durs[idx] / counts[s] * tick_ms))
-    return out
+        return [fallback_ticks] * n
+    return [native_durs[i] if i < len(native_durs) else native_durs[-1]
+            for i in range(n)]
 
 
 def _prepare_frame(frame, crop_box, scale=DEFAULT_SCALE):
@@ -374,10 +386,10 @@ def export_project(project_path, output_png, frames=DEFAULT_FRAMES,
     every placed walk AND idle frame, magnified by `scale` (nearest-neighbour), so
     neither block is clipped and both share one cell size. `project_path` must
     contain an `Animations/` subfolder with `AnimData.xml` and `Walk-Anim.png`.
-    Returns `(output_path, layout, timings)` on success (or raises ValueError):
-    `layout` is this creature's explicit `_layouts.json` descriptor and `timings`
-    is `{"walk": [ms per walk column], "idle": [ms per idle column]}` derived 1:1
-    from the native `<Durations>` for the web preview.
+    Also writes the creature's self-contained data file (`<id>.json`) next to the
+    sheet: its explicit layout plus the real PMD per-frame cadence
+    (`walk_durations` / `idle_durations`, in ticks). Returns `(output_path, layout)`
+    on success (or raises ValueError).
     """
     animations = os.path.join(project_path, "Animations")
     animdata = os.path.join(animations, ANIM_DATA_FILE)
@@ -423,17 +435,18 @@ def export_project(project_path, output_png, frames=DEFAULT_FRAMES,
         idle_placed = [(IDLE_ROW_BASE + out_row, out_col, idle_crop(pmd_row, isrc))
                        for out_row, pmd_row in enumerate(OUT_ROW_SOURCE)
                        for out_col, isrc in enumerate(idle_src)]
-        idle_ms = _column_durations_ms(_parse_anim_durations(animdata, "Idle"), idle_src)
+        idle_ticks = _column_durations_ticks(_parse_anim_durations(animdata, "Idle"), idle_n)
     else:
         # Static fallback: a single idle cell = walk frame 0.
         idle_n = 1
         idle_placed = [(IDLE_ROW_BASE + out_row, 0, walk_crop(pmd_row, 0))
                        for out_row, pmd_row in enumerate(OUT_ROW_SOURCE)]
-        idle_ms = [DEFAULT_IDLE_FRAME_MS]
+        idle_ticks = [max(1, round(DEFAULT_IDLE_FRAME_MS / PMD_TICK_MS))]
     idle_box = _union_bbox(fr for _, _, fr in idle_placed)
 
-    # Real per-frame cadence (ms) for the web preview (1:1 with the native frames).
-    walk_ms = _column_durations_ms(_parse_anim_durations(animdata, "Walk"), src_cols)
+    # Real per-frame cadence in PMD ticks for the web preview / device (1:1 with
+    # the native frames).
+    walk_ticks = _column_durations_ticks(_parse_anim_durations(animdata, "Walk"), walk_n)
 
     # Per-species cell size = union of the walk and idle content boxes * scale.
     def _dims(box, fallback_w, fallback_h):
@@ -461,8 +474,15 @@ def export_project(project_path, output_png, frames=DEFAULT_FRAMES,
     out.save(output_png)
     layout = build_layout_dict(out_cols, rows=out_rows, frames=walk_n,
                                idle_frames=idle_n,
-                               idle_frame_ms=DEFAULT_IDLE_FRAME_MS)
-    return output_png, layout, {"walk": walk_ms, "idle": idle_ms}
+                               idle_frame_ms=DEFAULT_IDLE_FRAME_MS,
+                               walk_durations=walk_ticks,
+                               idle_durations=idle_ticks)
+    # Write the per-creature data file (`<id>.json`) right next to its sheet, so
+    # every pokemon/creature owns a self-contained layout + real PMD timing file.
+    data_path = os.path.splitext(output_png)[0] + ".json"
+    with open(data_path, "w", encoding="utf-8") as f:
+        f.write(dumps_layout(layout))
+    return output_png, layout
 
 
 def _output_name(folder_name):
@@ -474,69 +494,9 @@ def _output_name(folder_name):
         return folder_name.replace(" ", "_")
 
 
-def _indent_block(text, spaces):
-    """Indent every line of `text` except the first by `spaces` (keeps the first
-    line in place so it can follow a `"key": ` prefix)."""
-    pad = " " * spaces
-    lines = text.split("\n")
-    return lines[0] + "".join("\n" + pad + ln if ln else "\n" for ln in lines[1:])
-
-
-def _write_layouts(folder, layouts):
-    """Write the per-creature `_layouts.json` map into `folder`.
-
-    Shape: `{ "description": ..., "creatures": { "001": <SpriteLayout>, ... } }`,
-    keyed by the sheet basename (zero-padded id). Each creature carries its OWN
-    explicit layout (native walk/idle frame counts), so no fixed grid is imposed.
-    Both the hibitomo web editor and the firmware read it and index by id, falling
-    back to a folder-level `_layout.json` / style preset when an id is absent."""
-    desc = (
-        "Per-creature spritesheet layouts (explicit, native walk/idle frame "
-        "counts), keyed by zero-padded id. Read by both the web editor and the "
-        "firmware, which index by id and slice each sheet exactly."
-    )
-    items = list(layouts.items())
-    body = ""
-    for i, (cid, layout) in enumerate(items):
-        entry = _indent_block(dumps_layout(layout).rstrip("\n"), 4)
-        comma = "," if i < len(items) - 1 else ""
-        body += f'    "{cid}": {entry}{comma}\n'
-    text = (
-        "{\n"
-        f'  "description": {json.dumps(desc)},\n'
-        '  "creatures": {\n'
-        f"{body}"
-        "  }\n"
-        "}\n"
-    )
-    with open(os.path.join(folder, "_layouts.json"), "w", encoding="utf-8") as f:
-        f.write(text)
-
-
-def _write_timings(folder, timings):
-    """Write the `_timings.json` companion (per-creature real walk/idle cadence).
-
-    Shape: `{ "tick_ms": 33, "creatures": { "001": {"walk": [ms...], "idle":
-    [ms...] }, ... } }`, keyed by the sheet basename (zero-padded id). The device
-    ignores it; the web editor uses it to preview the *real* per-frame timing next
-    to the uniform playback."""
-    doc = {
-        "tick_ms": PMD_TICK_MS,
-        "description": (
-            "Real per-frame cadence (ms) per creature, derived from the PMD "
-            "AnimData.xml <Durations> and aligned to the sheet's walk/idle "
-            "columns. Consumed only by the web editor's comparison preview."
-        ),
-        "creatures": timings,
-    }
-    with open(os.path.join(folder, "_timings.json"), "w", encoding="utf-8") as f:
-        json.dump(doc, f, indent=1)
-        f.write("\n")
-
-
 def _stage_target(base_dir, sheets, target, log):
     """
-    Mirror the generated sheets + `_layouts.json` + `_timings.json` under
+    Mirror the generated sheets + their per-creature `<id>.json` data files under
     `<base_dir>/<target>/<relpath>` so the tree can be copied straight into the
     matching repository root.
     """
@@ -548,10 +508,9 @@ def _stage_target(base_dir, sheets, target, log):
     os.makedirs(dest, exist_ok=True)
     for png in sheets:
         shutil.copy2(png, os.path.join(dest, os.path.basename(png)))
-    for companion in ("_layouts.json", "_timings.json"):
-        src = os.path.join(base_dir, companion)
-        if os.path.exists(src):
-            shutil.copy2(src, os.path.join(dest, companion))
+        data = os.path.splitext(png)[0] + ".json"
+        if os.path.exists(data):
+            shutil.copy2(data, os.path.join(dest, os.path.basename(data)))
     log(f"  target '{target}' -> {os.path.join(base_dir, target)}"
         f"  (copy its contents into the repo root: {relpath}/)")
 
@@ -564,10 +523,11 @@ def export_all(downloads_dir, output_dir, log=print,
 
     Each creature becomes an `max(walk_n, idle_n)` x 8 sheet keeping its OWN native
     walk/idle frame counts (`frames`/`idle_frames` only cap them), with a
-    per-species cell size (content bbox * `scale`). The raw sheets + a per-creature
-    `_layouts.json` map + a `_timings.json` companion are written flat into
-    `output_dir`. For every name in `targets` (a subset of TARGET_RELPATHS, e.g.
-    "firmware", "web"), a copy-ready tree is additionally staged under
+    per-species cell size (content bbox * `scale`). The raw sheets + one
+    self-contained per-creature data file (`<id>.json`: explicit layout + real PMD
+    `walk_durations`/`idle_durations` in ticks) are written flat into `output_dir`.
+    For every name in `targets` (a subset of TARGET_RELPATHS, e.g. "firmware",
+    "web"), a copy-ready tree is additionally staged under
     `<output_dir>/<target>/<repo-relative-path>/` so it can be dropped straight into
     the corresponding repository. Pass `targets=()` for the flat output only.
 
@@ -578,27 +538,18 @@ def export_all(downloads_dir, output_dir, log=print,
     folders = sorted(d for d in os.listdir(downloads_dir)
                      if os.path.isdir(os.path.join(downloads_dir, d)))
     generated = []
-    creature_timings = {}
-    creature_layouts = {}
     for folder in folders:
         project = os.path.join(downloads_dir, folder)
         name = _output_name(folder)
         out_png = os.path.join(output_dir, name + ".png")
         try:
-            _, layout, timings = export_project(project, out_png, frames, scale, idle_frames)
+            export_project(project, out_png, frames, scale, idle_frames)
             ok += 1
             generated.append(out_png)
-            creature_timings[name] = timings
-            creature_layouts[name] = layout
             log(f"  OK  {folder} -> {os.path.basename(out_png)}")
         except Exception as e:
             fail += 1
             log(f"  SKIP {folder}: {e}")
-
-    # Write the per-creature data-driven layout map + real-cadence timings
-    # alongside the flat sheets.
-    _write_layouts(output_dir, creature_layouts)
-    _write_timings(output_dir, creature_timings)
 
     # Stage copy-ready trees for each requested target (web / firmware).
     if generated and targets:

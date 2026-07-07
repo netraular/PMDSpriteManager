@@ -113,12 +113,14 @@ bottom-anchored, so there is **no dead margin**, the walk bounce is preserved, a
 the walk/idle blocks stay feet-aligned. Both consumers derive the cell pixel size
 from the sheet dimensions and grid (the web normalizes to a fixed display box; the
 firmware draws at native size, bottom-anchored to the tile), so a variable
-per-creature cell size just works. A matching **per-creature** `_layouts.json`
-(a map keyed by zero-padded id; each entry is a `style: explicit` layout listing
-every per-direction walk/idle cell) is written next to the sheets, so no packing
-knowledge is hard-coded on either consumer — both index it by id and read the
-cells straight from the JSON. A companion `_timings.json` carries the real PMD
-per-frame cadence (ms, 1:1 with the native frames) for the web preview.
+per-creature cell size just works. A matching **per-creature** data file
+(`<id>.json`, a `style: explicit` layout listing every per-direction walk/idle
+cell) is written next to each sheet, so no packing knowledge is hard-coded on
+either consumer — both load `<id>.json` and read the cells straight from the JSON.
+The same file carries the real PMD per-frame cadence as `walk_durations`/
+`idle_durations` (game **ticks**, 1:1 with the native frames; `tick_ms` documents
+the ~33 ms 30 FPS tick), so the web and the 30 FPS device reproduce the exact
+Pokémon Mystery Dungeon timing.
 
 > The walk/idle column counts are per-creature (the native frame counts); `--frames`
 > (default **16**) and `--idle-frames` (default **16**) only cap them (>= the
@@ -133,8 +135,7 @@ subtrees** so you can drop them straight into the right repo root:
 ```
 firmware_output/
 ├── 001.png … 151.png        # flat sheets
-├── _layouts.json            # per-creature layouts (keyed by id)
-├── _timings.json            # real per-frame cadence (web preview)
+├── 001.json … 151.json      # per-creature layout + real PMD tick durations
 ├── firmware/shared/services/pet/assets/graphics/species/pokemon/…   # -> lv_port_pc_vscode
 └── web/local-content/projects/default/shared/services/pet/assets/graphics/species/pokemon/…  # -> hibitomo-content-editor
 ```
