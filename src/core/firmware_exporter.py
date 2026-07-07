@@ -88,6 +88,13 @@ IDLE_ROW_BASE = 4
 # cells at this rate. ~1.2s for a 4-frame loop reads as a calm breathing.
 DEFAULT_IDLE_FRAME_MS = 300
 
+# PMD `AnimData.xml` stores per-frame durations in game *ticks*. The sprites are
+# authored/played at a fixed ~30 FPS by convention (SkyTemple/PMD), so one tick
+# is ~33 ms. Nothing in the XML asserts this; it is the well-known default. Used
+# only for the `_timings.json` companion (see below) that lets the web editor
+# preview the *real* per-frame cadence next to the uniform device playback.
+PMD_TICK_MS = 33
+
 # --- Data-driven layout descriptor -------------------------------------------
 # The `_layout.json` shipped next to the sheets is generated from the actual grid
 # so it always matches the packing. It is the single source of truth read by both
@@ -205,6 +212,62 @@ def _parse_anim_frame_size(animdata_path, anim_name="Walk"):
     return None
 
 
+def _parse_anim_durations(animdata_path, anim_name):
+    """Return the per-frame duration list (game ticks) for an animation,
+    resolving `<CopyOf>`. Returns None when the animation/durations are absent."""
+    try:
+        root = ET.parse(animdata_path).getroot()
+    except Exception:
+        return None
+    anims = {}
+    for anim in root.iter("Anim"):
+        name_el = anim.find("Name")
+        if name_el is not None and name_el.text:
+            anims[name_el.text] = anim
+
+    seen = set()
+    name = anim_name
+    while name and name not in seen:
+        seen.add(name)
+        anim = anims.get(name)
+        if anim is None:
+            return None
+        copy_of = anim.find("CopyOf")
+        if copy_of is not None and copy_of.text:
+            name = copy_of.text
+            continue
+        durs = anim.find("Durations")
+        if durs is None:
+            return None
+        out = [int(d.text) for d in durs.findall("Duration") if d.text]
+        return out or None
+    return None
+
+
+def _column_durations_ms(native_durs, src_indices, tick_ms=PMD_TICK_MS,
+                         fallback_ticks=4):
+    """Per-output-column durations (ms) for a sheet whose columns are the
+    `src_indices` resample of an animation's native frames.
+
+    Each native frame's tick budget is split evenly across the (contiguous)
+    output columns that reuse it, so the summed output time equals the native
+    animation's total — i.e. playing the sheet columns at these durations
+    reproduces the real PMD cadence even though frames were duplicated/subsampled
+    to a fixed column count. `native_durs=None` (no timing data) yields a uniform
+    `fallback_ticks` per column."""
+    n = len(src_indices)
+    if not native_durs:
+        return [round(fallback_ticks * tick_ms)] * n
+    counts = {}
+    for s in src_indices:
+        counts[s] = counts.get(s, 0) + 1
+    out = []
+    for s in src_indices:
+        idx = min(s, len(native_durs) - 1)
+        out.append(round(native_durs[idx] / counts[s] * tick_ms))
+    return out
+
+
 def _prepare_frame(frame, crop_box, scale=DEFAULT_SCALE):
     """
     Crop `frame` to `crop_box` and magnify it by `scale` (integer, nearest-neighbour
@@ -301,8 +364,10 @@ def export_project(project_path, output_png, frames=DEFAULT_FRAMES,
     equals the union content bounding box over every placed walk AND idle frame,
     magnified by `scale` (nearest-neighbour), so neither block is clipped and both
     share one cell size. `project_path` must contain an `Animations/` subfolder
-    with `AnimData.xml` and `Walk-Anim.png`. Returns the output path on success or
-    raises ValueError.
+    with `AnimData.xml` and `Walk-Anim.png`. Returns `(output_path, timings)` on
+    success (or raises ValueError); `timings` is
+    `{"walk": [ms per walk column], "idle": [ms per idle column]}` derived from the
+    native `<Durations>` (see `_column_durations_ms`) for the web preview.
     """
     animations = os.path.join(project_path, "Animations")
     animdata = os.path.join(animations, ANIM_DATA_FILE)
@@ -345,12 +410,17 @@ def export_project(project_path, output_png, frames=DEFAULT_FRAMES,
         idle_placed = [(IDLE_ROW_BASE + out_row, out_col, idle_crop(pmd_row, isrc))
                        for out_row, pmd_row in enumerate(OUT_ROW_SOURCE)
                        for out_col, isrc in enumerate(idle_src)]
+        idle_ms = _column_durations_ms(_parse_anim_durations(animdata, "Idle"), idle_src)
     else:
         # Static fallback: replicate walk frame 0 across the idle columns.
         idle_placed = [(IDLE_ROW_BASE + out_row, out_col, walk_crop(pmd_row, 0))
                        for out_row, pmd_row in enumerate(OUT_ROW_SOURCE)
                        for out_col in range(idle_frames)]
+        idle_ms = [DEFAULT_IDLE_FRAME_MS] * idle_frames
     idle_box = _union_bbox(fr for _, _, fr in idle_placed)
+
+    # Real per-frame cadence (ms) for the web comparison preview.
+    walk_ms = _column_durations_ms(_parse_anim_durations(animdata, "Walk"), src_cols)
 
     # Per-species cell size = union of the walk and idle content boxes * scale.
     def _dims(box, fallback_w, fallback_h):
@@ -376,7 +446,7 @@ def export_project(project_path, output_png, frames=DEFAULT_FRAMES,
 
     os.makedirs(os.path.dirname(output_png), exist_ok=True)
     out.save(output_png)
-    return output_png
+    return output_png, {"walk": walk_ms, "idle": idle_ms}
 
 
 def _output_name(folder_name):
@@ -397,10 +467,32 @@ def _write_layout(folder, cols, frames=DEFAULT_FRAMES,
         f.write(dumps_layout(layout))
 
 
+def _write_timings(folder, timings):
+    """Write the `_timings.json` companion (per-creature real walk/idle cadence).
+
+    Shape: `{ "tick_ms": 33, "creatures": { "001": {"walk": [ms...], "idle":
+    [ms...] }, ... } }`, keyed by the sheet basename (zero-padded id). The device
+    ignores it; the web editor uses it to preview the *real* per-frame timing next
+    to the uniform playback."""
+    doc = {
+        "tick_ms": PMD_TICK_MS,
+        "description": (
+            "Real per-frame cadence (ms) per creature, derived from the PMD "
+            "AnimData.xml <Durations> and aligned to the sheet's walk/idle "
+            "columns. Consumed only by the web editor's comparison preview."
+        ),
+        "creatures": timings,
+    }
+    with open(os.path.join(folder, "_timings.json"), "w", encoding="utf-8") as f:
+        json.dump(doc, f, indent=1)
+        f.write("\n")
+
+
 def _stage_target(base_dir, sheets, target, cols, frames, idle_frames, log):
     """
-    Mirror the generated sheets + `_layout.json` under `<base_dir>/<target>/<relpath>`
-    so the tree can be copied straight into the matching repository root.
+    Mirror the generated sheets + `_layout.json` + `_timings.json` under
+    `<base_dir>/<target>/<relpath>` so the tree can be copied straight into the
+    matching repository root.
     """
     relpath = TARGET_RELPATHS.get(target)
     if not relpath:
@@ -411,6 +503,9 @@ def _stage_target(base_dir, sheets, target, cols, frames, idle_frames, log):
     for png in sheets:
         shutil.copy2(png, os.path.join(dest, os.path.basename(png)))
     _write_layout(dest, cols, frames, idle_frames)
+    src_timings = os.path.join(base_dir, "_timings.json")
+    if os.path.exists(src_timings):
+        shutil.copy2(src_timings, os.path.join(dest, "_timings.json"))
     log(f"  target '{target}' -> {os.path.join(base_dir, target)}"
         f"  (copy its contents into the repo root: {relpath}/)")
 
@@ -436,20 +531,25 @@ def export_all(downloads_dir, output_dir, log=print,
     folders = sorted(d for d in os.listdir(downloads_dir)
                      if os.path.isdir(os.path.join(downloads_dir, d)))
     generated = []
+    creature_timings = {}
     for folder in folders:
         project = os.path.join(downloads_dir, folder)
-        out_png = os.path.join(output_dir, _output_name(folder) + ".png")
+        name = _output_name(folder)
+        out_png = os.path.join(output_dir, name + ".png")
         try:
-            export_project(project, out_png, frames, scale, idle_frames)
+            _, timings = export_project(project, out_png, frames, scale, idle_frames)
             ok += 1
             generated.append(out_png)
+            creature_timings[name] = timings
             log(f"  OK  {folder} -> {os.path.basename(out_png)}")
         except Exception as e:
             fail += 1
             log(f"  SKIP {folder}: {e}")
 
-    # Write the data-driven layout descriptor alongside the flat sheets.
+    # Write the data-driven layout descriptor + real-cadence timings alongside the
+    # flat sheets.
     _write_layout(output_dir, frames, frames, idle_frames)
+    _write_timings(output_dir, creature_timings)
 
     # Stage copy-ready trees for each requested target (web / firmware).
     if generated and targets:
