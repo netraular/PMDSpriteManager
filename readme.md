@@ -97,34 +97,34 @@ python Scripts/download_pmd_sprites.py --start 1 --end 151 --out pmd_projects
 Converts each character's PMD **Walk** animation into the single-sheet overworld
 format shared by **both** the hibitomo web content-editor and the
 `lv_port_pc_vscode` firmware (`graphics/species/pokemon`): one PNG per creature, an
-**8×8** grid whose **cell size is per-species** — the creature's content bounding
-box (union over all its walk **and** idle frames) magnified **2×** (nearest-neighbour).
-Sheets are therefore variable-sized (and may be non-square) from one creature to the
-next, so no creature is ever clipped and small/large creatures keep their natural
-relative size. **Rows 0-3 are the walk cycle** (one direction per row: 0=DOWN,
-1=LEFT, 2=RIGHT, 3=UP) and **rows 4-7 are the matching animated idle** (breathing)
-loop, one direction per row. Each **walk column is a walk frame** — the creature's
-**full native walk cycle** (3–12 frames)
-resampled to the fixed **8** columns, so the complete movement is preserved rather
-than the old 2-frame approximation. The idle rows are the creature's real PMD
-`Idle` animation resampled to a fixed **4** columns (a static walk-frame-0 fallback
-for the rare creature shipping no `Idle-Anim.png`). Each frame is cropped to its
-block's shared box and bottom-anchored, so there is **no dead margin**, the walk
-bounce is preserved, and the walk/idle blocks stay feet-aligned. Both
-consumers derive the cell pixel size from the sheet dimensions and grid (the web
-normalizes to a fixed display box; the firmware draws at native size, bottom-anchored
-to the tile), so a variable per-creature cell size just works. A matching
-**data-driven** `_layout.json`
-(`style: explicit`, listing every per-direction walk cell) is written next to the
-sheets, so no packing knowledge is hard-coded on either consumer — both read the
-walk cells straight from the JSON.
+**N×8** grid (N = `max(walk_n, idle_n)`) whose **cell size is per-species** — the
+creature's content bounding box (union over all its walk **and** idle frames)
+magnified **2×** (nearest-neighbour). Sheets are therefore variable-sized (and may
+be non-square) from one creature to the next, so no creature is ever clipped and
+small/large creatures keep their natural relative size. **Rows 0-3 are the walk
+cycle** (one direction per row: 0=DOWN, 1=LEFT, 2=RIGHT, 3=UP) and **rows 4-7 are
+the matching animated idle** (breathing) loop, one direction per row. Each
+creature keeps its **own native walk and idle frame counts** — there is **no fixed
+grid** and **no resampling**: the walk columns are the creature's full native walk
+cycle (3–12 frames) and the idle columns its full native `Idle` loop (1–15 frames,
+or a single static walk-frame-0 cell for the rare creature shipping no
+`Idle-Anim.png`). Each frame is cropped to its block's shared box and
+bottom-anchored, so there is **no dead margin**, the walk bounce is preserved, and
+the walk/idle blocks stay feet-aligned. Both consumers derive the cell pixel size
+from the sheet dimensions and grid (the web normalizes to a fixed display box; the
+firmware draws at native size, bottom-anchored to the tile), so a variable
+per-creature cell size just works. A matching **per-creature** `_layouts.json`
+(a map keyed by zero-padded id; each entry is a `style: explicit` layout listing
+every per-direction walk/idle cell) is written next to the sheets, so no packing
+knowledge is hard-coded on either consumer — both index it by id and read the
+cells straight from the JSON. A companion `_timings.json` carries the real PMD
+per-frame cadence (ms, 1:1 with the native frames) for the web preview.
 
-> The column count is configurable (`--frames`, default **8** = the firmware
-> `PET_MAX_WALK_FRAMES`). Creatures with fewer native frames repeat within the
-> cycle; the handful with more are evenly subsampled. The idle column count is
-> configurable too (`--idle-frames`, default **4**). The per-sprite magnification
-> is configurable (`--scale`, default **2**), and sets the cell size (content
-> bbox × scale).
+> The walk/idle column counts are per-creature (the native frame counts); `--frames`
+> (default **16**) and `--idle-frames` (default **16**) only cap them (>= the
+> firmware `PET_MAX_WALK_FRAMES` / `PET_MAX_IDLE_FRAMES`), so no creature is ever
+> resampled. The per-sprite magnification is configurable (`--scale`, default
+> **2**), and sets the cell size (content bbox × scale).
 
 The web and firmware sheets are byte-identical; only the folder each project
 stores them in differs. The exporter therefore also stages two **copy-ready
@@ -132,8 +132,9 @@ subtrees** so you can drop them straight into the right repo root:
 
 ```
 firmware_output/
-├── 001.png … 151.png        # flat sheets + _layout.json (sample)
-├── _layout.json
+├── 001.png … 151.png        # flat sheets
+├── _layouts.json            # per-creature layouts (keyed by id)
+├── _timings.json            # real per-frame cadence (web preview)
 ├── firmware/shared/services/pet/assets/graphics/species/pokemon/…   # -> lv_port_pc_vscode
 └── web/local-content/projects/default/shared/services/pet/assets/graphics/species/pokemon/…  # -> hibitomo-content-editor
 ```
@@ -145,8 +146,8 @@ firmware_output/
 
 -   **CLI**: `python Scripts/export_firmware_sheets.py --downloads pmd_projects/downloads --out firmware_output`
     -   `--target firmware` / `--target web` / `--target both` (default) / `--target none` (flat only)
-    -   `--frames 8` walk frames per direction · `--idle-frames 4` idle (breathing) frames per direction · `--scale 2` sprite magnification (also sets the per-species cell size = content bbox × scale)
--   **GUI**: Batch tool → **"Firmware / Web Export (1 sheet 8×8)"** (writes `firmware_output/` next to `downloads/`, with the `firmware/` and `web/` subtrees).
+    -   `--frames 16` walk-column cap · `--idle-frames 16` idle-column cap (both default to native, uncapped in practice) · `--scale 2` sprite magnification (also sets the per-species cell size = content bbox × scale)
+-   **GUI**: Batch tool → **"Firmware / Web Export (1 sheet N×8)"** (writes `firmware_output/` next to `downloads/`, with the `firmware/` and `web/` subtrees).
 
 The conversion logic lives in `src/core/firmware_exporter.py` (Pillow-only, GUI-agnostic).
 

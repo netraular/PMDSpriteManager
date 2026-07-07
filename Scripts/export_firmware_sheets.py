@@ -35,16 +35,17 @@ def main():
     ap.add_argument("--out", default="firmware_output",
                     help="Output folder for converted sheets (default firmware_output)")
     ap.add_argument("--frames", type=int, default=DEFAULT_FRAMES,
-                    help=f"Walk frames per direction / sheet columns (default {DEFAULT_FRAMES}; "
-                         "8 == firmware PET_MAX_WALK_FRAMES)")
+                    help=f"Cap on walk columns (default {DEFAULT_FRAMES} >= firmware "
+                         "PET_MAX_WALK_FRAMES; each creature keeps its own native "
+                         "walk frame count, so this only caps the very few longer ones).")
     ap.add_argument("--scale", type=int, default=DEFAULT_SCALE,
                     help=f"Integer magnification of each sprite (default {DEFAULT_SCALE}; "
                          "nearest-neighbour). The per-species cell size is the creature's "
                          "content bbox times this scale.")
     ap.add_argument("--idle-frames", type=int, default=DEFAULT_IDLE_FRAMES,
-                    help=f"Idle (breathing) frames per direction, baked into rows 4..7 "
-                         f"(default {DEFAULT_IDLE_FRAMES}; resampled from the creature's "
-                         "native Idle animation).")
+                    help=f"Cap on idle (breathing) columns baked into rows 4..7 "
+                         f"(default {DEFAULT_IDLE_FRAMES} >= firmware PET_MAX_IDLE_FRAMES; "
+                         "each creature keeps its own native idle frame count).")
     ap.add_argument("--target", choices=["firmware", "web", "both", "none"], default="both",
                     help="Stage copy-ready trees for the hibitomo web, the firmware, "
                          "both (default), or none (flat output only).")
