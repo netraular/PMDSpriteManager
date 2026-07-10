@@ -1,20 +1,22 @@
 """
 Firmware / web sprite exporter.
 
-Converts a PMD Collab character (8-direction isometric `Walk` + `Idle`
-animations) into the single-sheet "overworld" spritesheet format shared by the
-hibitomo web content editor and the lv_port_pc_vscode firmware
+Converts a PMD Collab character (8-direction isometric `Walk` + `Idle` +
+`Sleep` animations) into the single-sheet "overworld" spritesheet format shared
+by the hibitomo web content editor and the lv_port_pc_vscode firmware
 (`graphics/species/pokemon`):
 
-  * One PNG per creature, N columns x 8 rows (N = max(walk_n, idle_n)). The cell
-    size is PER-SPECIES: it is the creature's content bounding box (union over all
-    walk + idle frames) magnified by DEFAULT_SCALE, so every creature fills its
-    cell with no dead margin and is never clipped. Sheets are therefore
-    variable-sized (and may be non-square) from one creature to the next; both
-    consumers derive the cell pixel size from the sheet dimensions and grid.
+  * One PNG per creature, N columns x 9 rows (N = max(walk_n, idle_n, sleep_n)).
+    The cell size is PER-SPECIES: it is the creature's content bounding box (union
+    over all walk + idle + sleep frames) magnified by DEFAULT_SCALE, so every
+    creature fills its cell with no dead margin and is never clipped. Sheets are
+    therefore variable-sized (and may be non-square) from one creature to the
+    next; both consumers derive the cell pixel size from the sheet dimensions and
+    grid.
   * Rows 0-3 = walk cycle (one direction per row), rows 4-7 = the matching idle
-    loop. Each creature keeps its OWN native walk/idle frame counts -- there is NO
-    fixed grid and NO resampling:
+    loop, row 8 = the non-directional sleep (lying) loop. Each creature keeps its
+    OWN native walk/idle/sleep frame counts -- there is NO fixed grid and NO
+    resampling:
 
         row0: DOWN   walk f0 f1 f2 ... (this creature's native walk frames)
         row1: LEFT   walk ...
@@ -22,13 +24,15 @@ hibitomo web content editor and the lv_port_pc_vscode firmware
         row3: UP     walk ...
         row4: DOWN   idle f0 f1 ...    (this creature's native idle frames)
         row5..7: LEFT/RIGHT/UP idle
+        row8: SLEEP  f0 f1 ...         (non-directional; one row for all facings)
 
     Direction rows match the firmware convention (0=DOWN, 1=LEFT, 2=RIGHT, 3=UP).
     Because frame counts differ per creature, each creature carries its OWN
     self-contained data file, `<id>.json`, written next to its sheet: an explicit
-    layout (native walk/idle cells) plus the REAL PMD per-frame cadence
-    (`walk_durations` / `idle_durations`, taken 1:1 from `AnimData.xml` in game
-    ticks), so both consumers reproduce the exact Pokémon Mystery Dungeon timing.
+    layout (native walk/idle cells + a flat sleep cell list) plus the REAL PMD
+    per-frame cadence (`walk_durations` / `idle_durations` / `sleep_durations`,
+    taken 1:1 from `AnimData.xml` in game ticks), so both consumers reproduce the
+    exact Pokémon Mystery Dungeon timing.
 
 Because the layout is fully data-driven, both consumers read each creature's
 `<id>.json` and use the per-direction walk/idle cells + durations straight from
@@ -98,6 +102,27 @@ IDLE_ROW_BASE = 4
 # cells at this rate. ~1.2s for a 4-frame loop reads as a calm breathing.
 DEFAULT_IDLE_FRAME_MS = 300
 
+# --- Sleep -------------------------------------------------------------------
+# The PMD `Sleep` animation (the creature lying down asleep) is authored as a
+# single NON-directional row (one pose regardless of facing), so it is baked into
+# ONE extra sheet row below the idle block and described in the creature's
+# `<id>.json` as a flat, direction-agnostic `sleep` cell list. The device/editor
+# play it while the pet sleeps and fall back to the idle frame when a creature
+# ships no `Sleep-Anim.png`.
+#
+#     row0..3: DOWN/LEFT/RIGHT/UP  walk
+#     row4..7: DOWN/LEFT/RIGHT/UP  idle
+#     row8   : SLEEP  (cols 0..sleep_n-1)
+#
+SLEEP_ANIM_FILE = "Sleep-Anim.png"
+# Cap on sleep columns. PMD sleep loops are very short (typically 2 frames), so a
+# small cap keeps the row compact; each creature keeps its own native count.
+DEFAULT_SLEEP_FRAMES = 8
+# Single sheet row holding the sleep loop (below the four idle rows 4..7).
+SLEEP_ROW = IDLE_ROW_BASE + 4  # = 8
+# Per-frame sleep duration (ms) fallback when the layout omits `sleep_durations`.
+DEFAULT_SLEEP_FRAME_MS = 400
+
 # PMD `AnimData.xml` stores per-frame durations in game *ticks*. The sprites are
 # authored/played at a fixed ~30 FPS by convention (SkyTemple/PMD), so one tick
 # is ~33 ms. Nothing in the XML asserts this; it is the well-known default. It is
@@ -115,20 +140,24 @@ PMD_TICK_MS = 33
 DIR_ROWS = [("down", 0), ("left", 1), ("right", 2), ("up", 3)]
 
 
-def build_layout_dict(cols, rows=8, frames=DEFAULT_FRAMES,
+def build_layout_dict(cols, rows=SLEEP_ROW + 1, frames=DEFAULT_FRAMES,
                       idle_frames=DEFAULT_IDLE_FRAMES,
                       idle_frame_ms=DEFAULT_IDLE_FRAME_MS,
                       walk_durations=None, idle_durations=None,
+                      sleep_frames=0, sleep_row=SLEEP_ROW,
+                      sleep_durations=None, sleep_frame_ms=DEFAULT_SLEEP_FRAME_MS,
                       tick_ms=PMD_TICK_MS):
     """
     Build the explicit, data-driven per-creature layout descriptor for a
     `cols` x `rows` sheet whose top rows (0..3) are the DOWN/LEFT/RIGHT/UP walk
-    cycles and whose idle rows (IDLE_ROW_BASE..IDLE_ROW_BASE+3) are the matching
-    animated idle loops. `idle_frames` >= 2 makes the device play an animated idle
-    (breathing) instead of a static standing pose.
+    cycles, whose idle rows (IDLE_ROW_BASE..IDLE_ROW_BASE+3) are the matching
+    animated idle loops, and whose single `sleep_row` holds the non-directional
+    sleep (lying) loop. `idle_frames` >= 2 makes the device play an animated idle
+    (breathing) instead of a static standing pose; `sleep_frames` >= 1 adds a
+    `sleep` clip (flat, direction-agnostic).
 
-    `walk_durations` / `idle_durations` are the REAL PMD per-frame cadences in game
-    **ticks** (one entry per walk / idle frame, shared across all four directions),
+    `walk_durations` / `idle_durations` / `sleep_durations` are the REAL PMD
+    per-frame cadences in game **ticks** (one entry per walk / idle / sleep frame),
     taken 1:1 from `AnimData.xml`. Both consumers preserve Pokémon Mystery Dungeon
     timing from these: the 30 FPS device holds each frame for that many ticks; the
     web renders each tick as `tick_ms`. Written straight into the per-creature
@@ -139,6 +168,8 @@ def build_layout_dict(cols, rows=8, frames=DEFAULT_FRAMES,
     idle = {name: [{"col": c, "row": IDLE_ROW_BASE + row}
                    for c in range(idle_frames)]
             for name, row in DIR_ROWS}
+    sleep = ([{"col": c, "row": sleep_row} for c in range(sleep_frames)]
+             if sleep_frames > 0 else None)
     return {
         "style": "explicit",
         "cols": cols,
@@ -146,19 +177,24 @@ def build_layout_dict(cols, rows=8, frames=DEFAULT_FRAMES,
         "walk_style": "stride",
         "tick_ms": tick_ms,
         "idle_frame_ms": idle_frame_ms,
+        "sleep_frame_ms": sleep_frame_ms if sleep else None,
         "walk": walk,
         "idle": idle,
+        "sleep": sleep,
         "walk_durations": list(walk_durations) if walk_durations else None,
         "idle_durations": list(idle_durations) if idle_durations else None,
+        "sleep_durations": list(sleep_durations) if sleep_durations else None,
         "description": (
             "PMD Collab overworld, fully data-driven: rows 0..3 are the walk "
             "cycle (0=DOWN, 1=LEFT, 2=RIGHT, 3=UP), columns 0.."
             f"{frames - 1} (this creature's native walk frames, continuous "
             f"stride); rows {IDLE_ROW_BASE}..{IDLE_ROW_BASE + 3} are the matching "
-            f"native idle (breathing) loop, columns 0..{idle_frames - 1}. "
-            "walk_durations/idle_durations are the real PMD per-frame cadence in "
-            f"{tick_ms}ms ticks. Cell size derived from the sheet (per-species: "
-            "the creature's content bbox times the export scale)."
+            f"native idle (breathing) loop, columns 0..{idle_frames - 1}; row "
+            f"{sleep_row} is the non-directional sleep (lying) loop, columns 0.."
+            f"{max(sleep_frames - 1, 0)}. walk/idle/sleep_durations are the real "
+            f"PMD per-frame cadence in {tick_ms}ms ticks. Cell size derived from "
+            "the sheet (per-species: the creature's content bbox times the export "
+            "scale)."
         ),
     }
 
@@ -191,13 +227,20 @@ def dumps_layout(layout):
         f'  "walk_style": {json.dumps(layout["walk_style"])},',
         f'  "tick_ms": {layout["tick_ms"]},',
         f'  "idle_frame_ms": {layout["idle_frame_ms"]},',
-        f'  "walk": {dir_map(layout["walk"], 2)},',
-        f'  "idle": {dir_map(layout["idle"], 2)},',
     ]
+    if layout.get("sleep_frame_ms"):
+        lines.append(f'  "sleep_frame_ms": {layout["sleep_frame_ms"]},')
+    lines.append(f'  "walk": {dir_map(layout["walk"], 2)},')
+    lines.append(f'  "idle": {dir_map(layout["idle"], 2)},')
+    if layout.get("sleep"):
+        arr = ", ".join(cell(c) for c in layout["sleep"])
+        lines.append(f'  "sleep": [{arr}],')
     if layout.get("walk_durations"):
         lines.append(f'  "walk_durations": {json.dumps(layout["walk_durations"])},')
     if layout.get("idle_durations"):
         lines.append(f'  "idle_durations": {json.dumps(layout["idle_durations"])},')
+    if layout.get("sleep_durations"):
+        lines.append(f'  "sleep_durations": {json.dumps(layout["sleep_durations"])},')
     lines.append(f'  "description": {json.dumps(layout["description"])}')
     lines.append("}")
     return "\n".join(lines) + "\n"
@@ -444,11 +487,31 @@ def export_project(project_path, output_png, frames=DEFAULT_FRAMES,
         idle_ticks = [max(1, round(DEFAULT_IDLE_FRAME_MS / PMD_TICK_MS))]
     idle_box = _union_bbox(fr for _, _, fr in idle_placed)
 
+    # Sleep block: a single NON-directional row (SLEEP_ROW). PMD authors `Sleep`
+    # as one row (the creature lies down in one pose regardless of facing), so
+    # every sleep column is cropped from source row 0. Omitted when the creature
+    # ships no `Sleep-Anim.png` (both consumers then fall back to the idle frame).
+    sleep_path = os.path.join(animations, SLEEP_ANIM_FILE)
+    sleep_size = _parse_anim_frame_size(animdata, "Sleep") if os.path.exists(sleep_path) else None
+    if sleep_size:
+        sfw, sfh = sleep_size
+        sleep_img = Image.open(sleep_path).convert("RGBA")
+        sleep_crop, sleep_cols, _ = _crop_grid(sleep_img, sfw, sfh)
+        sleep_n = min(sleep_cols, DEFAULT_SLEEP_FRAMES)
+        sleep_placed = [(SLEEP_ROW, out_col, sleep_crop(0, ssrc))
+                        for out_col, ssrc in enumerate(range(sleep_n))]
+        sleep_ticks = _column_durations_ticks(_parse_anim_durations(animdata, "Sleep"), sleep_n)
+    else:
+        sleep_n = 0
+        sleep_placed = []
+        sleep_ticks = None
+    sleep_box = _union_bbox(fr for _, _, fr in sleep_placed)
+
     # Real per-frame cadence in PMD ticks for the web preview / device (1:1 with
     # the native frames).
     walk_ticks = _column_durations_ticks(_parse_anim_durations(animdata, "Walk"), walk_n)
 
-    # Per-species cell size = union of the walk and idle content boxes * scale.
+    # Per-species cell size = union of the walk, idle and sleep content boxes * scale.
     def _dims(box, fallback_w, fallback_h):
         if box is None:
             return fallback_w, fallback_h
@@ -456,11 +519,12 @@ def export_project(project_path, output_png, frames=DEFAULT_FRAMES,
 
     ww, wh = _dims(walk_box, wfw, wfh)
     iw, ih = _dims(idle_box, 0, 0)
-    cell_w = max(ww, iw) * scale
-    cell_h = max(wh, ih) * scale
+    sw, sh = _dims(sleep_box, 0, 0)
+    cell_w = max(ww, iw, sw) * scale
+    cell_h = max(wh, ih, sh) * scale
 
-    out_cols = max(walk_n, idle_n)
-    out_rows = IDLE_ROW_BASE + 4
+    out_cols = max(walk_n, idle_n, sleep_n)
+    out_rows = (SLEEP_ROW + 1) if sleep_n > 0 else (IDLE_ROW_BASE + 4)
     out = Image.new("RGBA", (cell_w * out_cols, cell_h * out_rows), (0, 0, 0, 0))
 
     for out_row, out_col, raw in walk_placed:
@@ -469,6 +533,9 @@ def export_project(project_path, output_png, frames=DEFAULT_FRAMES,
     for out_row, out_col, raw in idle_placed:
         frame = _prepare_frame(raw, idle_box, scale)
         _paste_anchored(out, frame, out_col * cell_w, out_row * cell_h, cell_w, cell_h)
+    for out_row, out_col, raw in sleep_placed:
+        frame = _prepare_frame(raw, sleep_box, scale)
+        _paste_anchored(out, frame, out_col * cell_w, out_row * cell_h, cell_w, cell_h)
 
     os.makedirs(os.path.dirname(output_png), exist_ok=True)
     out.save(output_png)
@@ -476,7 +543,9 @@ def export_project(project_path, output_png, frames=DEFAULT_FRAMES,
                                idle_frames=idle_n,
                                idle_frame_ms=DEFAULT_IDLE_FRAME_MS,
                                walk_durations=walk_ticks,
-                               idle_durations=idle_ticks)
+                               idle_durations=idle_ticks,
+                               sleep_frames=sleep_n,
+                               sleep_durations=sleep_ticks)
     # Write the per-creature data file (`<id>.json`) right next to its sheet, so
     # every pokemon/creature owns a self-contained layout + real PMD timing file.
     data_path = os.path.splitext(output_png)[0] + ".json"

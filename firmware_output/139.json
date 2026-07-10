@@ -1,10 +1,11 @@
 {
   "style": "explicit",
   "cols": 4,
-  "rows": 8,
+  "rows": 9,
   "walk_style": "stride",
   "tick_ms": 33,
   "idle_frame_ms": 300,
+  "sleep_frame_ms": 400,
   "walk": {
     "down": [{ "col": 0, "row": 0 }, { "col": 1, "row": 0 }, { "col": 2, "row": 0 }, { "col": 3, "row": 0 }],
     "left": [{ "col": 0, "row": 1 }, { "col": 1, "row": 1 }, { "col": 2, "row": 1 }, { "col": 3, "row": 1 }],
@@ -17,7 +18,9 @@
     "right": [{ "col": 0, "row": 6 }, { "col": 1, "row": 6 }],
     "up": [{ "col": 0, "row": 7 }, { "col": 1, "row": 7 }]
   },
+  "sleep": [{ "col": 0, "row": 8 }, { "col": 1, "row": 8 }],
   "walk_durations": [8, 8, 8, 8],
   "idle_durations": [30, 20],
-  "description": "PMD Collab overworld, fully data-driven: rows 0..3 are the walk cycle (0=DOWN, 1=LEFT, 2=RIGHT, 3=UP), columns 0..3 (this creature's native walk frames, continuous stride); rows 4..7 are the matching native idle (breathing) loop, columns 0..1. walk_durations/idle_durations are the real PMD per-frame cadence in 33ms ticks. Cell size derived from the sheet (per-species: the creature's content bbox times the export scale)."
+  "sleep_durations": [30, 35],
+  "description": "PMD Collab overworld, fully data-driven: rows 0..3 are the walk cycle (0=DOWN, 1=LEFT, 2=RIGHT, 3=UP), columns 0..3 (this creature's native walk frames, continuous stride); rows 4..7 are the matching native idle (breathing) loop, columns 0..1; row 8 is the non-directional sleep (lying) loop, columns 0..1. walk/idle/sleep_durations are the real PMD per-frame cadence in 33ms ticks. Cell size derived from the sheet (per-species: the creature's content bbox times the export scale)."
 }
