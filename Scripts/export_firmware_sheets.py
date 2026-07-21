@@ -2,9 +2,11 @@
 CLI: export PMD characters to the firmware/web overworld spritesheet format.
 
 Runs core.firmware_exporter over a `downloads/` folder (as produced by
-download_pmd_sprites.py or the in-app Batch tool) and writes one N x 4 sheet per
-creature (columns = full walk cycle, rows = DOWN/LEFT/RIGHT/UP) into an output
-folder, plus copy-ready `firmware/` and `web/` subtrees.
+download_pmd_sprites.py or the in-app Batch tool) and writes one unified sheet per
+creature into an output folder, plus copy-ready `firmware/` and `web/` subtrees.
+By default this is the PRINCIPAL 8-direction export (rows 0-7 walk cardinals+iso
+diagonals, 8-15 idle, 16 sleep). Pass --legacy-4dir for the old top-down-only
+sheet (rows 0-3 walk DOWN/LEFT/RIGHT/UP, 4-7 idle, 8 sleep).
 
 Usage:
     python Scripts/export_firmware_sheets.py
@@ -13,6 +15,7 @@ Usage:
     python Scripts/export_firmware_sheets.py --target firmware
     python Scripts/export_firmware_sheets.py --target web
     python Scripts/export_firmware_sheets.py --target none
+    python Scripts/export_firmware_sheets.py --legacy-4dir
 """
 
 import argparse
@@ -24,7 +27,7 @@ if SRC not in sys.path:
     sys.path.insert(0, SRC)
 
 from core.firmware_exporter import (  # noqa: E402
-    export_all, DEFAULT_FRAMES, DEFAULT_SCALE, DEFAULT_IDLE_FRAMES,
+    export_all, DEFAULT_FRAMES, DEFAULT_SCALE, DEFAULT_IDLE_FRAMES, NUM_DIRS,
 )
 
 
@@ -49,7 +52,13 @@ def main():
     ap.add_argument("--target", choices=["firmware", "web", "both", "none"], default="both",
                     help="Stage copy-ready trees for the hibitomo web, the firmware, "
                          "both (default), or none (flat output only).")
+    ap.add_argument("--legacy-4dir", action="store_true",
+                    help="Export the legacy top-down-only sheet (4 cardinal "
+                         "directions) instead of the default unified 8-direction "
+                         "(cardinals + iso diagonals) sheet.")
     args = ap.parse_args()
+
+    n_dirs = 4 if args.legacy_4dir else NUM_DIRS
 
     downloads = os.path.abspath(args.downloads)
     out = os.path.abspath(args.out)
@@ -66,10 +75,11 @@ def main():
 
     print(f"Exporting from {downloads}\n"
           f"            to {out} (per-species cell, frames={args.frames}, "
-          f"scale={args.scale}x, idle_frames={args.idle_frames}, target={args.target})\n")
+          f"scale={args.scale}x, idle_frames={args.idle_frames}, "
+          f"dirs={n_dirs}, target={args.target})\n")
     ok, fail = export_all(downloads, out, targets=targets,
                           frames=args.frames, scale=args.scale,
-                          idle_frames=args.idle_frames)
+                          idle_frames=args.idle_frames, n_dirs=n_dirs)
     return 0 if fail == 0 else 1
 
 

@@ -97,15 +97,22 @@ python Scripts/download_pmd_sprites.py --start 1 --end 151 --out pmd_projects
 Converts each character's PMD **Walk** animation into the single-sheet overworld
 format shared by **both** the hibitomo web content-editor and the
 `lv_port_pc_vscode` firmware (`graphics/species/pokemon`): one PNG per creature, an
-**N×9** grid (N = `max(walk_n, idle_n, sleep_n)`) whose **cell size is per-species** — the
+**N×17** grid (N = `max(walk_n, idle_n, sleep_n)`) whose **cell size is per-species** — the
 creature's content bounding box (union over all its walk, idle **and** sleep frames)
 magnified **2×** (nearest-neighbour). Sheets are therefore variable-sized (and may
 be non-square) from one creature to the next, so no creature is ever clipped and
-small/large creatures keep their natural relative size. **Rows 0-3 are the walk
-cycle** (one direction per row: 0=DOWN, 1=LEFT, 2=RIGHT, 3=UP), **rows 4-7 are
-the matching animated idle** (breathing) loop, one direction per row, and **row 8
-is the non-directional sleep** (lying) loop (PMD authors `Sleep` as a single row,
-so one pose serves every facing). Each
+small/large creatures keep their natural relative size. This is the **principal
+8-direction export** (unified overworld + isometric). **Rows 0-7 are the walk
+cycle** (one direction per row): the four cardinals `0=DOWN, 1=LEFT, 2=RIGHT, 3=UP`
+(used by the top-down apps, `room`/`ldtk`) followed by the four iso diagonals
+`4=SE (down_right), 5=NE (up_right), 6=NW (up_left), 7=SW (down_left)` (used by the
+isometric apps, `iso_room`/`iso_world`/`iso_explore`), taken from the sprite's
+**native** PMD directions (PMD `-Anim.png` rows, CCW from South: `S=0, SE=1, E=2,
+NE=3, N=4, NW=5, W=6, SW=7`). **Rows 8-15 are the matching animated idle**
+(breathing) loop, one direction per row in the same order, and **row 16 is the
+non-directional sleep** (lying) loop (PMD authors `Sleep` as a single row, so one
+pose serves every facing). Pass `--legacy-4dir` for the old top-down-only sheet
+(**N×9**: rows 0-3 walk cardinals, 4-7 idle, 8 sleep). Each
 creature keeps its **own native walk, idle and sleep frame counts** — there is **no fixed
 grid** and **no resampling**: the walk columns are the creature's full native walk
 cycle (3–12 frames), the idle columns its full native `Idle` loop (1–15 frames,

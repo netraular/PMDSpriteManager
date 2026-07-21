@@ -6,15 +6,17 @@ Converts a PMD Collab character (8-direction isometric `Walk` + `Idle` +
 by the hibitomo web content editor and the lv_port_pc_vscode firmware
 (`graphics/species/pokemon`):
 
-  * One PNG per creature, N columns x 9 rows (N = max(walk_n, idle_n, sleep_n)).
-    The cell size is PER-SPECIES: it is the creature's content bounding box (union
-    over all walk + idle + sleep frames) magnified by DEFAULT_SCALE, so every
-    creature fills its cell with no dead margin and is never clipped. Sheets are
-    therefore variable-sized (and may be non-square) from one creature to the
-    next; both consumers derive the cell pixel size from the sheet dimensions and
-    grid.
-  * Rows 0-3 = walk cycle (one direction per row), rows 4-7 = the matching idle
-    loop, row 8 = the non-directional sleep (lying) loop. Each creature keeps its
+  * One PNG per creature, N columns x 17 rows (N = max(walk_n, idle_n, sleep_n)).
+    This is the PRINCIPAL (unified) export: it bakes all 8 PMD directions so ONE
+    sheet serves both views -- the 4 cardinals for the top-down apps and the 4
+    diagonals for the iso apps. The cell size is PER-SPECIES: it is the creature's
+    content bounding box (union over all walk + idle + sleep frames) magnified by
+    DEFAULT_SCALE, so every creature fills its cell with no dead margin and is
+    never clipped. Sheets are therefore variable-sized (and may be non-square) from
+    one creature to the next; both consumers derive the cell pixel size from the
+    sheet dimensions and grid. (Pass `n_dirs=4` for a legacy top-down-only sheet.)
+  * Rows 0-7 = walk cycle (one direction per row), rows 8-15 = the matching idle
+    loop, row 16 = the non-directional sleep (lying) loop. Each creature keeps its
     OWN native walk/idle/sleep frame counts -- there is NO fixed grid and NO
     resampling:
 
@@ -22,11 +24,16 @@ by the hibitomo web content editor and the lv_port_pc_vscode firmware
         row1: LEFT   walk ...
         row2: RIGHT  walk ...
         row3: UP     walk ...
-        row4: DOWN   idle f0 f1 ...    (this creature's native idle frames)
-        row5..7: LEFT/RIGHT/UP idle
-        row8: SLEEP  f0 f1 ...         (non-directional; one row for all facings)
+        row4: SE (down_right)  walk ...  (iso diagonals)
+        row5: NE (up_right)    walk ...
+        row6: NW (up_left)     walk ...
+        row7: SW (down_left)   walk ...
+        row8:  DOWN  idle f0 f1 ...    (this creature's native idle frames)
+        row9..15: LEFT/RIGHT/UP + SE/NE/NW/SW idle
+        row16: SLEEP f0 f1 ...         (non-directional; one row for all facings)
 
-    Direction rows match the firmware convention (0=DOWN, 1=LEFT, 2=RIGHT, 3=UP).
+    Direction rows match the firmware/schema convention (cardinals 0=DOWN, 1=LEFT,
+    2=RIGHT, 3=UP; iso diagonals 4=SE, 5=NE, 6=NW, 7=SW).
     Because frame counts differ per creature, each creature carries its OWN
     self-contained data file, `<id>.json`, written next to its sheet: an explicit
     layout (native walk/idle cells + a flat sleep cell list) plus the REAL PMD
@@ -51,15 +58,35 @@ from PIL import Image
 
 # --- PMD sprite-sheet direction rows -----------------------------------------
 # PMD `-Anim.png` sheets store one direction per row, counter-clockwise starting
-# from South (Down). Edit these if a future asset set uses a different order.
-PMD_ROW_DOWN = 0   # South
-PMD_ROW_RIGHT = 2  # East
-PMD_ROW_UP = 4     # North
-PMD_ROW_LEFT = 6   # West
+# from South (Down): even rows are the 4 cardinals, odd rows the 4 diagonals.
+# Edit these if a future asset set uses a different order.
+PMD_ROW_DOWN = 0        # South
+PMD_ROW_DOWN_RIGHT = 1  # South-East
+PMD_ROW_RIGHT = 2       # East
+PMD_ROW_UP_RIGHT = 3    # North-East
+PMD_ROW_UP = 4          # North
+PMD_ROW_UP_LEFT = 5     # North-West
+PMD_ROW_LEFT = 6        # West
+PMD_ROW_DOWN_LEFT = 7   # South-West
 
-# Output rows follow the firmware direction convention (0=DOWN, 1=LEFT, 2=RIGHT,
-# 3=UP); this maps each output row to the PMD source row it is cropped from.
-OUT_ROW_SOURCE = [PMD_ROW_DOWN, PMD_ROW_LEFT, PMD_ROW_RIGHT, PMD_ROW_UP]
+# Output rows follow the firmware/schema direction convention: the 4 top-down
+# cardinals first (0=DOWN, 1=LEFT, 2=RIGHT, 3=UP, consumed by the room/ldtk apps)
+# then the 4 isometric diagonals (4=SE, 5=NE, 6=NW, 7=SW, consumed by the iso
+# apps). Each output row maps to the PMD source row it is cropped from. This is a
+# single UNIFIED sheet: top-down consumers read the cardinal rows exactly as
+# before, iso consumers read the diagonals.
+OUT_ROW_SOURCE = [
+    PMD_ROW_DOWN, PMD_ROW_LEFT, PMD_ROW_RIGHT, PMD_ROW_UP,
+    PMD_ROW_DOWN_RIGHT, PMD_ROW_UP_RIGHT, PMD_ROW_UP_LEFT, PMD_ROW_DOWN_LEFT,
+]
+
+# Direction names in output-row order. Mirrors @hibitomo/schema SPRITE_DIRS_ALL and
+# the firmware `DIR_KEYS`, so the emitted `<id>.json` keys line up across all repos.
+DIR_NAMES = ["down", "left", "right", "up",
+             "down_right", "up_right", "up_left", "down_left"]
+
+# Number of facing directions baked into the unified sheet (cardinals + diagonals).
+NUM_DIRS = len(OUT_ROW_SOURCE)
 
 # Integer magnification applied to each creature's cropped walk frame (nearest-
 # neighbour, pixel-perfect). The output CELL SIZE IS PER-SPECIES: it is the
@@ -96,8 +123,9 @@ ANIM_DATA_FILE = "AnimData.xml"
 # 15), so no idle frame is ever dropped. Creatures with no `Idle-Anim.png` fall
 # back to a single static idle cell (walk frame 0).
 DEFAULT_IDLE_FRAMES = 16
-# First sheet row of the idle block (idle rows = IDLE_ROW_BASE .. IDLE_ROW_BASE+3).
-IDLE_ROW_BASE = 4
+# First sheet row of the idle block (idle rows = IDLE_ROW_BASE .. IDLE_ROW_BASE+7,
+# one per direction, below the 8 walk rows).
+IDLE_ROW_BASE = NUM_DIRS  # = 8
 # Per-frame idle duration (ms) written to the layout; the device cycles the idle
 # cells at this rate. ~1.2s for a 4-frame loop reads as a calm breathing.
 DEFAULT_IDLE_FRAME_MS = 300
@@ -118,8 +146,8 @@ SLEEP_ANIM_FILE = "Sleep-Anim.png"
 # Cap on sleep columns. PMD sleep loops are very short (typically 2 frames), so a
 # small cap keeps the row compact; each creature keeps its own native count.
 DEFAULT_SLEEP_FRAMES = 8
-# Single sheet row holding the sleep loop (below the four idle rows 4..7).
-SLEEP_ROW = IDLE_ROW_BASE + 4  # = 8
+# Single sheet row holding the sleep loop (below the eight idle rows 8..15).
+SLEEP_ROW = IDLE_ROW_BASE + NUM_DIRS  # = 16
 # Per-frame sleep duration (ms) fallback when the layout omits `sleep_durations`.
 DEFAULT_SLEEP_FRAME_MS = 400
 
@@ -136,8 +164,9 @@ PMD_TICK_MS = 33
 # actual grid so it always matches the packing. It is the single source of truth
 # read by both the hibitomo web content-editor and the lv_port_pc_vscode firmware
 # (style: "explicit", one row per direction, `frames` walk cells per row, plus the
-# real PMD walk/idle tick durations).
-DIR_ROWS = [("down", 0), ("left", 1), ("right", 2), ("up", 3)]
+# real PMD walk/idle tick durations). One entry per output row, in DIR_NAMES order
+# (4 cardinals then 4 diagonals); walk rows 0..7, matching idle rows 8..15.
+DIR_ROWS = [(name, i) for i, name in enumerate(DIR_NAMES)]
 
 
 def build_layout_dict(cols, rows=SLEEP_ROW + 1, frames=DEFAULT_FRAMES,
@@ -146,7 +175,7 @@ def build_layout_dict(cols, rows=SLEEP_ROW + 1, frames=DEFAULT_FRAMES,
                       walk_durations=None, idle_durations=None,
                       sleep_frames=0, sleep_row=SLEEP_ROW,
                       sleep_durations=None, sleep_frame_ms=DEFAULT_SLEEP_FRAME_MS,
-                      tick_ms=PMD_TICK_MS):
+                      tick_ms=PMD_TICK_MS, dir_rows=None, idle_row_base=None):
     """
     Build the explicit, data-driven per-creature layout descriptor for a
     `cols` x `rows` sheet whose top rows (0..3) are the DOWN/LEFT/RIGHT/UP walk
@@ -163,11 +192,17 @@ def build_layout_dict(cols, rows=SLEEP_ROW + 1, frames=DEFAULT_FRAMES,
     web renders each tick as `tick_ms`. Written straight into the per-creature
     `<id>.json`.
     """
+    # `dir_rows` / `idle_row_base` default to the unified 8-direction layout; the
+    # legacy 4-direction export passes a 4-entry slice + idle_row_base=4.
+    if dir_rows is None:
+        dir_rows = DIR_ROWS
+    if idle_row_base is None:
+        idle_row_base = IDLE_ROW_BASE
     walk = {name: [{"col": c, "row": row} for c in range(frames)]
-            for name, row in DIR_ROWS}
-    idle = {name: [{"col": c, "row": IDLE_ROW_BASE + row}
+            for name, row in dir_rows}
+    idle = {name: [{"col": c, "row": idle_row_base + row}
                    for c in range(idle_frames)]
-            for name, row in DIR_ROWS}
+            for name, row in dir_rows}
     sleep = ([{"col": c, "row": sleep_row} for c in range(sleep_frames)]
              if sleep_frames > 0 else None)
     return {
@@ -185,12 +220,14 @@ def build_layout_dict(cols, rows=SLEEP_ROW + 1, frames=DEFAULT_FRAMES,
         "idle_durations": list(idle_durations) if idle_durations else None,
         "sleep_durations": list(sleep_durations) if sleep_durations else None,
         "description": (
-            "PMD Collab overworld, fully data-driven: rows 0..3 are the walk "
-            "cycle (0=DOWN, 1=LEFT, 2=RIGHT, 3=UP), columns 0.."
-            f"{frames - 1} (this creature's native walk frames, continuous "
-            f"stride); rows {IDLE_ROW_BASE}..{IDLE_ROW_BASE + 3} are the matching "
-            f"native idle (breathing) loop, columns 0..{idle_frames - 1}; row "
-            f"{sleep_row} is the non-directional sleep (lying) loop, columns 0.."
+            "PMD Collab unified overworld+iso, fully data-driven: rows 0.."
+            f"{NUM_DIRS - 1} are the walk cycle (0=DOWN, 1=LEFT, 2=RIGHT, 3=UP "
+            "cardinals for the top-down apps; 4=SE, 5=NE, 6=NW, 7=SW diagonals for "
+            f"the iso apps), columns 0..{frames - 1} (this creature's native walk "
+            f"frames, continuous stride); rows {IDLE_ROW_BASE}.."
+            f"{IDLE_ROW_BASE + NUM_DIRS - 1} are the matching native idle "
+            f"(breathing) loop, columns 0..{idle_frames - 1}; row {sleep_row} is "
+            f"the non-directional sleep (lying) loop, columns 0.."
             f"{max(sleep_frames - 1, 0)}. walk/idle/sleep_durations are the real "
             f"PMD per-frame cadence in {tick_ms}ms ticks. Cell size derived from "
             "the sheet (per-species: the creature's content bbox times the export "
@@ -416,15 +453,19 @@ def _crop_grid(sheet, fw, fh):
 
 
 def export_project(project_path, output_png, frames=DEFAULT_FRAMES,
-                   scale=DEFAULT_SCALE, idle_frames=DEFAULT_IDLE_FRAMES):
+                   scale=DEFAULT_SCALE, idle_frames=DEFAULT_IDLE_FRAMES,
+                   n_dirs=NUM_DIRS):
     """
-    Convert one PMD character folder into an overworld spritesheet.
+    Convert one PMD character folder into a unified overworld+iso spritesheet.
 
-    Produces a grid of `max(walk_n, idle_n)` columns x 8 rows, where `walk_n` /
-    `idle_n` are THIS creature's native walk / idle frame counts (no resampling to
-    a shared grid; `frames` / `idle_frames` only cap them). Rows 0..3 are the
-    DOWN/LEFT/RIGHT/UP walk cycles and rows 4..7 the matching native idle loops (or
-    a single static walk-frame-0 cell when the creature ships no `Idle-Anim.png`).
+    Produces a grid of `max(walk_n, idle_n, sleep_n)` columns x (`2*n_dirs`+sleep)
+    rows, where `walk_n` / `idle_n` are THIS creature's native walk / idle frame
+    counts (no resampling; `frames` / `idle_frames` only cap them). With the default
+    `n_dirs=8` (the principal export), rows 0..7 are the walk cycles for the 4
+    cardinals (top-down) + 4 diagonals (iso) and rows 8..15 the matching native idle
+    loops (or a single static walk-frame-0 cell when the creature ships no
+    `Idle-Anim.png`); row 16 is the non-directional sleep loop. Pass `n_dirs=4` for
+    the legacy top-down-only sheet (rows 0..3 walk, 4..7 idle, 8 sleep).
     The CELL SIZE IS PER-SPECIES: it equals the union content bounding box over
     every placed walk AND idle frame, magnified by `scale` (nearest-neighbour), so
     neither block is clipped and both share one cell size. `project_path` must
@@ -443,6 +484,14 @@ def export_project(project_path, output_png, frames=DEFAULT_FRAMES,
     if not os.path.exists(animdata):
         raise ValueError(f"{ANIM_DATA_FILE} not found")
 
+    # Direction layout for this export. Default is the unified 8-dir sheet; the
+    # legacy path (n_dirs=4) slices to the cardinals only. idle rows follow the
+    # walk rows; the single sleep row sits below both blocks.
+    out_source = OUT_ROW_SOURCE[:n_dirs]
+    dir_rows = DIR_ROWS[:n_dirs]
+    idle_base = n_dirs
+    sleep_row = 2 * n_dirs
+
     size = _parse_anim_frame_size(animdata, "Walk")
     if not size:
         raise ValueError("Walk frame size not found in AnimData.xml")
@@ -460,7 +509,7 @@ def export_project(project_path, output_png, frames=DEFAULT_FRAMES,
     # each cropped to their own union footprint, then bottom-anchored into a shared
     # per-species cell.
     walk_placed = [(out_row, out_col, walk_crop(pmd_row, src_col))
-                   for out_row, pmd_row in enumerate(OUT_ROW_SOURCE)
+                   for out_row, pmd_row in enumerate(out_source)
                    for out_col, src_col in enumerate(src_cols)]
     walk_box = _union_bbox(fr for _, _, fr in walk_placed)
 
@@ -475,15 +524,15 @@ def export_project(project_path, output_png, frames=DEFAULT_FRAMES,
         idle_crop, idle_cols, _ = _crop_grid(idle_img, ifw, ifh)
         idle_n = min(idle_cols, idle_frames)
         idle_src = list(range(idle_n))
-        idle_placed = [(IDLE_ROW_BASE + out_row, out_col, idle_crop(pmd_row, isrc))
-                       for out_row, pmd_row in enumerate(OUT_ROW_SOURCE)
+        idle_placed = [(idle_base + out_row, out_col, idle_crop(pmd_row, isrc))
+                       for out_row, pmd_row in enumerate(out_source)
                        for out_col, isrc in enumerate(idle_src)]
         idle_ticks = _column_durations_ticks(_parse_anim_durations(animdata, "Idle"), idle_n)
     else:
         # Static fallback: a single idle cell = walk frame 0.
         idle_n = 1
-        idle_placed = [(IDLE_ROW_BASE + out_row, 0, walk_crop(pmd_row, 0))
-                       for out_row, pmd_row in enumerate(OUT_ROW_SOURCE)]
+        idle_placed = [(idle_base + out_row, 0, walk_crop(pmd_row, 0))
+                       for out_row, pmd_row in enumerate(out_source)]
         idle_ticks = [max(1, round(DEFAULT_IDLE_FRAME_MS / PMD_TICK_MS))]
     idle_box = _union_bbox(fr for _, _, fr in idle_placed)
 
@@ -498,7 +547,7 @@ def export_project(project_path, output_png, frames=DEFAULT_FRAMES,
         sleep_img = Image.open(sleep_path).convert("RGBA")
         sleep_crop, sleep_cols, _ = _crop_grid(sleep_img, sfw, sfh)
         sleep_n = min(sleep_cols, DEFAULT_SLEEP_FRAMES)
-        sleep_placed = [(SLEEP_ROW, out_col, sleep_crop(0, ssrc))
+        sleep_placed = [(sleep_row, out_col, sleep_crop(0, ssrc))
                         for out_col, ssrc in enumerate(range(sleep_n))]
         sleep_ticks = _column_durations_ticks(_parse_anim_durations(animdata, "Sleep"), sleep_n)
     else:
@@ -524,7 +573,7 @@ def export_project(project_path, output_png, frames=DEFAULT_FRAMES,
     cell_h = max(wh, ih, sh) * scale
 
     out_cols = max(walk_n, idle_n, sleep_n)
-    out_rows = (SLEEP_ROW + 1) if sleep_n > 0 else (IDLE_ROW_BASE + 4)
+    out_rows = (sleep_row + 1) if sleep_n > 0 else (idle_base + n_dirs)
     out = Image.new("RGBA", (cell_w * out_cols, cell_h * out_rows), (0, 0, 0, 0))
 
     for out_row, out_col, raw in walk_placed:
@@ -545,7 +594,10 @@ def export_project(project_path, output_png, frames=DEFAULT_FRAMES,
                                walk_durations=walk_ticks,
                                idle_durations=idle_ticks,
                                sleep_frames=sleep_n,
-                               sleep_durations=sleep_ticks)
+                               sleep_row=sleep_row,
+                               sleep_durations=sleep_ticks,
+                               dir_rows=dir_rows,
+                               idle_row_base=idle_base)
     # Write the per-creature data file (`<id>.json`) right next to its sheet, so
     # every pokemon/creature owns a self-contained layout + real PMD timing file.
     data_path = os.path.splitext(output_png)[0] + ".json"
@@ -586,7 +638,8 @@ def _stage_target(base_dir, sheets, target, log):
 
 def export_all(downloads_dir, output_dir, log=print,
                targets=("firmware", "web"), frames=DEFAULT_FRAMES,
-               scale=DEFAULT_SCALE, idle_frames=DEFAULT_IDLE_FRAMES):
+               scale=DEFAULT_SCALE, idle_frames=DEFAULT_IDLE_FRAMES,
+               n_dirs=NUM_DIRS):
     """
     Convert every project subfolder of `downloads_dir` into `output_dir`.
 
@@ -612,7 +665,7 @@ def export_all(downloads_dir, output_dir, log=print,
         name = _output_name(folder)
         out_png = os.path.join(output_dir, name + ".png")
         try:
-            export_project(project, out_png, frames, scale, idle_frames)
+            export_project(project, out_png, frames, scale, idle_frames, n_dirs)
             ok += 1
             generated.append(out_png)
             log(f"  OK  {folder} -> {os.path.basename(out_png)}")
